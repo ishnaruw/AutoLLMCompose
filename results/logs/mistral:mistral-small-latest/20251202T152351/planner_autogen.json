@@ -1,0 +1,27 @@
+{
+  "plan": [
+    {
+      "step": 1,
+      "api_id": "instant_messaging_messages_info",
+      "action": "Send an email to the user with a reservation confirmation.",
+      "why": "This API allows for sending messages, which can be used to confirm reservations via email."
+    },
+    {
+      "step": 2,
+      "api_id": "ticketpocket_get_all_coupon",
+      "action": "Retrieve available coupons or promotions for the user.",
+      "why": "This API can be used to fetch coupons that might be applicable to the user's reservation."
+    },
+    {
+      "step": 3,
+      "api_id": "ticketpocket_order_coupon_report",
+      "action": "Generate a report on the user's coupon usage.",
+      "why": "This API can help in tracking and reporting the usage of coupons by the user."
+    }
+  ],
+  "selected_api_ids": [
+    "instant_messaging_messages_info",
+    "ticketpocket_get_all_coupon",
+    "ticketpocket_order_coupon_report"
+  ]
+}

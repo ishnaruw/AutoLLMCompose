@@ -1,0 +1,90 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] View the IP address of the client in JSON format. | Also relevant for subtask 2: View the IP address of the client in JSON format."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 1] GET INFO DATA with location | Also relevant for subtask 2: GET INFO DATA with location"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] Get all events, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 3: Can retrieve all events, potentially including restaurant reviews."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] Get media, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 3: Can retrieve media, which may include restaurant reviews. | Also relevant for subtask 4: Getting media"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 1] Get zone list, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 3: Can retrieve zone lists, which may include restaurant reviews. | Also relevant for subtask 4: Listing zones"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 1] Get all coupon links, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 3: Can retrieve all coupon links, which may include links to restaurant reviews. | Also relevant for subtask 4: Getting coupon links"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 1] Get order coupon report, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 3: Can generate coupon reports, which may include restaurant reviews. | Also relevant for subtask 4: Ordering coupon reports"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 1] Check member detail, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 4: Checking member details"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 1] Create operator, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 4: Creating operators"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 1] Load feed answers, which may include location data. | Also relevant for subtask 3: Can load feed answers, which may include restaurant reviews."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 1] Keep coupon array, which may include location data. | Also relevant for subtask 3: Can keep coupon arrays, which may include restaurant reviews. | Also relevant for subtask 4: Keeping coupon arrangements"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 1] Send link coupon, which may include location data. | Also relevant for subtask 2: Find nearby restaurants based on location | Also relevant for subtask 4: Sending links via email"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 2] Find nearby restaurants based on location | Also relevant for subtask 3: Can generate detailed reports, which may include restaurant reviews."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 2] Find nearby restaurants based on location"
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 3] Can parse sitemap.xml files into JSON format, useful for retrieving reviews from discovered restaurants."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "reason": "[Subtask 3] Retrieve reviews for the discovered restaurants"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "reason": "[Subtask 3] Retrieve reviews for the discovered restaurants"
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "reason": "[Subtask 3] Retrieve reviews for the discovered restaurants"
+  },
+  {
+    "api_id": "atomic_sms_sender_send_message",
+    "reason": "[Subtask 4] Sends messages via email"
+  },
+  {
+    "api_id": "instant_messaging_messages_info",
+    "reason": "[Subtask 4] Allows sending and tracking instant messages"
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 4] Ticketpocket APIs are used for reservations"
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 4] Ticketpocket APIs are used for reservations"
+  }
+]

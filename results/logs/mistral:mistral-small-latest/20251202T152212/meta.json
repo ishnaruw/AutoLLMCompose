@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Build a service that uses a user\u2019s location to discover restaurants, show reviews, and offer reservations via email. ",
+  "num_subtasks": 4
+}

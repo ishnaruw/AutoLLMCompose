@@ -33,10 +33,19 @@ def retriever_call(llm_call, prompt: str):
             out.append({"api_id": api_id, "reason": k.get("reason", "")})
     return out
 
-def collect_candidates(llm_call, user_goal: str, fetch_fn, category: str, with_qos: bool, max_batches=5):
+def collect_candidates(
+    llm_call,
+    user_goal: str,
+    fetch_fn,
+    category=None,
+    with_qos: bool = True,
+    max_batches: int = 5,
+):
     """
     Iterate through catalog batches, ask the LLM to keep relevant APIs,
     and return up to 8–12 unique candidates.
+
+    If category is None, the fetch_fn is expected to return entries from all categories.
     """
     keep = {}
     offset = 0
