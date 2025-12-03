@@ -10,7 +10,6 @@ from src.agents.decomposer import decompose_goal
 from src.agents.retriever import collect_candidates
 from src.agents.ranker import ranker_call
 from src.agents.planner import planner_call
-# topsis_verify is no longer used in this pipeline
 
 # -------- role prompts --------
 DECOMPOSER_SYS = (
@@ -34,7 +33,9 @@ RANKER_SYS = (
 
 PLANNER_SYS = (
     "You are an orchestration planner that composes a logical API workflow "
-    "using only the ranked APIs. Follow the prompt strictly and return valid JSON."
+    "using only the ranked APIs provided. You have access to an agent score "
+    "and the full catalog entry for each API (including any QoS-related "
+    "information if present). Follow the prompt strictly and return valid JSON."
 )
 
 
@@ -53,8 +54,9 @@ def run_autogen_once(user_goal: str, with_qos: bool):
       2) For each subtask, retrieve relevant APIs from the entire catalog (all categories).
       3) Merge all retrieved APIs into a global candidate set.
       4) Rank candidates using an LLM-based score derived from the user goal,
-         subtasks, and catalog information (no TOPSIS).
-      5) Plan an orchestration using the ranked APIs.
+         subtasks, and catalog information.
+      5) Plan an orchestration using the ranked APIs with access to their full
+         catalog entries (including any QoS-related information).
 
     Note: The caller no longer provides a category. The LLM selects APIs by
     inspecting the mixed-category catalog directly.
@@ -116,7 +118,7 @@ def run_autogen_once(user_goal: str, with_qos: bool):
         cat_items.extend([b for b in batch if b["api_id"] in pick_ids])
         offset += 200
 
-    # 4) RANKER (LLM based, no TOPSIS)
+    # 4) RANKER (LLM based) over full catalog entries (including qos if present)
     ranked = ranker_call(
         llm_call=ranker_llm,
         services=cat_items,
@@ -124,23 +126,36 @@ def run_autogen_once(user_goal: str, with_qos: bool):
         subtasks=subtasks,
     )
 
-    # Prepare input for planner: keep compatibility by mapping score -> C
+    # 4.5) Build ranked_top for planner: include score and full catalog service
+    # Index catalog items by api_id for quick lookup
+    id_to_service = {s["api_id"]: s for s in cat_items}
+
+    ranked_top = []
     if ranked:
-        ranked_top_internal = ranked[:6]
-        ranked_top_for_planner = [
-            {"api_id": r["api_id"], "C": r["score"]} for r in ranked_top_internal
-        ]
+        # Pass all ranked candidates to the planner
+        for r in ranked:
+            api_id = r["api_id"]
+            service = id_to_service.get(api_id, {})
+            ranked_top.append({
+                "api_id": api_id,
+                "score": r.get("score", 0.0),
+                "service": service,
+            })
     else:
-        ranked_top_internal = []
-        ranked_top_for_planner = [
-            {"api_id": s["api_id"], "C": 0.0} for s in cat_items[:6]
-        ]
+        # Fallback: take catalog items when ranker returns nothing
+        for s in cat_items:
+            ranked_top.append({
+                "api_id": s["api_id"],
+                "score": 0.0,
+                "service": s,
+            })
 
     # 5) PLANNER
     plan = planner_call(
         llm_call=planner_llm,
         user_goal=user_goal,
-        ranked_top=ranked_top_for_planner,
+        ranked_top=ranked_top,
+        subtasks=subtasks,
     )
 
     # 6) LOGS
@@ -148,6 +163,7 @@ def run_autogen_once(user_goal: str, with_qos: bool):
     (out / "decomposer_autogen.json").write_text(json.dumps(subtasks, indent=2))
     (out / "retriever_autogen.json").write_text(json.dumps(picks, indent=2))
     (out / "ranker_autogen.json").write_text(json.dumps(ranked, indent=2))
+    (out / "ranked_for_planner.json").write_text(json.dumps(ranked_top, indent=2))
     (out / "planner_autogen.json").write_text(json.dumps(plan, indent=2))
     (out / "meta.json").write_text(json.dumps({
         "model_tag": model_tag,
@@ -157,6 +173,7 @@ def run_autogen_once(user_goal: str, with_qos: bool):
         "user_goal": user_goal,
         "num_subtasks": len(subtasks),
     }, indent=2))
+
 
     print(f"Saved to {out}")
     return ranked, plan
