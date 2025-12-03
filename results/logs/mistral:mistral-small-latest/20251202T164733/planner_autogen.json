@@ -1,0 +1,32 @@
+{
+  "plan": [
+    {
+      "step": 1,
+      "api_id": "pe_demo_view_ip_address",
+      "action": "Retrieve user's IP address",
+      "why": "To determine the user's location for discovering nearby restaurants."
+    },
+    {
+      "step": 2,
+      "api_id": "instant_messaging_messages_info",
+      "action": "Send a message with restaurant options",
+      "why": "To provide the user with a list of nearby restaurants based on their location."
+    },
+    {
+      "step": 3,
+      "api_id": "instant_messaging_messages_info",
+      "action": "Send a message with restaurant reviews",
+      "why": "To show reviews of the selected restaurants to the user."
+    },
+    {
+      "step": 4,
+      "api_id": "instant_messaging_messages_info",
+      "action": "Send a reservation confirmation",
+      "why": "To offer and confirm reservations via email."
+    }
+  ],
+  "selected_api_ids": [
+    "pe_demo_view_ip_address",
+    "instant_messaging_messages_info"
+  ]
+}

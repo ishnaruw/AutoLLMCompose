@@ -1,0 +1,138 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] View the IP address of the client in JSON format."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 1] GET INFO DATA with location | Also relevant for subtask 2: Provides weather data with location, which can be used to find nearby restaurants"
+  },
+  {
+    "api_id": "testingapiwithinorg_gettime",
+    "reason": "[Subtask 1] Retrieve the server time and measure latency, which can be used to infer location."
+  },
+  {
+    "api_id": "short_link_shopee_v_d_1",
+    "reason": "[Subtask 1] Can be used to infer location based on the short link's origin."
+  },
+  {
+    "api_id": "autosub_brotli",
+    "reason": "[Subtask 1] Testing auto subscription can infer user location based on subscription data."
+  },
+  {
+    "api_id": "publicapitestinginbox_getorderbyid",
+    "reason": "[Subtask 1] Order data can be used to infer user location."
+  },
+  {
+    "api_id": "privatepublicapi_addpet",
+    "reason": "[Subtask 1] Pet data can be used to infer user location."
+  },
+  {
+    "api_id": "privatepublicapi_createuserswitharrayinput",
+    "reason": "[Subtask 1] User data can be used to infer user location."
+  },
+  {
+    "api_id": "workable_candidates",
+    "reason": "[Subtask 1] Candidate data can be used to infer user location."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "reason": "[Subtask 1] Person data can be used to infer user location."
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 1] Province data can be used to infer user location."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 1] Shop type data can be used to infer user location."
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "reason": "[Subtask 2] Generates Facebook Ad using AI, which can be used to promote nearby restaurants | Also relevant for subtask 3: Generates Facebook Ad using AI, which can include reviews."
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "reason": "[Subtask 2] Provides comparisons related to queried keywords, which can be used to find nearby restaurants | Also relevant for subtask 3: Provides comparisons related to a queried keyword, which can include reviews."
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "reason": "[Subtask 2] Extracts important header elements from a given URL, which can be used to gather information about nearby restaurants | Also relevant for subtask 3: Extracts important header elements from a given URL, which can include reviews."
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 2] Get keyword suggestions from a keyword seed, which can be used to find nearby restaurants"
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "reason": "[Subtask 2] Lorem ipsum text generation, which can be used to create content for restaurant listings"
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "reason": "[Subtask 2] Welcome message, which can be used to greet customers searching for nearby restaurants"
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "reason": "[Subtask 2] Ease of access, which can be used to provide information about nearby restaurants"
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "reason": "[Subtask 2] Place an order, which can be used to order from nearby restaurants"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 2] List zones, which can be used to categorize nearby restaurants | Also relevant for subtask 3: zone_list | Also relevant for subtask 4: This API can retrieve zone lists, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 2] Get media, which can be used to display images or videos of nearby restaurants | Also relevant for subtask 3: get_media | Also relevant for subtask 4: This API can retrieve media, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 2] Check member details, which can be used to verify customer information for nearby restaurants | Also relevant for subtask 3: check_member_detail | Also relevant for subtask 4: This API can check member details, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 3] Extracts sitemap XML as JSON, which can include reviews."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "reason": "[Subtask 3] For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 3] get_all_event | Also relevant for subtask 4: This API can retrieve event details, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 3] get_all_coupon_link | Also relevant for subtask 4: This API can retrieve coupon links, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 3] get_detail_report | Also relevant for subtask 4: This API can generate detailed reports, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 3] order_coupon_report | Also relevant for subtask 4: This API can generate reports, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 4] This API can send links via email, which can be used for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 4] This API can create operators, which can be used to manage reservation requests sent via email."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 4] This API can keep coupon arrangements, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 4] This API can load feed answers, which can be sent via email for reservation requests."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 4] This API can save feed data, which can be sent via email for reservation requests."
+  }
+]
