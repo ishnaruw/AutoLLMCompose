@@ -1,0 +1,146 @@
+[
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "reason": "[Subtask 1] Generates Facebook Ad using AI | Also relevant for subtask 3: Generate Facebook Ad using AI | Also relevant for subtask 4: Generate Facebook Ad using AI for buy/sell signals"
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "reason": "[Subtask 1] Provides comparisons related to a queried keyword | Also relevant for subtask 3: This will give you comparisons releated to your queried keyword | Also relevant for subtask 4: This will give you comparisons releated to your queried keyword"
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 1] Extracts sitemap XML as JSON | Also relevant for subtask 3: Download and parse sitemap.xml files into JSON format | Also relevant for subtask 4: Extract Sitemap XML as JSON for analysis"
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "reason": "[Subtask 1] Extracts important header elements from a given URL | Also relevant for subtask 3: Extracts the important header elements from a given URL | Also relevant for subtask 4: Extracts the important header elements from a given URL for analysis"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 1] Get keyword suggestions from a keyword seed | Also relevant for subtask 3: Get keyword suggestions from a keyword seed. | Also relevant for subtask 4: Get keyword suggestions from a keyword seed for analysis"
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "reason": "[Subtask 1] Lorem"
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "reason": "[Subtask 1] Welcome"
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "reason": "[Subtask 1] Ease of access to us"
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "reason": "[Subtask 1] Place an order | Also relevant for subtask 2: Allows placing orders, useful for managing stock data."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 1] Keep coupon | Also relevant for subtask 2: Allows keeping coupon data, useful for managing stock data. | Also relevant for subtask 5: Keeps coupon arrangements that can be sent via email"
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "reason": "[Subtask 1] Provides keyword recommendations based on provided keywords, useful for stock market analysis."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "reason": "[Subtask 1] Provides questions related to a queried keyword, useful for stock market analysis."
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "reason": "[Subtask 2] Allows creating users with array input, useful for managing stock data."
+  },
+  {
+    "api_id": "publicapitestinginbox_createuser",
+    "reason": "[Subtask 2] Allows creating users, useful for managing stock data."
+  },
+  {
+    "api_id": "bobo_createuserswitharrayinput",
+    "reason": "[Subtask 2] Allows creating users with array input, useful for managing stock data."
+  },
+  {
+    "api_id": "privatepublicapi_createuser",
+    "reason": "[Subtask 2] Allows creating users, useful for managing stock data."
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "reason": "[Subtask 2] Allows retrieving a single pet by ID, useful for managing stock data."
+  },
+  {
+    "api_id": "publicapitestinginbox_updatepetwithform",
+    "reason": "[Subtask 2] Allows updating pet data with a form, useful for managing stock data."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 2] Allows saving information, useful for managing stock data."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 2] Allows creating operators, useful for managing stock data. | Also relevant for subtask 5: Creates operators that can be notified via email"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 2] Allows listing zones, useful for managing stock data. | Also relevant for subtask 5: Lists zones that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 2] Allows getting media data, useful for managing stock data. | Also relevant for subtask 4: Get media for analysis | Also relevant for subtask 5: Retrieves media that can be sent via email"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "reason": "[Subtask 3] H2H team comparison | Also relevant for subtask 4: H2H team comparison for analysis"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "reason": "[Subtask 3] Getting match lineups | Also relevant for subtask 4: Getting match lineups for analysis"
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "reason": "[Subtask 3] Returns remaining query quota. Can also be used to test an account."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "reason": "[Subtask 3] For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions"
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "reason": "[Subtask 3] Deposits and Withdrawals"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 3] Order coupon report | Also relevant for subtask 4: Order coupon report for analysis | Also relevant for subtask 5: Generates reports that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 3] Get all event | Also relevant for subtask 4: Get all events for analysis | Also relevant for subtask 5: Retrieves event details that can be sent via email"
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "reason": "[Subtask 4] Generate report PDF for analysis"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 4] Get all coupon links for analysis | Also relevant for subtask 5: Retrieves coupon links that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 5] Sends links via email"
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 5] Saves feed data that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 5] Loads feed answers that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 5] Checks member details that can be sent via email"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 5] Generates detailed reports that can be sent via email"
+  }
+]

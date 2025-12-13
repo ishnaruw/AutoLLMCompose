@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "I want to build a service that fetches weather data for a user\u2019s location and sends real-time weather alerts via SMS.",
+  "num_subtasks": 4
+}

@@ -1,0 +1,134 @@
+[
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 1] Can parse sitemap.xml files into JSON format, useful for extracting news articles. | Also relevant for subtask 2: Extract Sitemap XML as JSON | Also relevant for subtask 3: Can parse sitemap.xml files into JSON format"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 1] Can get keyword suggestions from a keyword seed, useful for finding news topics. | Also relevant for subtask 2: Get keyword suggestions from a keyword seed | Also relevant for subtask 3: Get keyword suggestions from a keyword seed."
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "reason": "[Subtask 1] Extracts important header elements from a given URL, useful for summarizing news articles. | Also relevant for subtask 2: Extracts the important header elements from a given URL | Also relevant for subtask 3: Extracts the important header elements from a given URL"
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "reason": "[Subtask 1] Generates Facebook Ad using AI, which can be adapted for news content. | Also relevant for subtask 2: Generate Facebook Ad using AI | Also relevant for subtask 3: Generate Facebook Ad using AI"
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "reason": "[Subtask 1] Provides comparisons related to a queried keyword, useful for news analysis. | Also relevant for subtask 2: This will give you comparisons releated to your queried keyword | Also relevant for subtask 3: This will give you comparisons releated to your queried keyword"
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 1] Provides weather data, which can be relevant for news articles."
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "reason": "[Subtask 1] Generates reports in PDF format, useful for compiling news articles. | Also relevant for subtask 2: Generate report PDF | Also relevant for subtask 3: Generate report PDF"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "reason": "[Subtask 1] Getting match lineups, which can be relevant for sports news."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] Fetches all events, which can be relevant for news about events. | Also relevant for subtask 2: Get all event"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] Fetches media, which can be relevant for news articles."
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "reason": "[Subtask 1] Provides keyword recommendations based on provided keywords | Also relevant for subtask 3: Provides keyword recommendations based on provided keywords, useful for compiling a digest."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "reason": "[Subtask 1] Provides questions related to a queried keyword"
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "reason": "[Subtask 2] Generate catchy captions for social media | Also relevant for subtask 3: Generate catchy captions for social media"
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "reason": "[Subtask 2] Returns remaining query quota"
+  },
+  {
+    "api_id": "catfactprompts_getfacts",
+    "reason": "[Subtask 2] Get facts"
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "reason": "[Subtask 2] Request deposit"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 2] Order coupon report"
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "reason": "[Subtask 3] Lorem"
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "reason": "[Subtask 3] welcome"
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "reason": "[Subtask 3] \u0633\u0647\u0648\u0644\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u064a\u0646\u0627"
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "reason": "[Subtask 3] Generates relevant ad headlines which can be used to compile a digest of summarized headlines."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 4] This API can send links via SMS"
+  },
+  {
+    "api_id": "atomic_sms_sender_send_message",
+    "reason": "[Subtask 4] This API is designed to send messages, which can be used to send SMS."
+  },
+  {
+    "api_id": "as_customers_customerid_orders_productid_numbers_range",
+    "reason": "[Subtask 4] Allows ordering phone numbers which can be used for SMS"
+  },
+  {
+    "api_id": "ai_voice_text_to_speech_with_celebrities_list_voices",
+    "reason": "[Subtask 4] Provides voices for text-to-speech which can be used to generate SMS content"
+  },
+  {
+    "api_id": "text2wav_text2wav_file_output",
+    "reason": "[Subtask 4] Converts text to audio which can be used for SMS"
+  },
+  {
+    "api_id": "kirin_vision_optical_character_recognition",
+    "reason": "[Subtask 4] Converts images to text which can be used to generate SMS content"
+  },
+  {
+    "api_id": "mad_gpt_api_chat_completion-2",
+    "reason": "[Subtask 4] Performs chat completion which can be used to generate SMS content"
+  },
+  {
+    "api_id": "openai_api_v1_image",
+    "reason": "[Subtask 4] Generates images which can be converted to text for SMS"
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "reason": "[Subtask 4] Creates descriptive images which can be converted to text for SMS"
+  },
+  {
+    "api_id": "lokingai_text_mask_filler_mask_filler_post",
+    "reason": "[Subtask 4] Fills in masked values in text which can be used for SMS"
+  },
+  {
+    "api_id": "ai_text_processing_array_similarities",
+    "reason": "[Subtask 4] Calculates similarities between texts which can be used for SMS content"
+  },
+  {
+    "api_id": "ai_writer_qr_code",
+    "reason": "[Subtask 4] Generates QR codes which can be included in SMS"
+  }
+]

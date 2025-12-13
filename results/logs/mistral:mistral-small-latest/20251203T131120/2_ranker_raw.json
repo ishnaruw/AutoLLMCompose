@@ -1,0 +1,147 @@
+[
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 8.5,
+    "reason": "Provides keyword recommendations which can be used to fetch recommended courses based on user preferences."
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 7.0,
+    "reason": "Offers comparisons related to queried keywords, useful for retrieving ratings and reviews for courses."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "score": 6.5,
+    "reason": "Provides questions related to queried keywords, which can help in understanding course details and reviews."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 5.0,
+    "reason": "Might be useful for checking enrollment deadlines if it can be adapted for educational events."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 4.5,
+    "reason": "Could potentially be used to gather detailed information about courses and their deadlines."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 4.0,
+    "reason": "Might be adapted to provide reminders or notifications about enrollment deadlines."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 3.5,
+    "reason": "Could be used to generate reports that might include enrollment deadlines."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 3.0,
+    "reason": "Might be useful for gathering media related to courses, but not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 2.5,
+    "reason": "Could be used to check user details, but not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 2.0,
+    "reason": "Not directly relevant to the goal of creating an education bot."
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 1.5,
+    "reason": "Generates Facebook ad copy, not directly relevant to the goal."
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 1.0,
+    "reason": "Generates social media captions, not directly relevant to the goal."
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 0.5,
+    "reason": "Extracts sitemap XML as JSON, not directly relevant to the goal."
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 0.5,
+    "reason": "Extracts header elements from a URL, not directly relevant to the goal."
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.5,
+    "reason": "Provides keyword suggestions, but not specifically tailored to educational content."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 0.5,
+    "reason": "Sends link coupons, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 0.5,
+    "reason": "Provides a list of zones, not directly relevant to the goal."
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": 0.5,
+    "reason": "Ease of access, but not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 0.5,
+    "reason": "Loads feed answers, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 0.5,
+    "reason": "Keeps coupon arrangements, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "score": 0.5,
+    "reason": "Gets shop type, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "score": 0.5,
+    "reason": "Gets media, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "score": 0.5,
+    "reason": "Gets sub-exhibition details, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "score": 0.5,
+    "reason": "Gets a single coupon, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "score": 0.5,
+    "reason": "Gets all coupons, not directly relevant to the goal."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "score": 0.5,
+    "reason": "Gets person details, not directly relevant to the goal."
+  },
+  {
+    "api_id": "dugimamama_david",
+    "score": 0.5,
+    "reason": "No clear description or relevance to the goal."
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": 0.5,
+    "reason": "No clear description or relevance to the goal."
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": 0.5,
+    "reason": "No clear description or relevance to the goal."
+  }
+]

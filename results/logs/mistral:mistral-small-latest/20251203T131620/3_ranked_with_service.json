@@ -1,0 +1,382 @@
+[
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 9.0,
+    "service": {
+      "api_id": "anadolu_generatereportpdf",
+      "category": "Advertising",
+      "name": "generateReportPdf",
+      "description": " ",
+      "method": "POST",
+      "url": "https://anadolu.p.rapidapi.com/v1/instagram/profile/nostrud proident qui eu Lorem/report/pdf",
+      "_file": "anadolu.json",
+      "_tool": "anadolu",
+      "qos": {
+        "rt_ms": 0.465,
+        "tp_rps": 96.774,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 7.0,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 6.0,
+    "service": {
+      "api_id": "keyword_suggestion_api_comparisons",
+      "category": "Advertising",
+      "name": "Comparisons",
+      "description": "This will give you comparisons releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/comparisons",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.132,
+        "tp_rps": 7.575,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 5.0,
+    "service": {
+      "api_id": "facebook_ad_facebook_ad_copy",
+      "category": "Advertising",
+      "name": "Facebook Ad Copy",
+      "description": "Generate Facebook Ad using AI",
+      "method": "GET",
+      "url": "https://facebook-ad.p.rapidapi.com/facebook-ad",
+      "_file": "facebook_ad.json",
+      "_tool": "facebook_ad",
+      "qos": {
+        "rt_ms": 2.307,
+        "tp_rps": 1.3,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 4.0,
+    "service": {
+      "api_id": "social_media_caption_social_media_caption",
+      "category": "Advertising",
+      "name": "Social Media Caption",
+      "description": "Generate catchy captions for social media",
+      "method": "GET",
+      "url": "https://social-media-caption.p.rapidapi.com/social-caption",
+      "_file": "social_media_caption.json",
+      "_tool": "social_media_caption",
+      "qos": {
+        "rt_ms": 0.9,
+        "tp_rps": 2.222,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 3.0,
+    "service": {
+      "api_id": "seo_head_extractor_head_extract",
+      "category": "Advertising",
+      "name": "Head Extract",
+      "description": "Extracts the important header elements from a given URL",
+      "method": "POST",
+      "url": "https://seo-head-extractor.p.rapidapi.com/",
+      "_file": "seo_head_extractor.json",
+      "_tool": "seo_head_extractor",
+      "qos": {
+        "rt_ms": 0.266,
+        "tp_rps": 30.075,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_event",
+      "category": "Advertising",
+      "name": "get_all_event",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_event",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.433,
+        "tp_rps": 6.928,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_detail_report",
+      "category": "Advertising",
+      "name": "get_detail_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_detail_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.471,
+        "tp_rps": 12.738,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_send_link_coupon",
+      "category": "Advertising",
+      "name": "send_link_coupon",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/shop/send_link_coupon",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.8525,
+        "tp_rps": 3.5185,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_coupon_link",
+      "category": "Advertising",
+      "name": "get_all_coupon_link",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_coupon_link",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.519,
+        "tp_rps": 9.633,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_order_coupon_report",
+      "category": "Advertising",
+      "name": "order_coupon_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/order_coupon_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 455.621,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_media",
+      "category": "Advertising",
+      "name": "get_media",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_media",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.818,
+        "tp_rps": 6.112,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_check_member_detail",
+      "category": "Advertising",
+      "name": "check_member_detail",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/check_member_detail",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.613,
+        "tp_rps": 3.262,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_create_operator",
+      "category": "Advertising",
+      "name": "create_operator",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/create_operator",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.505,
+        "tp_rps": 5.941,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_zone_list",
+      "category": "Advertising",
+      "name": "zone_list",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/zone_list",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 35.46,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_loadfeedans",
+      "category": "Advertising",
+      "name": "loadFeedAns",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/loadFeedAns",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 6.161,
+        "tp_rps": 493.7325,
+        "availability": 0.8997,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_keep_coupon_arr63",
+      "category": "Advertising",
+      "name": "keep_coupon_arr63",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/keep_coupon_arr",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.169,
+        "tp_rps": 47.337,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_provinces",
+      "category": "Advertising",
+      "name": "get_provinces",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_provinces",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.32,
+        "tp_rps": 9.374500000000001,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_reque_exhibition",
+      "category": "Advertising",
+      "name": "get_reque_exhibition",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_reque_exhibition",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.1265,
+        "tp_rps": 31.621,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  }
+]

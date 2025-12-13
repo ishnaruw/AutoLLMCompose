@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Create a tool that pulls interest rates, simulates repayment plans, and sends loan summaries to users.",
+  "num_subtasks": 4
+}

@@ -1,0 +1,74 @@
+[
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] Provides event data which may include parcel tracking information | Also relevant for subtask 2: May provide event data that can be used to predict ETA | Also relevant for subtask 3: Provides event data that can be monitored for status changes | Also relevant for subtask 4: Getting all events for notification"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 1] Can generate detailed reports which might include parcel tracking data | Also relevant for subtask 2: May provide detailed reports that can be used to predict ETA | Also relevant for subtask 3: Generates detailed reports that can be used to track status changes | Also relevant for subtask 4: Getting detailed reports for notification"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 1] Might include tracking information for sent coupons | Also relevant for subtask 4: Sending a link via email"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 1] Might include tracking information for coupon links | Also relevant for subtask 4: Getting all coupon links for notification"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 1] Can generate reports which might include parcel tracking data | Also relevant for subtask 2: May provide order data that can be used to predict ETA | Also relevant for subtask 3: Provides order and coupon reports that can be monitored for status changes | Also relevant for subtask 4: Generating coupon reports for notification"
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 1] Might include tracking information for check-ins"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] Might include tracking information for media related to parcels | Also relevant for subtask 2: May provide media data that can be used to predict ETA | Also relevant for subtask 3: Retrieves media data that can be monitored for status changes | Also relevant for subtask 4: Getting media for notification"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 1] Might include tracking information for operators handling parcels | Also relevant for subtask 2: May provide operator data that can be used to predict ETA | Also relevant for subtask 3: Creates operator data that can be monitored for status changes | Also relevant for subtask 4: Creating an operator for notification"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 1] Might include tracking information for zones related to parcel delivery | Also relevant for subtask 2: May provide zone data that can be used to predict ETA | Also relevant for subtask 3: Provides zone list data that can be monitored for status changes | Also relevant for subtask 4: Listing zones for targeted notifications"
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 1] Might include tracking information for kept coupons | Also relevant for subtask 2: May provide coupon data that can be used to predict ETA | Also relevant for subtask 3: Manages coupon data that can be monitored for status changes | Also relevant for subtask 4: Keeping coupon arrangements for notification"
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 1] Provides data retrieval capabilities which may include tracking data | Also relevant for subtask 2: Get provinces data for tracking | Also relevant for subtask 3: Provides tracking data for provinces"
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 1] Provides data retrieval capabilities which may include tracking data | Also relevant for subtask 3: Provides tracking data for exhibitions"
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 2] Provides weather data which can be used to predict ETA"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 2] May provide member details that can be used to predict ETA | Also relevant for subtask 3: Checks member details that can be monitored for status changes | Also relevant for subtask 4: Checking member details for notification"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 2] May provide feed data that can be used to predict ETA | Also relevant for subtask 3: Loads feed answers that can be monitored for status changes | Also relevant for subtask 4: Loading feed answers for notification content"
+  },
+  {
+    "api_id": "testingapiwithinorg_gettime",
+    "reason": "[Subtask 2] Retrieve the server time for latency measurement"
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 3] Provides tracking data for shop types"
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 4] Saving information titles for notification"
+  }
+]

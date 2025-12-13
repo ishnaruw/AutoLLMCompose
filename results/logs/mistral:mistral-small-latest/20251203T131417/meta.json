@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Design a service that checks whether a given URL is malicious or contains adult content before it opens in-browser.",
+  "num_subtasks": 3
+}

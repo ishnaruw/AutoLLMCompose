@@ -1,0 +1,182 @@
+[
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 0.9,
+    "reason": "This API can provide keyword recommendations which can be used to track stock prices and analyze trends."
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 0.8,
+    "reason": "This API can provide comparisons related to queried keywords, which can be useful for analyzing stock trends."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "score": 0.7,
+    "reason": "This API can provide questions related to queried keywords, which can be useful for generating insights into stock trends."
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 0.6,
+    "reason": "This API can extract important header elements from a given URL, which might be useful for gathering stock data."
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 0.5,
+    "reason": "This API can parse sitemap.xml files into JSON format, which might be useful for gathering and organizing stock data."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 0.4,
+    "reason": "This API is related to team comparisons, which might be useful for analyzing stock trends."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": 0.3,
+    "reason": "This API is related to getting match lineups, which might be useful for analyzing stock trends."
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "score": 0.2,
+    "reason": "This API returns remaining query quota, which might be useful for monitoring API usage."
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 0.1,
+    "reason": "This API generates Facebook Ad using AI, which is not directly relevant to the user goal."
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.1,
+    "reason": "This API gets keyword suggestions from a keyword seed, which might be useful for tracking stock prices."
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 0.1,
+    "reason": "This API generates a report PDF, which is not directly relevant to the user goal."
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "privatepublicapi_createuser",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "publicapitestinginbox_createuser",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "publicapitestinginbox_updatepetwithform",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "bobo_createuserswitharrayinput",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 0.1,
+    "reason": "This API is not relevant to the user goal."
+  }
+]

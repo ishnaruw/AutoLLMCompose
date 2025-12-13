@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "description": "Fetch user's location data"
+  },
+  {
+    "id": 2,
+    "description": "Retrieve weather data for the user's location"
+  },
+  {
+    "id": 3,
+    "description": "Process weather data to determine if alerts are needed"
+  },
+  {
+    "id": 4,
+    "description": "Send SMS alerts based on weather conditions"
+  }
+]

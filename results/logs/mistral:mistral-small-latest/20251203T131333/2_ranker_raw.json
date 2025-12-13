@@ -1,0 +1,142 @@
+[
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": 8.5,
+    "reason": "This API is related to financial transactions and may be useful for handling loan-related operations."
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "score": 7.0,
+    "reason": "This API can generate descriptive images, which might be useful for creating visual summaries of loan data."
+  },
+  {
+    "api_id": "eazy_ai_product_description_generator",
+    "score": 6.5,
+    "reason": "This API can generate product descriptions, which could be adapted to create loan summaries."
+  },
+  {
+    "api_id": "mad_gpt_4_0_8k_api_chat_completion_with_gpt_4_0_at_8k",
+    "score": 6.0,
+    "reason": "This API can perform chat completion, which might be useful for generating loan summaries or explanations."
+  },
+  {
+    "api_id": "ai_text_to_code_generation_explain_code",
+    "score": 5.5,
+    "reason": "This API explains code snippets, which might be useful for understanding loan calculation algorithms."
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 4.0,
+    "reason": "This API is related to keyword recommendations and may not be directly useful for loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 3.0,
+    "reason": "This API is related to event management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 3.0,
+    "reason": "This API is related to report generation but not specifically for financial data."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 3.0,
+    "reason": "This API is related to sending coupons and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 3.0,
+    "reason": "This API is related to coupon management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 3.0,
+    "reason": "This API is related to coupon reports and is not relevant to loan operations."
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 3.0,
+    "reason": "This API is related to generating PDF reports but not specifically for financial data."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 3.0,
+    "reason": "This API is related to feed management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 3.0,
+    "reason": "This API is related to media management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 3.0,
+    "reason": "This API is related to member management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 3.0,
+    "reason": "This API is related to operator management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 3.0,
+    "reason": "This API is related to zone management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 3.0,
+    "reason": "This API is related to feed management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 3.0,
+    "reason": "This API is related to coupon management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "score": 3.0,
+    "reason": "This API is related to province management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "score": 3.0,
+    "reason": "This API is related to exhibition management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_confirm_pay_credit",
+    "score": 3.0,
+    "reason": "This API is related to payment confirmation and might be relevant but not specifically for loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "score": 3.0,
+    "reason": "This API is related to shop type management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "score": 3.0,
+    "reason": "This API is related to media management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "score": 3.0,
+    "reason": "This API is related to exhibition management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "score": 3.0,
+    "reason": "This API is related to coupon management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "score": 3.0,
+    "reason": "This API is related to coupon management and is not relevant to loan operations."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "score": 3.0,
+    "reason": "This API is related to person management and is not relevant to loan operations."
+  }
+]

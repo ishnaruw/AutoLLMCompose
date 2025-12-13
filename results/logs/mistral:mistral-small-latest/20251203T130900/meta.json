@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Create a system that fetches top news, summarizes headlines using LLM, and sends SMS digests every morning.",
+  "num_subtasks": 4
+}

@@ -1,0 +1,134 @@
+[
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to get all events, which can include hotel bookings. | Also relevant for subtask 3: This API is related to events, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to send links or coupons, which can include hotel booking offers."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to get all coupon links, which can include hotel booking discounts. | Also relevant for subtask 3: This API is related to coupons, which can be used for local attractions."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to generate reports, which can include hotel booking statistics."
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to get media, which can include hotel images or videos. | Also relevant for subtask 3: This API is related to media, which can include information about local attractions."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to check member details, which can include hotel booking history."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to create operators, which can include hotel booking agents."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to get zone lists, which can include hotel locations. | Also relevant for subtask 3: This API is related to zones, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 1] This API is part of a ticketing system, which may include flight booking capabilities. | Also relevant for subtask 2: This API can be used to keep coupon arrangements, which can include hotel booking deals. | Also relevant for subtask 3: This API is related to coupons, which can be used for local attractions."
+  },
+  {
+    "api_id": "ticketpocket_book_coupon_zone",
+    "reason": "[Subtask 1] This API is related to booking, which is a key part of the subtask goal. | Also relevant for subtask 2: This API is related to booking, which is relevant for hotel reservations."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 2] This API can be used to get detailed reports, which can include hotel information."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 2] This API can be used to save information, which can include hotel preferences."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 3] This API is related to feeds, which can include information about local attractions."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 3] This API is related to exhibitions, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "reason": "[Subtask 3] This API is related to exhibitions, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "reason": "[Subtask 3] This API is related to shops, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 3] This API is related to shops, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "reason": "[Subtask 3] This API is related to media, which can include local attractions."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "reason": "[Subtask 3] This API is related to persons, which can include local attractions."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 4] Provides weather data with location"
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "reason": "[Subtask 4] Creates descriptive images with short prompts."
+  },
+  {
+    "api_id": "lokingai_text_question_answering_question_answering_post",
+    "reason": "[Subtask 4] Answer a list of questions based on the input text."
+  },
+  {
+    "api_id": "eazy_ai_product_description_generator",
+    "reason": "[Subtask 4] Crafts a concise product description for a specified product, service, or company."
+  },
+  {
+    "api_id": "ai_voice_text_to_speech_with_celebrities_list_voices",
+    "reason": "[Subtask 4] Returns a list of famous voices you can use to generate text."
+  },
+  {
+    "api_id": "document_scanner_document_scanner",
+    "reason": "[Subtask 4] Localizes document images with various distortion types from a single input image."
+  },
+  {
+    "api_id": "ai_text_to_code_generation_explain_code",
+    "reason": "[Subtask 4] Explains a snippet of code in natural language."
+  },
+  {
+    "api_id": "receipt_image_question_answering_receipt_question_answering",
+    "reason": "[Subtask 4] Ask a question about your receipt."
+  },
+  {
+    "api_id": "lokingai_image_classify_classify_post",
+    "reason": "[Subtask 4] Classify an uploaded image using an image classification model."
+  },
+  {
+    "api_id": "openai_api_v1_image",
+    "reason": "[Subtask 4] Given a prompt and/or an input image, the model will generate a new image."
+  },
+  {
+    "api_id": "kirin_vision_optical_character_recognition",
+    "reason": "[Subtask 4] Optical Character Recognition converts scanned images or images containing text into editable and searchable digital text."
+  },
+  {
+    "api_id": "ai_text_generator_prompt",
+    "reason": "[Subtask 4] This is just a basic prompt that you put in"
+  }
+]

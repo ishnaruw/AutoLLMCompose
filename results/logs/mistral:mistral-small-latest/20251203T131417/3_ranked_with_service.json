@@ -1,0 +1,362 @@
+[
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 9.0,
+    "service": {
+      "api_id": "seo_head_extractor_head_extract",
+      "category": "Advertising",
+      "name": "Head Extract",
+      "description": "Extracts the important header elements from a given URL",
+      "method": "POST",
+      "url": "https://seo-head-extractor.p.rapidapi.com/",
+      "_file": "seo_head_extractor.json",
+      "_tool": "seo_head_extractor",
+      "qos": {
+        "rt_ms": 0.266,
+        "tp_rps": 30.075,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 8.0,
+    "service": {
+      "api_id": "bing_keyword_planner_url_seed",
+      "category": "Advertising",
+      "name": "URL Seed",
+      "description": "Based on your provided keywords, this endpoint will return up to 3000 suitable keyword recommendations. Set up to 200 keywords and obtain the results that Bing Ads suggests for your query. Using this tool, you may obtain up to 3000 keyword ideas.",
+      "method": "GET",
+      "url": "https://bing-keyword-planner.p.rapidapi.com/urlseed",
+      "_file": "bing_keyword_planner.json",
+      "_tool": "bing_keyword_planner",
+      "qos": {
+        "rt_ms": 0.298,
+        "tp_rps": 10.067,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "score": 7.0,
+    "service": {
+      "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+      "category": "Advertising",
+      "name": "20+ Ad Headlines Generator",
+      "description": "Get relevant & Complint Google Ad headlines for SEM and PPC marketers, created by SEM Experts. Results include 10+ ad headlines, and are based on user inputs as well as A.I. Intelligence based on OpenAI's engine. \n\n**Detailed description:**\nThe Headlines generator endpoint uses advanced prompt engineering to analyze user inputs in the form of URL, subject, and important keywords to create high-quality ad headlines that are tailored to the product or service being advertised. By leveraging the advanced capabilities of OpenAI's ChatGPT engine, the endpoint is able to deliver top-of-the-line ad headlines that are optimized for relevance, clarity, and engagement.\n\n**Detailed Technical Documentation:**\nThe Headlines generator endpoint of AdCopy AI can be accessed through a GET request, with the following query parameters:\n\n**subject:** Required. A string of between 10 and 60 characters, which represents the \"value proposition\" of the product or service being advertised. The user is advised to provide keywords in a comma-delimited format.\n\n**url:** Required. A string that represents the URL of a page that describes the product or service being advertised. The API will fetch the content from the page and extract relevant keywords to help generate quality ads.\n\n**mostImportantKeywords:** Optional. A string of up to 100 characters, representing the most important keywords about the ad group being advertised. The presence of these keywords in the resulting content is not guaranteed.\n\n**language:** Optional. A string that represents the target audience's language in ISO-2 format (e.g. EN, IT, ES, etc.). The field is currently in alpha testing and may not provide results in the requested language.\n\n**country:** Optional. A string that represents the target audience's country in ISO-2 format (e.g. US, CA, IT, etc.). The field is currently in alpha testing and may not provide country-specific content.\n\n**exampleHeadlines:** Optional. A string of at most 200 characters, representing example headlines that the user may provide to fine-tune the results.\n\nThe endpoint will return up to 10 ad headlines that are tailored to the product or service being advertised. The headlines will be optimized for relevance, clarity, and engagement, leveraging the advanced capabilities of OpenAI's ChatGPT engine and Significat Prompt Optimization.",
+      "method": "POST",
+      "url": "https://adcopy-ai-google-ads-ai-text-generation.p.rapidapi.com/v1/adcopyai/headlines",
+      "_file": "adcopy_ai_google_ads_ai_text_generation.json",
+      "_tool": "adcopy_ai_google_ads_ai_text_generation",
+      "qos": {
+        "rt_ms": 0.472,
+        "tp_rps": 4.237,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 6.0,
+    "service": {
+      "api_id": "seo_automations_extract_sitemap_xml_as_json",
+      "category": "Advertising",
+      "name": "Extract Sitemap XML as JSON",
+      "description": "Are you looking for an API that can quickly and easily download and parse sitemap.xml files into JSON format? Look no further! Our API allows you to make a simple GET request, passing in the URL of a sitemap.xml file as a parameter. The API will handle the rest, downloading the file, parsing it into a JSON object, and returning the result in the response. And if you need a little extra information to help organize and navigate the URLs in the sitemap, we've got you covered there too. By adding a query parameter to the GET request, you can also include category and breadcrumb information for each URL in the parsed sitemap. Give it a try and see how much easier working with sitemaps can be!",
+      "method": "GET",
+      "url": "https://seo-automations.p.rapidapi.com/v1/seo/fetchsitemap/",
+      "_file": "seo_automations.json",
+      "_tool": "seo_automations",
+      "qos": {
+        "rt_ms": 0.118,
+        "tp_rps": 25.423,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 5.0,
+    "service": {
+      "api_id": "keyword_suggestion_api_comparisons",
+      "category": "Advertising",
+      "name": "Comparisons",
+      "description": "This will give you comparisons releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/comparisons",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.132,
+        "tp_rps": 7.575,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 4.0,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 3.0,
+    "service": {
+      "api_id": "pe_demo_view_ip_address",
+      "category": "Advertising",
+      "name": "View IP address",
+      "description": "View the IP address of the client in JSON format.",
+      "method": "GET",
+      "url": "https://pe-demo.p.rapidapi.com/ip",
+      "_file": "pe_demo.json",
+      "_tool": "pe_demo",
+      "qos": {
+        "rt_ms": 0.3765,
+        "tp_rps": 7.968999999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 2.0,
+    "service": {
+      "api_id": "privatepublicapi_getorderbyid",
+      "category": "Advertising",
+      "name": "getOrderById",
+      "description": "For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions",
+      "method": "GET",
+      "url": "https://privatepublicapi.p.rapidapi.com/store/order/{orderId}",
+      "_file": "privatepublicapi.json",
+      "_tool": "privatepublicapi",
+      "qos": {
+        "rt_ms": 0.441,
+        "tp_rps": 6.802,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 1.0,
+    "service": {
+      "api_id": "anadolu_generatereportpdf",
+      "category": "Advertising",
+      "name": "generateReportPdf",
+      "description": " ",
+      "method": "POST",
+      "url": "https://anadolu.p.rapidapi.com/v1/instagram/profile/nostrud proident qui eu Lorem/report/pdf",
+      "_file": "anadolu.json",
+      "_tool": "anadolu",
+      "qos": {
+        "rt_ms": 0.465,
+        "tp_rps": 96.774,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "score": 1.0,
+    "service": {
+      "api_id": "freeplanwithhardlimit_getpetbyid",
+      "category": "Advertising",
+      "name": "getPetById",
+      "description": "Returns a single pet",
+      "method": "GET",
+      "url": "https://freeplanwithhardlimit.p.rapidapi.com/pet/{petId}",
+      "_file": "freeplanwithhardlimit.json",
+      "_tool": "freeplanwithhardlimit",
+      "qos": {
+        "rt_ms": 0.29,
+        "tp_rps": null,
+        "availability": 0.9853,
+        "valid_qos": false
+      }
+    }
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "score": 1.0,
+    "service": {
+      "api_id": "asdfadsf_get_order",
+      "category": "Advertising",
+      "name": "Get Order",
+      "description": " ",
+      "method": "GET",
+      "url": "https://asdfadsf3.p.rapidapi.com/order/{id}",
+      "_file": "asdfadsf.json",
+      "_tool": "asdfadsf",
+      "qos": {
+        "rt_ms": 1.7765,
+        "tp_rps": 440.609,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": 1.0,
+    "service": {
+      "api_id": "bog_boi_api_lorem",
+      "category": "Advertising",
+      "name": "Lorem",
+      "description": "Lorem",
+      "method": "GET",
+      "url": "https://bog-boi-api.p.rapidapi.com/",
+      "_file": "bog_boi_api.json",
+      "_tool": "bog_boi_api",
+      "qos": {
+        "rt_ms": 0.571,
+        "tp_rps": 136.286,
+        "availability": 0.9764,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": 1.0,
+    "service": {
+      "api_id": "enjoylife_thank_you",
+      "category": "Advertising",
+      "name": "thank you",
+      "description": "welcome",
+      "method": "GET",
+      "url": "https://enjoylife.p.rapidapi.com/",
+      "_file": "enjoylife.json",
+      "_tool": "enjoylife",
+      "qos": {
+        "rt_ms": 0.184,
+        "tp_rps": 10.869,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 1.0,
+    "service": {
+      "api_id": "facebook_ad_facebook_ad_copy",
+      "category": "Advertising",
+      "name": "Facebook Ad Copy",
+      "description": "Generate Facebook Ad using AI",
+      "method": "GET",
+      "url": "https://facebook-ad.p.rapidapi.com/facebook-ad",
+      "_file": "facebook_ad.json",
+      "_tool": "facebook_ad",
+      "qos": {
+        "rt_ms": 2.307,
+        "tp_rps": 1.3,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": 1.0,
+    "service": {
+      "api_id": "abobakrashraf221_m1223saa",
+      "category": "Advertising",
+      "name": "m1223saa",
+      "description": "\u0633\u0647\u0648\u0644\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u064a\u0646\u0627",
+      "method": "GET",
+      "url": "https://abobakrashraf221.p.rapidapi.com/",
+      "_file": "abobakrashraf221.json",
+      "_tool": "abobakrashraf221",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 1.0,
+    "service": {
+      "api_id": "test_v2_some_operation_od-6",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "H2H team comparison",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/teams/head2head.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.12,
+        "tp_rps": 25.0,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": 1.0,
+    "service": {
+      "api_id": "test_v2_some_operation_od-5",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "Getting match lineups",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/matches/lineups.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.4775,
+        "tp_rps": 8.3765,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 1.0,
+    "service": {
+      "api_id": "social_media_caption_social_media_caption",
+      "category": "Advertising",
+      "name": "Social Media Caption",
+      "description": "Generate catchy captions for social media",
+      "method": "GET",
+      "url": "https://social-media-caption.p.rapidapi.com/social-caption",
+      "_file": "social_media_caption.json",
+      "_tool": "social_media_caption",
+      "qos": {
+        "rt_ms": 0.9,
+        "tp_rps": 2.222,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  }
+]

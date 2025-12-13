@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Build a tool that tracks stock prices, analyzes trends using ML, and emails buy/sell signals to users.",
+  "num_subtasks": 5
+}

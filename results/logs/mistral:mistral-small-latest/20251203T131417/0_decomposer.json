@@ -1,0 +1,14 @@
+[
+  {
+    "id": 1,
+    "description": "Check if the URL is malicious using a URL scanning API"
+  },
+  {
+    "id": 2,
+    "description": "Analyze the URL content for adult content using a content analysis API"
+  },
+  {
+    "id": 3,
+    "description": "Combine the results from the previous checks to determine if the URL is safe to open"
+  }
+]

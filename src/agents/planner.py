@@ -18,7 +18,7 @@ def _coerce_json(s: str) -> str:
 
 def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
     """
-    Compose an orchestration plan from ranked candidates.
+    Compose one or more alternative orchestration paths from ranked candidates.
 
     Inputs:
       - user_goal: the original natural language goal.
@@ -38,7 +38,46 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
               },
               ...
             ]
-      - subtasks: optional list of decomposed subtasks.
+      - subtasks: optional list of decomposed subtasks, for example:
+            [
+              {"id": 1, "description": "..."},
+              ...
+            ]
+
+    Expected LLM output (see prompts/planner.md for schema):
+      {
+        "paths": [
+          {
+            "path_id": <int>,
+            "path_score": <number>,
+            "summary": "...",
+            "steps": [
+              {
+                "step": <int>,
+                "api_id": "...",
+                "subtask_id": <int or null>,
+                "action": "...",
+                "why": "...",
+                "score": <number>,
+                "qos": <null or object copied from service.qos>
+              },
+              ...
+            ],
+            "subtask_coverage": [
+              {
+                "subtask_id": <int>,
+                "description": "...",
+                "steps": [<int, ...>],
+                "coverage": "full" | "partial" | "missing"
+              },
+              ...
+            ]
+          },
+          ...
+        ],
+        "selected_api_ids": [...],
+        "overall_rationale": "..."
+      }
 
     Behavior:
       - Builds a compact JSON payload with api_id, score, and the full service

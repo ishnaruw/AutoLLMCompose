@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Create a logistics tool that fetches parcel tracking data, predicts ETA, and emails the customer when status changes.",
+  "num_subtasks": 4
+}

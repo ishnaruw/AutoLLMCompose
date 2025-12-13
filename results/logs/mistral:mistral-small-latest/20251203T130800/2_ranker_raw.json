@@ -1,0 +1,152 @@
+[
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 9.0,
+    "reason": "Best match for fetching local events based on user interests."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "score": 8.0,
+    "reason": "Good match for fetching local events, though less specific than get_all_event."
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "score": 7.0,
+    "reason": "Potentially useful for fetching events, but less specific."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "score": 6.0,
+    "reason": "May be useful for fetching specific types of events."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 5.0,
+    "reason": "Could be used for event details, but not the best match."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 4.0,
+    "reason": "Useful for media related to events, but not for fetching events themselves."
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "score": 3.0,
+    "reason": "Useful for location data, but not directly for events."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "score": 2.0,
+    "reason": "Not directly related to fetching events."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_confirm_pay_credit",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_book_coupon_zone",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_save_doc_download",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "youtuber_success_estimator_estimate",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "deep_social_save_users_only_for_data_export_plan",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "instant_messaging_messages_info",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "workable_candidates",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  },
+  {
+    "api_id": "lokingai_text_question_answering_question_answering_post",
+    "score": 1.0,
+    "reason": "Not relevant for fetching or managing events."
+  }
+]

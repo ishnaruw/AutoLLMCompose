@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Design a system that tracks trending hashtags, top influencers, and returns a daily engagement summary.",
+  "num_subtasks": 4
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "description": "Detect user's location and determine if they are in a shopping area"
+  },
+  {
+    "id": 2,
+    "description": "Retrieve active retail coupons relevant to the shopping area"
+  },
+  {
+    "id": 3,
+    "description": "Send push notification with the relevant coupons"
+  },
+  {
+    "id": 4,
+    "description": "Send SMS with the relevant coupons"
+  }
+]

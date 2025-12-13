@@ -1,0 +1,127 @@
+[
+  {
+    "api_id": "asdfadsf_get_products_in_category",
+    "score": 9.5,
+    "reason": "Best match for fetching product data from eCommerce platforms."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 8.0,
+    "reason": "Good for fetching order details, which can include product data."
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "score": 7.5,
+    "reason": "Useful for fetching order information, which may include product data."
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "score": 7.0,
+    "reason": "Can be used to place orders, which might include product data."
+  },
+  {
+    "api_id": "privatepublicapi_addpet",
+    "score": 6.5,
+    "reason": "Can add pets to the store, which might be relevant for product management."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 6.0,
+    "reason": "Might be useful for managing product zones or categories."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 5.5,
+    "reason": "Could be used for managing operators, which might be relevant for product management."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 5.0,
+    "reason": "Might be useful for checking member details, which could include product data."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 4.5,
+    "reason": "Could be used for fetching media related to products."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 4.0,
+    "reason": "Might be useful for generating reports on product coupons."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 3.5,
+    "reason": "Could be used for fetching coupon links related to products."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 3.0,
+    "reason": "Might be useful for sending coupon links related to products."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 2.5,
+    "reason": "Could be used for saving product information."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 2.0,
+    "reason": "Might be useful for generating detailed reports on products."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 1.5,
+    "reason": "Not directly relevant to product data fetching."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 1.0,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 0.5,
+    "reason": "Not directly relevant to product data fetching or management."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 0.5,
+    "reason": "Not directly relevant to product data fetching or management."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 0.5,
+    "reason": "Not directly relevant to product data fetching or management."
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "bobo_createuserswitharrayinput",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "publicapitestinginbox_createuser",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "privatepublicapi_createuser",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "score": 0.5,
+    "reason": "Not relevant to product data fetching or management."
+  }
+]

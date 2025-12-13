@@ -1,0 +1,174 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] View the IP address of the client in JSON format."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 1] GET INFO DATA with location | Also relevant for subtask 2: GET INFO DATA with location | Also relevant for subtask 3: Provides weather data with location | Also relevant for subtask 4: Provides weather data which can be used to trigger SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 1] Fetches provinces which can be used to determine user's location"
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 1] Fetches shop types which can be used to determine user's location"
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "reason": "[Subtask 1] Fetches person data which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "reason": "[Subtask 1] Fetches media data which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "reason": "[Subtask 1] Fetches all coupons which can include location-specific offers"
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "reason": "[Subtask 1] Fetches a specific coupon which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "reason": "[Subtask 1] Fetches sub-exhibition data which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 1] Fetches exhibition data which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "reason": "[Subtask 1] Fetches all shops which can include location information"
+  },
+  {
+    "api_id": "ticketpocket_checkshopdetail",
+    "reason": "[Subtask 1] Fetches shop details which can include location information"
+  },
+  {
+    "api_id": "testingapiwithinorg_gettime",
+    "reason": "[Subtask 2] Retrieve the server time, which can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "short_link_shopee_v_d_1",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "autosub_brotli",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data. | Also relevant for subtask 3: Testing auto subscription, potentially useful for automated weather data processing."
+  },
+  {
+    "api_id": "my_api_test",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "boossti_boossti",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "genius_artists",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "privatepublicapi_createuserswitharrayinput",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "ticketpocket_save_doc_download",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data."
+  },
+  {
+    "api_id": "workable_candidates",
+    "reason": "[Subtask 2] Can be used to infer location-based weather data. | Also relevant for subtask 3: Creating a candidate, potentially useful for processing weather data alerts."
+  },
+  {
+    "api_id": "ai_based_text_paraphrasing_text",
+    "reason": "[Subtask 2] It can accept any text."
+  },
+  {
+    "api_id": "ai_1001fx_functions_tldr_wrapup",
+    "reason": "[Subtask 2] Summarizes long texts into shorter paragraphs."
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "reason": "[Subtask 3] Provides keyword recommendations based on provided keywords, useful for processing weather data."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "reason": "[Subtask 3] Provides questions related to a queried keyword, useful for processing weather data."
+  },
+  {
+    "api_id": "testing_random_number_fact",
+    "reason": "[Subtask 3] Provides random number facts, which can be useful for processing weather data."
+  },
+  {
+    "api_id": "atomic_sms_sender_send_message",
+    "reason": "[Subtask 3] Can be used to send alerts based on processed weather data."
+  },
+  {
+    "api_id": "instant_messaging_messages_info",
+    "reason": "[Subtask 3] Allows getting information for sent instant messages, useful for sending weather alerts."
+  },
+  {
+    "api_id": "publicapitestinginbox_getorderbyid",
+    "reason": "[Subtask 3] Can be used to retrieve specific data, useful for processing weather data."
+  },
+  {
+    "api_id": "lokingai_text_question_answering_question_answering_post",
+    "reason": "[Subtask 3] Answer a list of questions based on the input text."
+  },
+  {
+    "api_id": "receipt_image_question_answering_receipt_question_answering",
+    "reason": "[Subtask 3] Ask a question about your receipt."
+  },
+  {
+    "api_id": "kirin_vision_optical_character_recognition",
+    "reason": "[Subtask 3] Optical Character Recognition converts scanned images or images containing text into editable and searchable digital text."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 4] Can be used to send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 4] Can be used to manage and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 4] Can be used to generate reports and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 4] Can be used to check in and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 4] Can be used to save feed data and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 4] Can be used to keep coupon data and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 4] Can be used to manage zones and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 4] Can be used to create operators and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 4] Can be used to get media data and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 4] Can be used to check member details and send SMS alerts"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 4] Can be used to load feed answers and send SMS alerts"
+  }
+]

@@ -1,0 +1,122 @@
+[
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] API for fetching all events | Also relevant for subtask 2: Allows retrieval of all events, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve all events, which can then be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions provinces and location data | Also relevant for subtask 4: This API is part of the ticketpocket tool, which may have calendar-related functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions exhibition and event data | Also relevant for subtask 4: This API is part of the ticketpocket tool, which may have calendar-related functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions shop type and categorization"
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions sub-exhibition and event data"
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions all shops and comprehensive data"
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings. | Also relevant for subtask 3: Mentions all coupons and promotional data"
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings."
+  },
+  {
+    "api_id": "ticketpocket_save_doc_download",
+    "reason": "[Subtask 1] This API is part of a ticketing system that may include event listings."
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "reason": "[Subtask 1] Creates descriptive images with short prompts."
+  },
+  {
+    "api_id": "lokingai_text_question_answering_question_answering_post",
+    "reason": "[Subtask 1] Answer a list of questions based on the input text."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 2] Allows retrieval of all coupon links, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve all coupon links, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 2] Allows retrieval of media, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve media related to events, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 2] Allows retrieval of zone lists, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve zone lists, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 2] Allows retrieval of feed answers, which can be added to a calendar."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 2] Allows retrieval of coupon arrangements, which can be added to a calendar. | Also relevant for subtask 4: This API can keep coupon arrangements, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 2] Allows retrieval of detailed reports, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve detailed reports of events, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 2] Allows retrieval of order coupon reports, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve coupon reports, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 2] Allows retrieval of member details, which can be added to a calendar. | Also relevant for subtask 4: This API can retrieve member details, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 2] Allows retrieval of operator details, which can be added to a calendar. | Also relevant for subtask 4: This API can create operators, which can be synced to Google Calendar."
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 2] Allows retrieval of check-in details, which can be added to a calendar."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 2] Allows retrieval of coupon links, which can be added to a calendar."
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "reason": "[Subtask 3] Mentions Google Ads and AI text generation"
+  },
+  {
+    "api_id": "youtuber_success_estimator_estimate",
+    "reason": "[Subtask 3] Mentions YouTube and analytics"
+  },
+  {
+    "api_id": "deep_social_save_users_only_for_data_export_plan",
+    "reason": "[Subtask 3] Mentions data export and user management"
+  },
+  {
+    "api_id": "instant_messaging_messages_info",
+    "reason": "[Subtask 3] Mentions instant messaging and message information"
+  },
+  {
+    "api_id": "workable_candidates",
+    "reason": "[Subtask 3] Mentions candidates and job management"
+  },
+  {
+    "api_id": "ticketpocket_book_coupon_zone",
+    "reason": "[Subtask 3] Mentions coupon and zone management"
+  },
+  {
+    "api_id": "ticketpocket_confirm_pay_credit",
+    "reason": "[Subtask 4] This API is part of the ticketpocket tool, which may have calendar-related functionalities."
+  }
+]

@@ -1,0 +1,102 @@
+[
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "reason": "[Subtask 1] Fetches order data by ID, relevant for eCommerce product data | Also relevant for subtask 3: Retrieves order data by ID, which can be used to monitor price changes."
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "reason": "[Subtask 1] Retrieves order information, useful for eCommerce product data | Also relevant for subtask 3: Retrieves order data by ID, which can be used to monitor price changes."
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "reason": "[Subtask 1] Places an order, which can be used to fetch product data from eCommerce platforms | Also relevant for subtask 2: Place an order"
+  },
+  {
+    "api_id": "privatepublicapi_createuser",
+    "reason": "[Subtask 1] Creates a user, which can be used to interact with eCommerce platforms for product data | Also relevant for subtask 2: Create a user"
+  },
+  {
+    "api_id": "publicapitestinginbox_createuser",
+    "reason": "[Subtask 1] Creates a user, which can be used to interact with eCommerce platforms for product data | Also relevant for subtask 2: Create a user"
+  },
+  {
+    "api_id": "bobo_createuserswitharrayinput",
+    "reason": "[Subtask 1] Creates users with array input, which can be used to interact with eCommerce platforms for product data | Also relevant for subtask 2: Create users with array input"
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "reason": "[Subtask 1] Returns a single pet, which can be analogous to fetching product data | Also relevant for subtask 3: Retrieves pet data by ID, which can be used to monitor price changes."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] Fetches media data, which can be relevant for eCommerce product data | Also relevant for subtask 2: Get media | Also relevant for subtask 3: Retrieves media data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending media information via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 1] Fetches zone list, which can be relevant for eCommerce product data | Also relevant for subtask 2: List zones | Also relevant for subtask 3: Retrieves zone list data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending zone lists via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 1] Generates order coupon report, which can be relevant for eCommerce product data | Also relevant for subtask 3: Retrieves order coupon report data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending reports via email or notification"
+  },
+  {
+    "api_id": "asdfadsf_get_products_in_category",
+    "reason": "[Subtask 1] Fetches products in a specific category from an eCommerce platform"
+  },
+  {
+    "api_id": "privatepublicapi_addpet",
+    "reason": "[Subtask 1] Adds a new pet to the store, which can be considered as a product"
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "reason": "[Subtask 2] Create users with array input"
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 2] Save info title"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 2] Create an operator | Also relevant for subtask 4: Sending operator information via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 2] Get all events | Also relevant for subtask 3: Retrieves all event data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending event information via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 2] Get all coupon links | Also relevant for subtask 3: Retrieves all coupon link data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending coupon links via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 2] Check member detail | Also relevant for subtask 3: Retrieves member detail data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending member details via email or notification"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "reason": "[Subtask 3] Retrieves team comparison data, which can be used to monitor price changes."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "reason": "[Subtask 3] Retrieves match lineups, which can be used to monitor price changes."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 3] Retrieves detail report data, which can be used to monitor price changes. | Also relevant for subtask 4: Sending detailed reports via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 4] Sending links via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 4] Sending feeds via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 4] Sending feed answers via email or notification"
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 4] Sending coupon arrangements via email or notification"
+  }
+]

@@ -1,0 +1,301 @@
+{
+  "paths": [
+    {
+      "path_id": 1,
+      "path_score": 8.5,
+      "summary": "This path uses the highest-scoring API to generate a report PDF, which can be adapted to include trending hashtags, top influencers, and daily engagement statistics.",
+      "steps": [
+        {
+          "step": 1,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 1,
+          "action": "Generate a report PDF that includes trending hashtags.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include trending hashtags.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 2,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 2,
+          "action": "Generate a report PDF that includes top influencers.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include top influencers.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 3,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 3,
+          "action": "Generate a report PDF that includes daily engagement statistics.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include daily engagement statistics.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 4,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 4,
+          "action": "Aggregate and format the data into a daily engagement summary.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include a daily engagement summary.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        }
+      ],
+      "subtask_coverage": [
+        {
+          "subtask_id": 1,
+          "description": "Fetch trending hashtags from a social media API",
+          "steps": [
+            1
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 2,
+          "description": "Retrieve top influencers based on engagement metrics from a social media API",
+          "steps": [
+            2
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 3,
+          "description": "Compile daily engagement statistics from a social media API",
+          "steps": [
+            3
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 4,
+          "description": "Aggregate and format the data into a daily engagement summary",
+          "steps": [
+            4
+          ],
+          "coverage": "full"
+        }
+      ]
+    },
+    {
+      "path_id": 2,
+      "path_score": 7.0,
+      "summary": "This path uses the Keyword Suggestions API to fetch trending hashtags and top influencers, and then generates a report PDF.",
+      "steps": [
+        {
+          "step": 1,
+          "api_id": "keyword_suggestions_keyword_suggestions",
+          "subtask_id": 1,
+          "action": "Fetch trending hashtags using keyword suggestions.",
+          "why": "This API has a score of 7.0 and is suitable for getting keyword suggestions, which can be adapted to include trending hashtags.",
+          "score": 7.0,
+          "qos": {
+            "rt_ms": 1.484,
+            "tp_rps": 1.347,
+            "availability": 0.9823,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 2,
+          "api_id": "keyword_suggestions_keyword_suggestions",
+          "subtask_id": 2,
+          "action": "Retrieve top influencers using keyword suggestions.",
+          "why": "This API has a score of 7.0 and is suitable for getting keyword suggestions, which can be adapted to include top influencers.",
+          "score": 7.0,
+          "qos": {
+            "rt_ms": 1.484,
+            "tp_rps": 1.347,
+            "availability": 0.9823,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 3,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 3,
+          "action": "Generate a report PDF that includes daily engagement statistics.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include daily engagement statistics.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 4,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 4,
+          "action": "Aggregate and format the data into a daily engagement summary.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include a daily engagement summary.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        }
+      ],
+      "subtask_coverage": [
+        {
+          "subtask_id": 1,
+          "description": "Fetch trending hashtags from a social media API",
+          "steps": [
+            1
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 2,
+          "description": "Retrieve top influencers based on engagement metrics from a social media API",
+          "steps": [
+            2
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 3,
+          "description": "Compile daily engagement statistics from a social media API",
+          "steps": [
+            3
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 4,
+          "description": "Aggregate and format the data into a daily engagement summary",
+          "steps": [
+            4
+          ],
+          "coverage": "full"
+        }
+      ]
+    },
+    {
+      "path_id": 3,
+      "path_score": 6.5,
+      "summary": "This path uses the Comparisons API to fetch trending hashtags and top influencers, and then generates a report PDF.",
+      "steps": [
+        {
+          "step": 1,
+          "api_id": "keyword_suggestion_api_comparisons",
+          "subtask_id": 1,
+          "action": "Fetch trending hashtags using comparisons.",
+          "why": "This API has a score of 6.0 and is suitable for getting comparisons, which can be adapted to include trending hashtags.",
+          "score": 6.0,
+          "qos": {
+            "rt_ms": 0.132,
+            "tp_rps": 7.575,
+            "availability": 0.9971,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 2,
+          "api_id": "keyword_suggestion_api_comparisons",
+          "subtask_id": 2,
+          "action": "Retrieve top influencers using comparisons.",
+          "why": "This API has a score of 6.0 and is suitable for getting comparisons, which can be adapted to include top influencers.",
+          "score": 6.0,
+          "qos": {
+            "rt_ms": 0.132,
+            "tp_rps": 7.575,
+            "availability": 0.9971,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 3,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 3,
+          "action": "Generate a report PDF that includes daily engagement statistics.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include daily engagement statistics.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        },
+        {
+          "step": 4,
+          "api_id": "anadolu_generatereportpdf",
+          "subtask_id": 4,
+          "action": "Aggregate and format the data into a daily engagement summary.",
+          "why": "This API has the highest score (9.0) and is suitable for generating reports, which can be adapted to include a daily engagement summary.",
+          "score": 9.0,
+          "qos": {
+            "rt_ms": 0.465,
+            "tp_rps": 96.774,
+            "availability": 0.9912,
+            "valid_qos": true
+          }
+        }
+      ],
+      "subtask_coverage": [
+        {
+          "subtask_id": 1,
+          "description": "Fetch trending hashtags from a social media API",
+          "steps": [
+            1
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 2,
+          "description": "Retrieve top influencers based on engagement metrics from a social media API",
+          "steps": [
+            2
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 3,
+          "description": "Compile daily engagement statistics from a social media API",
+          "steps": [
+            3
+          ],
+          "coverage": "full"
+        },
+        {
+          "subtask_id": 4,
+          "description": "Aggregate and format the data into a daily engagement summary",
+          "steps": [
+            4
+          ],
+          "coverage": "full"
+        }
+      ]
+    }
+  ],
+  "selected_api_ids": [
+    "anadolu_generatereportpdf",
+    "keyword_suggestions_keyword_suggestions",
+    "keyword_suggestion_api_comparisons"
+  ],
+  "overall_rationale": "The paths presented use the highest-scoring APIs to achieve the user goal of tracking trending hashtags, top influencers, and returning a daily engagement summary. The first path uses the Anadolu Generate Report PDF API for all steps, which has the highest score and is suitable for generating comprehensive reports. The second path uses the Keyword Suggestions API for fetching trending hashtags and top influencers, and the Anadolu Generate Report PDF API for generating the report. The third path uses the Comparisons API for fetching trending hashtags and top influencers, and the Anadolu Generate Report PDF API for generating the report. These paths differ in their approach to fetching trending hashtags and top influencers, but all use the highest-scoring API for generating the final report."
+}

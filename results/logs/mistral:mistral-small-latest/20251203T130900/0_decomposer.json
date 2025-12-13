@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "description": "Fetch top news articles using a news API"
+  },
+  {
+    "id": 2,
+    "description": "Summarize the headlines using an LLM API"
+  },
+  {
+    "id": 3,
+    "description": "Compile the summarized headlines into a digest"
+  },
+  {
+    "id": 4,
+    "description": "Send the digest via SMS using an SMS API"
+  }
+]

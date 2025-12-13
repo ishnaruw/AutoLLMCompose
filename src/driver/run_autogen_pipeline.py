@@ -158,13 +158,14 @@ def run_autogen_once(user_goal: str, with_qos: bool):
         subtasks=subtasks,
     )
 
-    # 6) LOGS
+    # 6) LOGS (step-numbered for easier navigation)
     out = _run_dir(model_tag)
-    (out / "decomposer_autogen.json").write_text(json.dumps(subtasks, indent=2))
-    (out / "retriever_autogen.json").write_text(json.dumps(picks, indent=2))
-    (out / "ranker_autogen.json").write_text(json.dumps(ranked, indent=2))
-    (out / "ranked_for_planner.json").write_text(json.dumps(ranked_top, indent=2))
-    (out / "planner_autogen.json").write_text(json.dumps(plan, indent=2))
+
+    (out / "0_decomposer.json").write_text(json.dumps(subtasks, indent=2))
+    (out / "1_retriever.json").write_text(json.dumps(picks, indent=2))
+    (out / "2_ranker_raw.json").write_text(json.dumps(ranked, indent=2))
+    (out / "3_ranked_with_service.json").write_text(json.dumps(ranked_top, indent=2))
+    (out / "4_planner.json").write_text(json.dumps(plan, indent=2))
     (out / "meta.json").write_text(json.dumps({
         "model_tag": model_tag,
         "provider": model_tag.split(":")[0],
@@ -174,17 +175,70 @@ def run_autogen_once(user_goal: str, with_qos: bool):
         "num_subtasks": len(subtasks),
     }, indent=2))
 
-
     print(f"Saved to {out}")
     return ranked, plan
 
 
 if __name__ == "__main__":
-    # Example single run with an intentionally cross-category goal
-    run_autogen_once(
-        user_goal=(
-            "Build a service that uses a user’s location to discover restaurants, "
-            "show reviews, and offer reservations via email."
-        ),
-        with_qos=True,
-    )
+    # List of user queries to run through the pipeline
+    USER_QUERIES = [
+        # 1. Weather Alerts via SMS
+        "I want to build a service that fetches weather data for a user’s location and sends real-time weather alerts via SMS.",
+
+        # 2. Nearby Restaurant Finder + Reservation
+        "Build a service that uses a user’s location to discover restaurants, show reviews, and offer reservations via email.",
+
+        # 3. Cybersecurity Alert System
+        "Create a dashboard that checks domains for threats using threat intelligence APIs and sends alerts to admins via SMS.",
+
+        # 4. Travel Planner with Tourist Spots
+        "Design a travel app that books flights, suggests hotels, shows top-rated local attractions, and displays weather info.",
+
+        # 5. Stock Analyzer + Buy/Sell Alerts
+        "Build a tool that tracks stock prices, analyzes trends using ML, and emails buy/sell signals to users.",
+
+        # 6. Event Finder with Calendar Sync
+        "Build a service that finds local events based on interests and syncs selected ones to the user’s Google Calendar.",
+
+        # 7. News Summarizer with SMS Briefing
+        "Create a system that fetches top news, summarizes headlines using LLM, and sends SMS digests every morning.",
+
+        # 8. Price Tracker for eCommerce Products
+        "Build a bot that tracks product prices across multiple eCommerce platforms and sends alerts when prices drop.",
+
+        # 9. Online Course Recommendation Assistant
+        "Create an education bot that suggests courses, checks ratings, and reminds users about enrollment via email.",
+
+        # 10. Gym Finder with Booking
+        "Build a service that lists gyms near a user’s location, compares pricing plans, and enables mobile booking.",
+
+        # 11. Loan Simulator with Email Report
+        "Create a tool that pulls interest rates, simulates repayment plans, and sends loan summaries to users.",
+
+        # 12. Content Safety Filter for Web Links
+        "Design a service that checks whether a given URL is malicious or contains adult content before it opens in-browser.",
+
+        # 13. Retail Promotions via Geo-Fencing
+        "Build a mobile app that detects when a user enters a shopping area and sends active retail coupons via push or SMS.",
+
+        # 14. Social Media Topic Tracker
+        "Design a system that tracks trending hashtags, top influencers, and returns a daily engagement summary.",
+
+        # 15. Delivery Status Tracker with Email Updates
+        "Create a logistics tool that fetches parcel tracking data, predicts ETA, and emails the customer when status changes.",
+    ]
+
+    # Run all queries one by one through the pipeline
+    with_qos = True  # or False, depending on the experiment
+
+    for i, query in enumerate(USER_QUERIES, start=1):
+        print("\n" + "=" * 80)
+        print(f"Running query {i}/{len(USER_QUERIES)}")
+        print(f"User goal: {query}")
+        print("=" * 80)
+
+        run_autogen_once(
+            user_goal=query,
+            with_qos=with_qos,
+        )
+

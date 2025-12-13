@@ -1,0 +1,8 @@
+{
+  "model_tag": "mistral:mistral-small-latest",
+  "provider": "mistral",
+  "model": "mistral-small-latest",
+  "with_qos": true,
+  "user_goal": "Build a bot that tracks product prices across multiple eCommerce platforms and sends alerts when prices drop.",
+  "num_subtasks": 4
+}

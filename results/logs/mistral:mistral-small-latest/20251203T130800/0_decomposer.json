@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "description": "Fetch local events based on user interests using an events API"
+  },
+  {
+    "id": 2,
+    "description": "Allow user to select events they want to add to their calendar"
+  },
+  {
+    "id": 3,
+    "description": "Authenticate with Google Calendar API using OAuth 2.0"
+  },
+  {
+    "id": 4,
+    "description": "Sync selected events to the user\u2019s Google Calendar using the Google Calendar API"
+  }
+]

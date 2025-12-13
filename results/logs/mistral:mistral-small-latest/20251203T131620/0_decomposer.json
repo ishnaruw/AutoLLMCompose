@@ -1,0 +1,18 @@
+[
+  {
+    "id": 1,
+    "description": "Fetch trending hashtags from a social media API"
+  },
+  {
+    "id": 2,
+    "description": "Retrieve top influencers based on engagement metrics from a social media API"
+  },
+  {
+    "id": 3,
+    "description": "Compile daily engagement statistics from a social media API"
+  },
+  {
+    "id": 4,
+    "description": "Aggregate and format the data into a daily engagement summary"
+  }
+]

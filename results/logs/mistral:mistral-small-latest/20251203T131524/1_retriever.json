@@ -1,0 +1,106 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] View the IP address of the client in JSON format."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 1] GET INFO DATA with location"
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "reason": "[Subtask 1] This API can help determine the type of shop, which can indicate if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "reason": "[Subtask 1] This API can help identify exhibitions, which can be related to shopping areas."
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "reason": "[Subtask 1] This API can provide information about all shops, which can help determine if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 1] This API can help identify exhibitions, which can be related to shopping areas."
+  },
+  {
+    "api_id": "ticketpocket_get_coupon_one",
+    "reason": "[Subtask 1] This API can provide information about coupons, which are often associated with shopping areas. | Also relevant for subtask 2: Retrieves a specific coupon, relevant for active retail coupons"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon",
+    "reason": "[Subtask 1] This API can provide information about all coupons, which can help determine if the user is in a shopping area. | Also relevant for subtask 2: Retrieves all coupons, relevant for active retail coupons"
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "reason": "[Subtask 1] This API can provide information about persons, which can help determine if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_checkshopdetail",
+    "reason": "[Subtask 1] This API can provide detailed information about shops, which can help determine if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "reason": "[Subtask 1] This API can provide information about media, which can help determine if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_slidenearshops",
+    "reason": "[Subtask 1] This API is related to shops and might help in determining if the user is in a shopping area."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 2] Sends a link to a coupon | Also relevant for subtask 3: Sends a link with a coupon | Also relevant for subtask 4: Sends link coupons"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 2] Retrieves all coupon links | Also relevant for subtask 3: Retrieves all coupon links | Also relevant for subtask 4: Gets all coupon links"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 2] Generates a report on ordered coupons | Also relevant for subtask 3: Generates a report on coupon orders | Also relevant for subtask 4: Orders coupon report"
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 2] Keeps a coupon in an array | Also relevant for subtask 3: Keeps coupon arrangements | Also relevant for subtask 4: Keeps coupon array"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 2] Retrieves all events, which may include retail events with coupons | Also relevant for subtask 3: Retrieves all events, potentially useful for event-based notifications | Also relevant for subtask 4: Gets all events"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 2] Generates a detailed report, which may include coupon information | Also relevant for subtask 4: Gets detail report"
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 2] Saves information about a title, which may include coupon details | Also relevant for subtask 4: Saves info title"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 2] Creates an operator, which may be involved in coupon management | Also relevant for subtask 3: Creates an operator, potentially useful for managing notifications | Also relevant for subtask 4: Creates operator"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 2] Lists zones, which may include retail areas with active coupons | Also relevant for subtask 3: Lists zones, potentially useful for targeted notifications | Also relevant for subtask 4: Lists zones"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 2] Retrieves media, which may include promotional materials for coupons | Also relevant for subtask 3: Retrieves media, potentially useful for notifications | Also relevant for subtask 4: Gets media"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 3] Checks member details, potentially useful for personalized notifications | Also relevant for subtask 4: Checks member detail"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 3] Loads feed answers, potentially useful for content notifications"
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 3] Saves feed data, potentially useful for content notifications"
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 3] Checks in with KCR, potentially useful for event-based notifications | Also relevant for subtask 4: Checks in KCR"
+  }
+]

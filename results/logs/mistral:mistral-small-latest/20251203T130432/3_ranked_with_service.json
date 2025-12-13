@@ -1,0 +1,682 @@
+[
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 9.0,
+    "service": {
+      "api_id": "seo_head_extractor_head_extract",
+      "category": "Advertising",
+      "name": "Head Extract",
+      "description": "Extracts the important header elements from a given URL",
+      "method": "POST",
+      "url": "https://seo-head-extractor.p.rapidapi.com/",
+      "_file": "seo_head_extractor.json",
+      "_tool": "seo_head_extractor",
+      "qos": {
+        "rt_ms": 0.266,
+        "tp_rps": 30.075,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 8.5,
+    "service": {
+      "api_id": "seo_automations_extract_sitemap_xml_as_json",
+      "category": "Advertising",
+      "name": "Extract Sitemap XML as JSON",
+      "description": "Are you looking for an API that can quickly and easily download and parse sitemap.xml files into JSON format? Look no further! Our API allows you to make a simple GET request, passing in the URL of a sitemap.xml file as a parameter. The API will handle the rest, downloading the file, parsing it into a JSON object, and returning the result in the response. And if you need a little extra information to help organize and navigate the URLs in the sitemap, we've got you covered there too. By adding a query parameter to the GET request, you can also include category and breadcrumb information for each URL in the parsed sitemap. Give it a try and see how much easier working with sitemaps can be!",
+      "method": "GET",
+      "url": "https://seo-automations.p.rapidapi.com/v1/seo/fetchsitemap/",
+      "_file": "seo_automations.json",
+      "_tool": "seo_automations",
+      "qos": {
+        "rt_ms": 0.118,
+        "tp_rps": 25.423,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 7.0,
+    "service": {
+      "api_id": "ticketpocket_order_coupon_report",
+      "category": "Advertising",
+      "name": "order_coupon_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/order_coupon_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 455.621,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 6.5,
+    "service": {
+      "api_id": "ticketpocket_keep_coupon_arr63",
+      "category": "Advertising",
+      "name": "keep_coupon_arr63",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/keep_coupon_arr",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.169,
+        "tp_rps": 47.337,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 6.0,
+    "service": {
+      "api_id": "ticketpocket_zone_list",
+      "category": "Advertising",
+      "name": "zone_list",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/zone_list",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 35.46,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 5.5,
+    "service": {
+      "api_id": "ticketpocket_feedsave2",
+      "category": "Advertising",
+      "name": "feedSave2",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/feedSave",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.195,
+        "tp_rps": 46.153,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "score": 5.0,
+    "service": {
+      "api_id": "ticketpocket_checkinkcr",
+      "category": "Advertising",
+      "name": "checkinKcr",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/checkin/checkinKcr",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.1415,
+        "tp_rps": 35.335499999999996,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 4.5,
+    "service": {
+      "api_id": "ticketpocket_save_info_title",
+      "category": "Advertising",
+      "name": "save_info_title",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/save_info_title",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 4.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_coupon_link",
+      "category": "Advertising",
+      "name": "get_all_coupon_link",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_coupon_link",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.519,
+        "tp_rps": 9.633,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 3.5,
+    "service": {
+      "api_id": "ticketpocket_get_all_event",
+      "category": "Advertising",
+      "name": "get_all_event",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_event",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.433,
+        "tp_rps": 6.928,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 3.0,
+    "service": {
+      "api_id": "ticketpocket_get_media",
+      "category": "Advertising",
+      "name": "get_media",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_media",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.818,
+        "tp_rps": 6.112,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 2.5,
+    "service": {
+      "api_id": "ticketpocket_get_detail_report",
+      "category": "Advertising",
+      "name": "get_detail_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_detail_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.471,
+        "tp_rps": 12.738,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_create_operator",
+      "category": "Advertising",
+      "name": "create_operator",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/create_operator",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.505,
+        "tp_rps": 5.941,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 1.5,
+    "service": {
+      "api_id": "ticketpocket_check_member_detail",
+      "category": "Advertising",
+      "name": "check_member_detail",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/check_member_detail",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.613,
+        "tp_rps": 3.262,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 1.0,
+    "service": {
+      "api_id": "ticketpocket_send_link_coupon",
+      "category": "Advertising",
+      "name": "send_link_coupon",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/shop/send_link_coupon",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.8525,
+        "tp_rps": 3.5185,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_loadfeedans",
+      "category": "Advertising",
+      "name": "loadFeedAns",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/loadFeedAns",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 6.161,
+        "tp_rps": 493.7325,
+        "availability": 0.8997,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 0.4,
+    "service": {
+      "api_id": "anadolu_generatereportpdf",
+      "category": "Advertising",
+      "name": "generateReportPdf",
+      "description": " ",
+      "method": "POST",
+      "url": "https://anadolu.p.rapidapi.com/v1/instagram/profile/nostrud proident qui eu Lorem/report/pdf",
+      "_file": "anadolu.json",
+      "_tool": "anadolu",
+      "qos": {
+        "rt_ms": 0.465,
+        "tp_rps": 96.774,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "score": 0.3,
+    "service": {
+      "api_id": "asdfadsf_get_order",
+      "category": "Advertising",
+      "name": "Get Order",
+      "description": " ",
+      "method": "GET",
+      "url": "https://asdfadsf3.p.rapidapi.com/order/{id}",
+      "_file": "asdfadsf.json",
+      "_tool": "asdfadsf",
+      "qos": {
+        "rt_ms": 1.7765,
+        "tp_rps": 440.609,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 0.2,
+    "service": {
+      "api_id": "bing_keyword_planner_url_seed",
+      "category": "Advertising",
+      "name": "URL Seed",
+      "description": "Based on your provided keywords, this endpoint will return up to 3000 suitable keyword recommendations. Set up to 200 keywords and obtain the results that Bing Ads suggests for your query. Using this tool, you may obtain up to 3000 keyword ideas.",
+      "method": "GET",
+      "url": "https://bing-keyword-planner.p.rapidapi.com/urlseed",
+      "_file": "bing_keyword_planner.json",
+      "_tool": "bing_keyword_planner",
+      "qos": {
+        "rt_ms": 0.298,
+        "tp_rps": 10.067,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": 0.1,
+    "service": {
+      "api_id": "bog_boi_api_lorem",
+      "category": "Advertising",
+      "name": "Lorem",
+      "description": "Lorem",
+      "method": "GET",
+      "url": "https://bog-boi-api.p.rapidapi.com/",
+      "_file": "bog_boi_api.json",
+      "_tool": "bog_boi_api",
+      "qos": {
+        "rt_ms": 0.571,
+        "tp_rps": 136.286,
+        "availability": 0.9764,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "cold_opener_cold_line_from_instagram_post",
+    "score": 0.05,
+    "service": {
+      "api_id": "cold_opener_cold_line_from_instagram_post",
+      "category": "Advertising",
+      "name": "Cold line from Instagram post",
+      "description": "Cold line from Instagram post",
+      "method": "POST",
+      "url": "https://cold-opener.p.rapidapi.com/getline",
+      "_file": "cold_opener.json",
+      "_tool": "cold_opener",
+      "qos": {
+        "rt_ms": 0.34,
+        "tp_rps": 11.764,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": 0.04,
+    "service": {
+      "api_id": "enjoylife_thank_you",
+      "category": "Advertising",
+      "name": "thank you",
+      "description": "welcome",
+      "method": "GET",
+      "url": "https://enjoylife.p.rapidapi.com/",
+      "_file": "enjoylife.json",
+      "_tool": "enjoylife",
+      "qos": {
+        "rt_ms": 0.184,
+        "tp_rps": 10.869,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 0.03,
+    "service": {
+      "api_id": "facebook_ad_facebook_ad_copy",
+      "category": "Advertising",
+      "name": "Facebook Ad Copy",
+      "description": "Generate Facebook Ad using AI",
+      "method": "GET",
+      "url": "https://facebook-ad.p.rapidapi.com/facebook-ad",
+      "_file": "facebook_ad.json",
+      "_tool": "facebook_ad",
+      "qos": {
+        "rt_ms": 2.307,
+        "tp_rps": 1.3,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 0.02,
+    "service": {
+      "api_id": "keyword_suggestion_api_comparisons",
+      "category": "Advertising",
+      "name": "Comparisons",
+      "description": "This will give you comparisons releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/comparisons",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.132,
+        "tp_rps": 7.575,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "score": 0.01,
+    "service": {
+      "api_id": "keyword_suggestion_api_questions",
+      "category": "Advertising",
+      "name": "Questions",
+      "description": "This will give you questions releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/questions",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.344,
+        "tp_rps": 8.721499999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.005,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "score": 0.004,
+    "service": {
+      "api_id": "meteo_data_api_get_info",
+      "category": "Advertising",
+      "name": "GET INFO",
+      "description": "GET INFO DATA with location",
+      "method": "GET",
+      "url": "https://meteo-data-api.p.rapidapi.com/weather",
+      "_file": "meteo_data_api.json",
+      "_tool": "meteo_data_api",
+      "qos": {
+        "rt_ms": 0.808,
+        "tp_rps": 278.28,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 0.003,
+    "service": {
+      "api_id": "pe_demo_view_ip_address",
+      "category": "Advertising",
+      "name": "View IP address",
+      "description": "View the IP address of the client in JSON format.",
+      "method": "GET",
+      "url": "https://pe-demo.p.rapidapi.com/ip",
+      "_file": "pe_demo.json",
+      "_tool": "pe_demo",
+      "qos": {
+        "rt_ms": 0.3765,
+        "tp_rps": 7.968999999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.002,
+    "service": {
+      "api_id": "privatepublicapi_getorderbyid",
+      "category": "Advertising",
+      "name": "getOrderById",
+      "description": "For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions",
+      "method": "GET",
+      "url": "https://privatepublicapi.p.rapidapi.com/store/order/{orderId}",
+      "_file": "privatepublicapi.json",
+      "_tool": "privatepublicapi",
+      "qos": {
+        "rt_ms": 0.441,
+        "tp_rps": 6.802,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 0.001,
+    "service": {
+      "api_id": "social_media_caption_social_media_caption",
+      "category": "Advertising",
+      "name": "Social Media Caption",
+      "description": "Generate catchy captions for social media",
+      "method": "GET",
+      "url": "https://social-media-caption.p.rapidapi.com/social-caption",
+      "_file": "social_media_caption.json",
+      "_tool": "social_media_caption",
+      "qos": {
+        "rt_ms": 0.9,
+        "tp_rps": 2.222,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": 0.0005,
+    "service": {
+      "api_id": "test_v2_some_operation_od-5",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "Getting match lineups",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/matches/lineups.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.4775,
+        "tp_rps": 8.3765,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 0.0004,
+    "service": {
+      "api_id": "test_v2_some_operation_od-6",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "H2H team comparison",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/teams/head2head.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.12,
+        "tp_rps": 25.0,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "youtuber_success_estimator_estimate",
+    "score": 0.0003,
+    "service": {
+      "api_id": "youtuber_success_estimator_estimate",
+      "category": "Advertising",
+      "name": "estimate",
+      "description": "Submit a YouTube `channelName` username value along with the `channelType` as query param values appended to the endpoint for getting back the estimated video view performance of the submitted channel.\n\n**Note:** this API supports a `channelId` param but because nobody seems to know how to use that or get the channelId and *also* YouTube has finally standardized on the @username syntax, the `channelName` query param is now the default in this RapidAPI hub.\n\n## Example\nThis submits a request for the estimated 30 day video view performance of the YouTube channel with that unique `channelId` value provided in the query param\n\n`GET /api/v0/analytics/creators/estimate?channelName=@chrispirillo&channelType=youtube`\n\n\n\n## FAQ\n\nQ. Does the DMT Channel Estimator support other platforms like TikTok?\nA. This is currently planned and in development - if you have ideas for other platforms you'd like to be supported feel free to reach out!\n\nQ.  What is the accuracy of the estimations?\nA. This estimator has been tested in dozens of real-life campaigns with clients spending 6-7 figures on each influencer native ad campaign, totaling out in a median margin of error of 10%. Not bad!\n\nWe will say that while most channels have a certain degree of predictability in terms of performance, more popular *and* less frequently posting channels are outliers that the estimator will only be so accurate in estimating.\n\nQ. So no guarantees? How should I use this?\nA. Use it like the creators of the API have: as a way to understand baseline performance of a given influencer's channel and how you can back out of that with your own campaign's goals to a pricing number that makes sense.\n\nQ. Is there an offering for this API to integrate *directly* into my application?\nA. Yes, feel free to reach out and we can discuss more custom integrations including callback url support\n\nQ. Can I reach out if I am interested in doing a YouTube or broader influencer campaign activation?\nA. Yes, feel free to reach out and we can make a recommendation to you: [Best of Bold Agency](https://www.bestofbold.com/?utm_source=dmt-estimator)\n\nQ. What is the SLA for fixing bugs?\nA. ASAP! We dont have one much more official than that, we are focused availability and making sure the predictions are as accurate as possible\n\nQ. Will you expose the prediction model?\nA. No plans to do this for now, if you have ideas for prediction models or if and how you would like to incorporate your own, feel free to reach out!",
+      "method": "GET",
+      "url": "https://youtuber-success-estimator.p.rapidapi.com/api/v0/analytics/creators/estimator",
+      "_file": "youtuber_success_estimator.json",
+      "_tool": "youtuber_success_estimator",
+      "qos": {
+        "rt_ms": 0.281,
+        "tp_rps": 14.234,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": 0.0002,
+    "service": {
+      "api_id": "abobakrashraf221_m1223saa",
+      "category": "Advertising",
+      "name": "m1223saa",
+      "description": "\u0633\u0647\u0648\u0644\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u064a\u0646\u0627",
+      "method": "GET",
+      "url": "https://abobakrashraf221.p.rapidapi.com/",
+      "_file": "abobakrashraf221.json",
+      "_tool": "abobakrashraf221",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  }
+]

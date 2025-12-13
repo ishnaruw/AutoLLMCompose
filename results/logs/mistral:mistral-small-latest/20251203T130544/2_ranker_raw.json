@@ -1,0 +1,167 @@
+[
+  {
+    "api_id": "meteo_data_api_get_info",
+    "score": 9.0,
+    "reason": "Best match for displaying weather information with high availability and good QoS."
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "score": 7.0,
+    "reason": "Can be used to generate images for local attractions or marketing purposes."
+  },
+  {
+    "api_id": "lokingai_text_question_answering_question_answering_post",
+    "score": 6.5,
+    "reason": "Useful for answering questions about travel destinations or attractions."
+  },
+  {
+    "api_id": "eazy_ai_product_description_generator",
+    "score": 6.0,
+    "reason": "Can generate descriptions for hotels or attractions, useful for marketing."
+  },
+  {
+    "api_id": "ai_voice_text_to_speech_with_celebrities_list_voices",
+    "score": 5.5,
+    "reason": "Could be used for voice assistance or announcements in the travel app."
+  },
+  {
+    "api_id": "document_scanner_document_scanner",
+    "score": 5.0,
+    "reason": "Useful for scanning and processing travel documents or receipts."
+  },
+  {
+    "api_id": "ai_text_to_code_generation_explain_code",
+    "score": 4.5,
+    "reason": "Can help explain code snippets, useful for app development."
+  },
+  {
+    "api_id": "receipt_image_question_answering_receipt_question_answering",
+    "score": 4.0,
+    "reason": "Can answer questions about receipts, useful for expense tracking."
+  },
+  {
+    "api_id": "lokingai_image_classify_classify_post",
+    "score": 3.5,
+    "reason": "Can classify images, useful for categorizing travel photos."
+  },
+  {
+    "api_id": "openai_api_v1_image",
+    "score": 3.0,
+    "reason": "Can generate images based on prompts, useful for marketing or attractions."
+  },
+  {
+    "api_id": "kirin_vision_optical_character_recognition",
+    "score": 2.5,
+    "reason": "Useful for extracting text from images, such as signs or documents."
+  },
+  {
+    "api_id": "ai_text_generator_prompt",
+    "score": 2.0,
+    "reason": "Can generate text prompts, useful for content creation."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_book_coupon_zone",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_media44",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_sub_exhibition",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_allshops",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  },
+  {
+    "api_id": "ticketpocket_get_person",
+    "score": 1.0,
+    "reason": "Not directly relevant to travel app functionalities."
+  }
+]

@@ -1,4 +1,4 @@
-You create an orchestration plan using only the ranked APIs provided.
+You create one or more alternative orchestration plans using only the ranked APIs provided.
 
 You are given:
 - The overall user goal.
@@ -22,69 +22,73 @@ Ranked candidates (JSON array):
 {ranked_compact}
 
 Instructions:
-1) Use the subtasks to structure a logical sequence of steps that accomplish
-   the user goal.
-2) When choosing which API to use for each step, prefer higher score.
-3) When useful, read any QoS-related information from each service (for example,
-   from service.qos if it exists) as a hint when selecting between APIs.
-4) You may reuse an API in multiple steps if it logically fits, but do not
-   introduce APIs that are not in the ranked candidates.
-5) Do not execute anything or invent concrete parameter values.
-6) When you include QoS-related values in your output, copy them from the
+1) Use the subtasks to design several alternative end-to-end plans ("paths")
+   that could satisfy the user goal.
+2) Each path is a sequence of steps. Each step must use one of the ranked APIs.
+3) Prefer higher-scoring APIs when it makes sense, but you may explore
+   different trade-offs across paths (for example, fewer calls vs. more calls,
+   different API choices, or different ways to cover subtasks).
+4) When useful, read any QoS-related information from each service entry
+   (for example, from service.qos if it exists) as a hint when selecting
+   between APIs.
+5) Do not introduce APIs that are not in the ranked candidates.
+6) Do not execute anything or invent concrete parameter values.
+7) When you include QoS-related values in your output, copy them from the
    corresponding service.qos object without inventing new fields or values.
    If service.qos is missing, represent QoS as null or an empty object instead.
+8) Assign each path an overall path_score that reflects how well that path
+   satisfies the user goal and subtasks (higher is better for this goal).
 
 Return strict JSON in this format:
 
 {
-  "plan": [
+  "paths": [
     {
-      "step": <integer starting from 1>,
-      "api_id": "<api_id taken from the ranked candidates>",
-      "subtask_id": <integer matching an id from the subtasks, if applicable>,
-      "action": "one sentence describing what this step does",
-      "why": "one sentence explaining why this API was chosen, optionally
-              referring to its score or QoS-related information",
-      "score": <numeric score you associate with this step, usually copied from
-                the chosen API's score>,
-      "qos": <null, or an object copied from the chosen service.qos if present>
+      "path_id": <integer starting from 1>,
+      "path_score": <numeric overall score for this path>,
+      "summary": "one or two sentences describing the main idea of this path",
+      "steps": [
+        {
+          "step": <integer starting from 1 within this path>,
+          "api_id": "<api_id taken from the ranked candidates>",
+          "subtask_id": <integer matching an id from the subtasks, if applicable>,
+          "action": "one sentence describing what this step does",
+          "why": "one sentence explaining why this API was chosen for this step, "
+                  "optionally referring to its score or QoS-related information",
+          "score": <numeric score you associate with this step, usually copied from
+                    the chosen API's score>,
+          "qos": <null, or an object copied from the chosen service.qos if present>
+        }
+      ],
+      "subtask_coverage": [
+        {
+          "subtask_id": <id from the subtasks>,
+          "description": "text copied from the decomposed subtasks",
+          "steps": [<list of step numbers in this path that address this subtask>],
+          "coverage": "full" | "partial" | "missing"
+        }
+      ]
     }
   ],
   "selected_api_ids": [
-    "<api_id that appears in the plan>",
+    "<api_id that appears in at least one path>",
     ...
   ],
-  "services_summary": [
-    {
-      "api_id": "<one of the selected_api_ids>",
-      "score": <numeric score (for example, from the ranked candidates)>,
-      "qos": <null, or an object copied from the corresponding service.qos>,
-      "steps_used": [<list of step numbers where this API is used>],
-      "role": "short phrase describing the main role of this API in the workflow"
-    }
-  ],
-  "subtask_coverage": [
-    {
-      "subtask_id": <id from the subtasks>,
-      "description": "text copied from the decomposed subtasks",
-      "steps": [<list of step numbers that address this subtask>],
-      "coverage": "full" | "partial" | "missing"
-    }
-  ],
-  "overall_rationale": "2 to 4 sentences explaining why this set of APIs and
-                        ordering is a reasonable way to satisfy the user goal,
-                        optionally referring to both scores and any QoS-related
-                        information you observed."
+  "overall_rationale": "2 to 4 sentences explaining why these paths are reasonable
+                        ways to satisfy the user goal, and how they differ (for
+                        example, in coverage, simplicity, or QoS-related trade-offs)."
 }
 
 Requirements:
-- "plan" must be a list of steps numbered sequentially starting at 1.
-- Each plan step must include api_id, action, why, score, and qos.
-- When qos is not null, it must match the service.qos object for the chosen API.
-  Do not invent new QoS fields or values.
-- selected_api_ids should list each api_id that appears in the plan, without duplicates.
-- services_summary should contain one entry per selected api_id, summarizing how it is used.
-- subtask_coverage should reflect how the subtasks are mapped to plan steps.
-- coverage can be "full", "partial", or "missing".
+- Produce between 3 and 5 paths when enough suitable APIs are available; if
+  there are fewer obvious options, it is acceptable to return fewer paths.
+- In each path, steps must be numbered sequentially starting at 1.
+- Each step must include api_id, action, why, score, and qos.
+- When qos is not null, it must match the service.qos object for the chosen API
+  as given in the input ranked candidates.
+- path_score must be a numeric value where higher means better for this goal.
+- selected_api_ids should list each api_id that appears in any path, without duplicates.
+- subtask_coverage for each path should reflect how that path maps steps to
+  subtasks. The same subtask may be covered differently in different paths.
 - Do not introduce APIs that are not in the ranked candidates.
 - Do not include anything outside the single JSON object.

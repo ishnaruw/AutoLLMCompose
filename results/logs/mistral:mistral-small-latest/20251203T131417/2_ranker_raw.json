@@ -1,0 +1,92 @@
+[
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": 9.0,
+    "reason": "Extracts header elements from a URL, which can help analyze content for adult content."
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": 8.0,
+    "reason": "Can provide keyword recommendations based on URL content, which might help in analyzing the content."
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "score": 7.0,
+    "reason": "Uses AI to generate ad headlines based on URL content, which might help in analyzing the content."
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 6.0,
+    "reason": "Extracts sitemap information, which might be useful for URL analysis."
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": 5.0,
+    "reason": "Provides comparisons related to keywords, which might be useful for content analysis."
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 4.0,
+    "reason": "Provides keyword suggestions, which might be useful for content analysis."
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 3.0,
+    "reason": "Views the IP address of the client, which is not directly relevant to the goal."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 2.0,
+    "reason": "Retrieves order information, which is not relevant to the goal."
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 1.0,
+    "reason": "Generates a report PDF, which is not relevant to the goal."
+  },
+  {
+    "api_id": "freeplanwithhardlimit_getpetbyid",
+    "score": 1.0,
+    "reason": "Returns a single pet, which is not relevant to the goal."
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "score": 1.0,
+    "reason": "Gets an order, which is not relevant to the goal."
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": 1.0,
+    "reason": "Lorem description, which is not relevant to the goal."
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": 1.0,
+    "reason": "Welcome message, which is not relevant to the goal."
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": 1.0,
+    "reason": "Generates Facebook ad copy, which is not relevant to the goal."
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": 1.0,
+    "reason": "Ease of access, which is not relevant to the goal."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 1.0,
+    "reason": "H2H team comparison, which is not relevant to the goal."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": 1.0,
+    "reason": "Getting match lineups, which is not relevant to the goal."
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 1.0,
+    "reason": "Generates catchy captions for social media, which is not relevant to the goal."
+  }
+]

@@ -1,0 +1,138 @@
+[
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 1] Extracts sitemap XML as JSON, useful for checking domains | Also relevant for subtask 2: Can parse sitemap.xml files into JSON format for analysis | Also relevant for subtask 4: Extracts sitemap data which can be used to update the dashboard"
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "reason": "[Subtask 1] Extracts important header elements from a given URL, useful for checking domains | Also relevant for subtask 2: Extracts important header elements from a given URL for analysis"
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] Views the IP address of the client in JSON format, useful for checking domains | Also relevant for subtask 2: View the IP address of the client in JSON format for analysis"
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "reason": "[Subtask 1] Provides comparisons related to queried keywords, useful for checking domains | Also relevant for subtask 2: Provides comparisons related to queried keywords for analysis"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 1] Get keyword suggestions from a keyword seed, useful for checking domains | Also relevant for subtask 2: Get keyword suggestions from a keyword seed for analysis"
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "reason": "[Subtask 1] Generate Facebook Ad using AI, useful for checking domains"
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "reason": "[Subtask 1] Generate catchy captions for social media, useful for checking domains"
+  },
+  {
+    "api_id": "cold_opener_cold_line_from_instagram_post",
+    "reason": "[Subtask 1] Cold line from Instagram post, useful for checking domains"
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "reason": "[Subtask 1] Generate report PDF, useful for checking domains | Also relevant for subtask 4: Generates reports in PDF format which can be used to update the dashboard"
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "reason": "[Subtask 1] Lorem, useful for checking domains"
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "reason": "[Subtask 1] Welcome, useful for checking domains"
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "reason": "[Subtask 1] Ease of access to us, useful for checking domains"
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "reason": "[Subtask 2] GET INFO DATA with location for analysis"
+  },
+  {
+    "api_id": "asdfadsf_get_order",
+    "reason": "[Subtask 2] Get Order details for analysis"
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "reason": "[Subtask 2] Get order by ID for analysis"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "reason": "[Subtask 2] H2H team comparison for analysis"
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "reason": "[Subtask 2] Getting match lineups for analysis"
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "reason": "[Subtask 2] Provides keyword recommendations based on provided keywords, useful for threat data analysis"
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "reason": "[Subtask 2] Provides questions related to a queried keyword, useful for threat data analysis"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 3] Can send links via POST | Also relevant for subtask 4: Sends coupon links which can be tracked and displayed on the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "reason": "[Subtask 3] Can send checkins via POST"
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "reason": "[Subtask 3] Can send feeds via POST"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 3] Can send feed answers via POST"
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 3] Can send coupon arrays via POST | Also relevant for subtask 4: Keeps coupon data which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 3] Can get all coupon links via POST | Also relevant for subtask 4: Retrieves coupon links which can be tracked and displayed on the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 3] Can get all events via POST | Also relevant for subtask 4: Retrieves event data which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 3] Can get media via POST"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 3] Can get detail reports via POST | Also relevant for subtask 4: Provides detailed reports which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 3] Can order coupon reports via POST | Also relevant for subtask 4: Generates coupon reports which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 3] Can save info titles via POST"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 3] Can get zone lists via POST | Also relevant for subtask 4: Retrieves zone lists which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 4] Checks member details which can be used to update the dashboard"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 4] Creates operator data which can be used to update the dashboard"
+  },
+  {
+    "api_id": "youtuber_success_estimator_estimate",
+    "reason": "[Subtask 4] Provides estimated video view performance for YouTube channels"
+  }
+]

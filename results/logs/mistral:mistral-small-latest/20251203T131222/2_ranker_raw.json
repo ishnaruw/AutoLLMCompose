@@ -1,0 +1,157 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 9.0,
+    "reason": "Best match for retrieving user's current location."
+  },
+  {
+    "api_id": "allshops",
+    "score": 8.0,
+    "reason": "Potentially useful for searching for gyms near the user's location."
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": 7.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 6.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 5.0,
+    "reason": "Could be used for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 4.0,
+    "reason": "Might be useful for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 3.0,
+    "reason": "Could be used for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 2.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_checkinkcr",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_feedsave2",
+    "score": 1.0,
+    "reason": "Might be useful for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": 1.0,
+    "reason": "Could be used for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "score": 1.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "score": 1.0,
+    "reason": "Might be useful for searching for gyms near the user's location."
+  },
+  {
+    "api_id": "petstoreratelimit_placeorder",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "score": 1.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "score": 1.0,
+    "reason": "Could be used for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "testingapiwithinorg_gettime",
+    "score": 1.0,
+    "reason": "Might be useful for retrieving user's current location."
+  },
+  {
+    "api_id": "ticketpocket_book_coupon_zone",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ticketpocket_get_shop_type61",
+    "score": 1.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "ticketpocket_checkin",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "pe_demo_view_status_code_and_message",
+    "score": 1.0,
+    "reason": "Might be useful for retrieving user's current location."
+  },
+  {
+    "api_id": "short_link_shopee_v_d_1",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "autosub_brotli",
+    "score": 1.0,
+    "reason": "Might be useful for retrieving user's current location."
+  },
+  {
+    "api_id": "my_api_test",
+    "score": 1.0,
+    "reason": "Could be used for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "publicapitestinginbox_getorderbyid",
+    "score": 1.0,
+    "reason": "Might be useful for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "genius_artists",
+    "score": 1.0,
+    "reason": "Could be used for searching for gyms near the user's location."
+  },
+  {
+    "api_id": "workable_candidates",
+    "score": 1.0,
+    "reason": "Might be useful for fetching pricing plans for each gym."
+  },
+  {
+    "api_id": "testingapiwithinorg_getaccount",
+    "score": 1.0,
+    "reason": "Could be used for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "ai_writer_qr_code",
+    "score": 1.0,
+    "reason": "Might be useful for enabling mobile booking for selected gym and plan."
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "score": 1.0,
+    "reason": "Could be used for retrieving user's current location."
+  }
+]

@@ -1,0 +1,78 @@
+[
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "reason": "[Subtask 1] Fetches data from Instagram, which can include trending hashtags | Also relevant for subtask 2: Retrieves data from Instagram which can be used to analyze engagement metrics | Also relevant for subtask 3: Generates a report PDF from Instagram data, which can be used for engagement statistics. | Also relevant for subtask 4: Generates a report in PDF format, which can be used for daily engagement summaries"
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "reason": "[Subtask 1] Generates Facebook Ad using AI, which can include trending hashtags | Also relevant for subtask 2: Generates Facebook Ad using AI, which can be used to analyze engagement metrics | Also relevant for subtask 3: Generates Facebook Ad using AI, which can be used to analyze engagement."
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "reason": "[Subtask 1] Provides comparisons related to queried keywords, which can include trending hashtags | Also relevant for subtask 2: Provides comparisons related to queried keywords, which can be used to analyze engagement metrics"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 1] Gets keyword suggestions from a keyword seed, which can include trending hashtags"
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "reason": "[Subtask 1] Generates catchy captions for social media, which can include trending hashtags"
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "reason": "[Subtask 1] Fetches media data, which can include trending hashtags | Also relevant for subtask 2: Retrieves media data which can be used to analyze engagement metrics | Also relevant for subtask 3: Retrieves media data, which can be used to compile engagement statistics. | Also relevant for subtask 4: Retrieves media data, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_zone_list",
+    "reason": "[Subtask 1] Fetches zone list data, which can include trending hashtags | Also relevant for subtask 2: Retrieves zone list data which can be used to analyze engagement metrics | Also relevant for subtask 3: Retrieves zone list data, which can be used to compile engagement statistics. | Also relevant for subtask 4: Retrieves zone lists, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_loadfeedans",
+    "reason": "[Subtask 1] Loads feed answers, which can include trending hashtags | Also relevant for subtask 2: Loads feed answers which can be used to analyze engagement metrics | Also relevant for subtask 3: Loads feed answers, which can be used to compile engagement statistics."
+  },
+  {
+    "api_id": "ticketpocket_keep_coupon_arr63",
+    "reason": "[Subtask 1] Keeps coupon data, which can include trending hashtags | Also relevant for subtask 2: Keeps coupon data which can be used to analyze engagement metrics | Also relevant for subtask 3: Keeps coupon data, which can be used to compile engagement statistics. | Also relevant for subtask 4: Manages coupon data, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 1] Fetches all coupon links, which can include trending hashtags | Also relevant for subtask 2: Retrieves all coupon link data which can be used to analyze engagement metrics | Also relevant for subtask 3: Retrieves all coupon links, which can be used to compile engagement statistics. | Also relevant for subtask 4: Retrieves all coupon links, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 1] Generates order coupon reports, which can include trending hashtags | Also relevant for subtask 2: Generates order coupon report which can be used to analyze engagement metrics | Also relevant for subtask 3: Generates a coupon report, which can be used to compile engagement statistics. | Also relevant for subtask 4: Generates a coupon report, which can be used to aggregate and format engagement data"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 1] Sends link coupons, which can include trending hashtags | Also relevant for subtask 3: Sends link coupons, which can be used to compile engagement statistics."
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "reason": "[Subtask 2] Extracts important header elements from a given URL, which can be used to analyze engagement metrics"
+  },
+  {
+    "api_id": "ticketpocket_check_member_detail",
+    "reason": "[Subtask 2] Checks member details which can be used to analyze engagement metrics | Also relevant for subtask 3: Checks member details, which can be used to compile engagement statistics. | Also relevant for subtask 4: Retrieves member details, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 2] Retrieves all event data which can be used to analyze engagement metrics | Also relevant for subtask 3: Retrieves all events, which can be used to compile engagement statistics. | Also relevant for subtask 4: Retrieves all event data, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_create_operator",
+    "reason": "[Subtask 3] Creates operator data, which can be used to compile engagement statistics. | Also relevant for subtask 4: Creates operator data, which can be aggregated into a daily engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 4] Provides detailed reports that can be used for daily engagement summaries"
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 4] Provides data related to provinces which can be used for engagement summary"
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 4] Provides data related to exhibitions which can be used for engagement summary"
+  }
+]

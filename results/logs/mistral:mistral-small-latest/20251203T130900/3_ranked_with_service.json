@@ -1,0 +1,662 @@
+[
+  {
+    "api_id": "mad_gpt_api_chat_completion-2",
+    "score": 9.5,
+    "service": {
+      "api_id": "mad_gpt_api_chat_completion-2",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Chat Completion",
+      "description": "Performs chat completion using OpenAI GPT-3.5 based on user input messages",
+      "method": "POST",
+      "url": "https://mad-gpt-api.p.rapidapi.com/chat-completion",
+      "_file": "mad_gpt_api.json",
+      "_tool": "mad_gpt_api",
+      "qos": {
+        "rt_ms": 0.122,
+        "tp_rps": 32.786,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "atomic_sms_sender_send_message",
+    "score": 8.5,
+    "service": {
+      "api_id": "atomic_sms_sender_send_message",
+      "category": "Advertising",
+      "name": "Send Message",
+      "description": "",
+      "method": "GET",
+      "url": "https://vlad42-atomic-sms-sender-v1.p.rapidapi.com//www.atompark.com/bulk-sms-service/smsapiv3/",
+      "_file": "atomic_sms_sender.json",
+      "_tool": "atomic_sms_sender",
+      "qos": {
+        "rt_ms": 0.304,
+        "tp_rps": 9.868,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+    "score": 7.0,
+    "service": {
+      "api_id": "ezml_generate_image_light_api_v1_functions_generate_image_light_post",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "generate_image_light_api_v1_functions_generate_image_light_post",
+      "description": "Creates descriptive images with short prompts. This is the base model that runs faster but has less detail",
+      "method": "POST",
+      "url": "https://ezml1.p.rapidapi.com/api/v1/functions/generate_image_light",
+      "_file": "ezml.json",
+      "_tool": "ezml",
+      "qos": {
+        "rt_ms": 0.351,
+        "tp_rps": 8.547,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "openai_api_v1_image",
+    "score": 6.5,
+    "service": {
+      "api_id": "openai_api_v1_image",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Image",
+      "description": "Given a prompt and/or an input image, the model will generate a new image.",
+      "method": "POST",
+      "url": "https://openai-api-v1.p.rapidapi.com/image",
+      "_file": "openai_api_v1.json",
+      "_tool": "openai_api_v1",
+      "qos": {
+        "rt_ms": 0.242,
+        "tp_rps": 12.396,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_voice_text_to_speech_with_celebrities_list_voices",
+    "score": 6.0,
+    "service": {
+      "api_id": "ai_voice_text_to_speech_with_celebrities_list_voices",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "List Voices",
+      "description": "Returns a list of famous voices you can use to generate text. The list includes the {voice_id} parameter which will be used in the /generateMessage endpoint to select the voice. The list also contains the speaker/character of the voice.",
+      "method": "GET",
+      "url": "https://ai-voice-text-to-speech-with-celebrities.p.rapidapi.com/listVoices",
+      "_file": "ai_voice_text_to_speech_with_celebrities.json",
+      "_tool": "ai_voice_text_to_speech_with_celebrities",
+      "qos": {
+        "rt_ms": 0.497,
+        "tp_rps": 16.096,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_text_processing_array_similarities",
+    "score": 5.5,
+    "service": {
+      "api_id": "ai_text_processing_array_similarities",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Array Similarities",
+      "description": "Calculates the pairwise cosine similarities between two arrays of texts.\r\n\r\nLeveraging AI techniques, it converts each text in both arrays into its corresponding embedding and computes the cosine similarity between each pair of texts from the two arrays. The cosine similarity value ranges from 0 to 1, with 1 indicating identical vectors and 0 indicating completely dissimilar vectors.\r\n\r\nThis is particularly useful in various applications such as cross-language similarity computation, multi-document comparison, and cross-domain text analysis.",
+      "method": "POST",
+      "url": "https://ai-text-processing.p.rapidapi.com/rapidapi/ai-text-processing/array-similarities",
+      "_file": "ai_text_processing.json",
+      "_tool": "ai_text_processing",
+      "qos": {
+        "rt_ms": 0.2995,
+        "tp_rps": 16.694000000000003,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "lokingai_text_mask_filler_mask_filler_post",
+    "score": 5.0,
+    "service": {
+      "api_id": "lokingai_text_mask_filler_mask_filler_post",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "mask_filler_mask_filler_post",
+      "description": "Mask filling.\n\nFill in masked values in the input text.\n\nParameters:\n- **payload**: TextRequest object containing the input text with masked values.\n\nReturns:\n- **MaskFillerResponse**: A response containing the filled-in masked values.\n\nExample Request:\n```\nPOST /mask-filler\n{\n    \"text\": \"Please buy [MASK] from the store.\"\n}\n```\n\nExample Response:\n```\n{\n  \"error\": null,\n  \"data\": [\n    {\n      \"score\": 0.17938034236431122,\n      \"token\": 2505,\n      \"token_str\": \"anything\",\n      \"sequence\": \"please buy anything from this store\"\n    },\n    {\n      \"score\": 0.11332187056541443,\n      \"token\": 2242,\n      \"token_str\": \"something\",\n      \"sequence\": \"please buy something from this store\"\n    },\n    {\n      \"score\": 0.05946308374404907,\n      \"token\": 3688,\n      \"token_str\": \"products\",\n      \"sequence\": \"please buy products from this store\"\n    },\n    {\n      \"score\": 0.04591205716133118,\n      \"token\": 5167,\n      \"token_str\": \"items\",\n      \"sequence\": \"please buy items from this store\"\n    },\n    {\n      \"score\": 0.04386703670024872,\n      \"token\": 2009,\n      \"token_str\": \"it\",\n      \"sequence\": \"please buy it from this store\"\n    }\n  ]\n}\n```",
+      "method": "POST",
+      "url": "https://lokingai-text.p.rapidapi.com/mask-filler",
+      "_file": "lokingai_text.json",
+      "_tool": "lokingai_text",
+      "qos": {
+        "rt_ms": 0.375,
+        "tp_rps": 5.333,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "kirin_vision_optical_character_recognition",
+    "score": 4.5,
+    "service": {
+      "api_id": "kirin_vision_optical_character_recognition",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Optical Character Recognition",
+      "description": "Optical Character Recognition converts scanned images or images containing text into editable and searchable digital text.",
+      "method": "POST",
+      "url": "https://kirin-vision1.p.rapidapi.com/ocr",
+      "_file": "kirin_vision.json",
+      "_tool": "kirin_vision",
+      "qos": {
+        "rt_ms": 0.1475,
+        "tp_rps": 20.339,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "text2wav_text2wav_file_output",
+    "score": 4.0,
+    "service": {
+      "api_id": "text2wav_text2wav_file_output",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Text2Wav - File Output",
+      "description": "Use this Endpoint to Convert Text to Downloadable Audio File(wav,mp3,ogg)",
+      "method": "GET",
+      "url": "https://text2wav1.p.rapidapi.com/textToSpeechFile",
+      "_file": "text2wav.json",
+      "_tool": "text2wav",
+      "qos": {
+        "rt_ms": 0.319,
+        "tp_rps": 9.404,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+    "score": 3.5,
+    "service": {
+      "api_id": "adcopy_ai_google_ads_ai_text_generation_20_ad_headlines_generator",
+      "category": "Advertising",
+      "name": "20+ Ad Headlines Generator",
+      "description": "Get relevant & Complint Google Ad headlines for SEM and PPC marketers, created by SEM Experts. Results include 10+ ad headlines, and are based on user inputs as well as A.I. Intelligence based on OpenAI's engine. \n\n**Detailed description:**\nThe Headlines generator endpoint uses advanced prompt engineering to analyze user inputs in the form of URL, subject, and important keywords to create high-quality ad headlines that are tailored to the product or service being advertised. By leveraging the advanced capabilities of OpenAI's ChatGPT engine, the endpoint is able to deliver top-of-the-line ad headlines that are optimized for relevance, clarity, and engagement.\n\n**Detailed Technical Documentation:**\nThe Headlines generator endpoint of AdCopy AI can be accessed through a GET request, with the following query parameters:\n\n**subject:** Required. A string of between 10 and 60 characters, which represents the \"value proposition\" of the product or service being advertised. The user is advised to provide keywords in a comma-delimited format.\n\n**url:** Required. A string that represents the URL of a page that describes the product or service being advertised. The API will fetch the content from the page and extract relevant keywords to help generate quality ads.\n\n**mostImportantKeywords:** Optional. A string of up to 100 characters, representing the most important keywords about the ad group being advertised. The presence of these keywords in the resulting content is not guaranteed.\n\n**language:** Optional. A string that represents the target audience's language in ISO-2 format (e.g. EN, IT, ES, etc.). The field is currently in alpha testing and may not provide results in the requested language.\n\n**country:** Optional. A string that represents the target audience's country in ISO-2 format (e.g. US, CA, IT, etc.). The field is currently in alpha testing and may not provide country-specific content.\n\n**exampleHeadlines:** Optional. A string of at most 200 characters, representing example headlines that the user may provide to fine-tune the results.\n\nThe endpoint will return up to 10 ad headlines that are tailored to the product or service being advertised. The headlines will be optimized for relevance, clarity, and engagement, leveraging the advanced capabilities of OpenAI's ChatGPT engine and Significat Prompt Optimization.",
+      "method": "POST",
+      "url": "https://adcopy-ai-google-ads-ai-text-generation.p.rapidapi.com/v1/adcopyai/headlines",
+      "_file": "adcopy_ai_google_ads_ai_text_generation.json",
+      "_tool": "adcopy_ai_google_ads_ai_text_generation",
+      "qos": {
+        "rt_ms": 0.472,
+        "tp_rps": 4.237,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_writer_qr_code",
+    "score": 3.0,
+    "service": {
+      "api_id": "ai_writer_qr_code",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "QR Code",
+      "description": "Generate a QR Code from a link or a text.",
+      "method": "GET",
+      "url": "https://ai-writer1.p.rapidapi.com/qr/",
+      "_file": "ai_writer.json",
+      "_tool": "ai_writer",
+      "qos": {
+        "rt_ms": 0.295,
+        "tp_rps": 6.779,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 2.5,
+    "service": {
+      "api_id": "seo_automations_extract_sitemap_xml_as_json",
+      "category": "Advertising",
+      "name": "Extract Sitemap XML as JSON",
+      "description": "Are you looking for an API that can quickly and easily download and parse sitemap.xml files into JSON format? Look no further! Our API allows you to make a simple GET request, passing in the URL of a sitemap.xml file as a parameter. The API will handle the rest, downloading the file, parsing it into a JSON object, and returning the result in the response. And if you need a little extra information to help organize and navigate the URLs in the sitemap, we've got you covered there too. By adding a query parameter to the GET request, you can also include category and breadcrumb information for each URL in the parsed sitemap. Give it a try and see how much easier working with sitemaps can be!",
+      "method": "GET",
+      "url": "https://seo-automations.p.rapidapi.com/v1/seo/fetchsitemap/",
+      "_file": "seo_automations.json",
+      "_tool": "seo_automations",
+      "qos": {
+        "rt_ms": 0.118,
+        "tp_rps": 25.423,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 2.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_event",
+      "category": "Advertising",
+      "name": "get_all_event",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_event",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.433,
+        "tp_rps": 6.928,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 1.5,
+    "service": {
+      "api_id": "social_media_caption_social_media_caption",
+      "category": "Advertising",
+      "name": "Social Media Caption",
+      "description": "Generate catchy captions for social media",
+      "method": "GET",
+      "url": "https://social-media-caption.p.rapidapi.com/social-caption",
+      "_file": "social_media_caption.json",
+      "_tool": "social_media_caption",
+      "qos": {
+        "rt_ms": 0.9,
+        "tp_rps": 2.222,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 1.0,
+    "service": {
+      "api_id": "ticketpocket_send_link_coupon",
+      "category": "Advertising",
+      "name": "send_link_coupon",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/shop/send_link_coupon",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.8525,
+        "tp_rps": 3.5185,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.5,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "score": 0.0,
+    "service": {
+      "api_id": "chimp_rewriter_querystats",
+      "category": "Advertising",
+      "name": "QueryStats",
+      "description": "Returns remaining query quota. Can also be used to test an account.",
+      "method": "POST",
+      "url": "https://akturatech-chimp-rewriter.p.rapidapi.com/",
+      "_file": "chimp_rewriter.json",
+      "_tool": "chimp_rewriter",
+      "qos": {
+        "rt_ms": 0.339,
+        "tp_rps": 11.799,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": -0.5,
+    "service": {
+      "api_id": "testingapiwithinorg_requestdeposit",
+      "category": "Advertising",
+      "name": "Requestdeposit",
+      "description": "# Deposits and Withdrawals\nTransactions are requested with `paymentMethodDetails` (details of the transaction, passed to Stronghold) and responses contain `paymentMethodInstructions` (instructions for the user, given by Stronghold) as follows:\n\n## PaymentMethodDetails on Requests\n\nKey | Description | Used In\n--- | --- | ---\namount | The amount of the transaction as a string with a maximum of 7 decimal places | Withdrawals for all\nwithdrawal_address | The venue-specific address for the asset to be withdrawn to | Withdrawals for `bitcoin`, `litecoin`, `ethereum`, `stellar`, and `ripple`\nreference | The venue-specific reference to be attached to the withdrawal | Withdrawals for `stellar` and `ripple`\nbank_name | The name of the bank, e.g. 'JPMorgan Chase Bank N.A.' | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_routing_number | The routing number of the bank account | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_account_number | The account number of the bank account | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_account_type | The type of bank account, either 'checking' or 'savings' | Deposits and withdrawals for `us-ach`\n\n## PaymentMethodInstructions on Responses\n\nKey | Description | Used In\n--- | --- | ---\ndeposit_address | The venue-specific address that the asset should to be deposited into | Deposits for `bitcoin`, `litecoin`, `ethereum`, `stellar`, and `ripple`\nreference | The venue-specific reference that must be attached to the deposit | Deposits for `stellar`, `ripple`, and `us-wire`\ninterledger_payment_pointer | The Interledger SPSP Payment Pointer used to receive streaming payments in a certain asset | Deposits for `ilp-spsp`\namount | The amount that must be sent for the deposit to succeed | Deposits for `us-wire`\nrecipient_name | The name of the recipient that the funds should be sent to | Deposits for `us-wire`\nrecipient_address | The address of the recipient that the funds should be sent to | Deposits for `us-wire`\nbank_name | The name of the bank, e.g. 'JPMorgan Chase Bank N.A.' | Deposits for `us-wire`\nbank_routing_number | The routing number of the bank account | Deposits for `us-wire`\nbank_account_number | The account number of the bank account | Deposits for `us-wire`\nbank_swift_code | The SWIFT code to use where the wire is being sent internationally | Deposits for `us-wire`\n\n## Notes\n\n- For `us-ach` and `us-wire`, the name on the bank account must match the name on the entity's Stronghold account.\n- `us-ach` deposits take a variable amount of time to be credited to a Stronghold account. Please contact us for more information on the timings for your particular use case.\n- The entity must have completed the account verification to use all payment methods with the exception of `ilp-spsp`.\n\n## Request\n\nField | Type | Description\n--- | --- | ---\nassetId | string | The identifier of the asset to deposit.\npaymentMethod | string | The payment method for the deposit.\npaymentMethodDetails | key-value string pairs | (Optional) If required for the deposit method, the details of the deposit.\n\n## Response\n\nField | Type | Description\n--- | --- | ---\nresult | AccountTransaction | The account transaction. A transaction may not necessarily been created (as seen by the absence of an identifier) but the payment method instructions can be followed to initiate the deposit.",
+      "method": "POST",
+      "url": "https://testingapiwithinorg.p.rapidapi.com/venues/{venueid}/accounts/{accountid}/deposit",
+      "_file": "testingapiwithinorg.json",
+      "_tool": "testingapiwithinorg",
+      "qos": {
+        "rt_ms": 1.03,
+        "tp_rps": 551.258,
+        "availability": 0.9735,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": -1.0,
+    "service": {
+      "api_id": "ticketpocket_order_coupon_report",
+      "category": "Advertising",
+      "name": "order_coupon_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/order_coupon_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 455.621,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": -1.5,
+    "service": {
+      "api_id": "anadolu_generatereportpdf",
+      "category": "Advertising",
+      "name": "generateReportPdf",
+      "description": " ",
+      "method": "POST",
+      "url": "https://anadolu.p.rapidapi.com/v1/instagram/profile/nostrud proident qui eu Lorem/report/pdf",
+      "_file": "anadolu.json",
+      "_tool": "anadolu",
+      "qos": {
+        "rt_ms": 0.465,
+        "tp_rps": 96.774,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "meteo_data_api_get_info",
+    "score": -2.0,
+    "service": {
+      "api_id": "meteo_data_api_get_info",
+      "category": "Advertising",
+      "name": "GET INFO",
+      "description": "GET INFO DATA with location",
+      "method": "GET",
+      "url": "https://meteo-data-api.p.rapidapi.com/weather",
+      "_file": "meteo_data_api.json",
+      "_tool": "meteo_data_api",
+      "qos": {
+        "rt_ms": 0.808,
+        "tp_rps": 278.28,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_head_extractor_head_extract",
+    "score": -2.5,
+    "service": {
+      "api_id": "seo_head_extractor_head_extract",
+      "category": "Advertising",
+      "name": "Head Extract",
+      "description": "Extracts the important header elements from a given URL",
+      "method": "POST",
+      "url": "https://seo-head-extractor.p.rapidapi.com/",
+      "_file": "seo_head_extractor.json",
+      "_tool": "seo_head_extractor",
+      "qos": {
+        "rt_ms": 0.266,
+        "tp_rps": 30.075,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bog_boi_api_lorem",
+    "score": -3.0,
+    "service": {
+      "api_id": "bog_boi_api_lorem",
+      "category": "Advertising",
+      "name": "Lorem",
+      "description": "Lorem",
+      "method": "GET",
+      "url": "https://bog-boi-api.p.rapidapi.com/",
+      "_file": "bog_boi_api.json",
+      "_tool": "bog_boi_api",
+      "qos": {
+        "rt_ms": 0.571,
+        "tp_rps": 136.286,
+        "availability": 0.9764,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_media",
+    "score": -3.5,
+    "service": {
+      "api_id": "ticketpocket_get_media",
+      "category": "Advertising",
+      "name": "get_media",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_media",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.818,
+        "tp_rps": 6.112,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "enjoylife_thank_you",
+    "score": -4.0,
+    "service": {
+      "api_id": "enjoylife_thank_you",
+      "category": "Advertising",
+      "name": "thank you",
+      "description": "welcome",
+      "method": "GET",
+      "url": "https://enjoylife.p.rapidapi.com/",
+      "_file": "enjoylife.json",
+      "_tool": "enjoylife",
+      "qos": {
+        "rt_ms": 0.184,
+        "tp_rps": 10.869,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "facebook_ad_facebook_ad_copy",
+    "score": -4.5,
+    "service": {
+      "api_id": "facebook_ad_facebook_ad_copy",
+      "category": "Advertising",
+      "name": "Facebook Ad Copy",
+      "description": "Generate Facebook Ad using AI",
+      "method": "GET",
+      "url": "https://facebook-ad.p.rapidapi.com/facebook-ad",
+      "_file": "facebook_ad.json",
+      "_tool": "facebook_ad",
+      "qos": {
+        "rt_ms": 2.307,
+        "tp_rps": 1.3,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_comparisons",
+    "score": -5.0,
+    "service": {
+      "api_id": "keyword_suggestion_api_comparisons",
+      "category": "Advertising",
+      "name": "Comparisons",
+      "description": "This will give you comparisons releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/comparisons",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.132,
+        "tp_rps": 7.575,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-5",
+    "score": -5.5,
+    "service": {
+      "api_id": "test_v2_some_operation_od-5",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "Getting match lineups",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/matches/lineups.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.4775,
+        "tp_rps": 8.3765,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "catfactprompts_getfacts",
+    "score": -6.0,
+    "service": {
+      "api_id": "catfactprompts_getfacts",
+      "category": "Advertising",
+      "name": "getFacts",
+      "description": " ",
+      "method": "GET",
+      "url": "https://catfactprompts.p.rapidapi.com/v1/api/facts",
+      "_file": "catfactprompts.json",
+      "_tool": "catfactprompts",
+      "qos": {
+        "rt_ms": 0.102,
+        "tp_rps": 29.411,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "abobakrashraf221_m1223saa",
+    "score": -6.5,
+    "service": {
+      "api_id": "abobakrashraf221_m1223saa",
+      "category": "Advertising",
+      "name": "m1223saa",
+      "description": "\u0633\u0647\u0648\u0644\u0629 \u0627\u0644\u0648\u0635\u0648\u0644 \u0625\u0644\u064a\u0646\u0627",
+      "method": "GET",
+      "url": "https://abobakrashraf221.p.rapidapi.com/",
+      "_file": "abobakrashraf221.json",
+      "_tool": "abobakrashraf221",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "score": -7.0,
+    "service": {
+      "api_id": "bing_keyword_planner_url_seed",
+      "category": "Advertising",
+      "name": "URL Seed",
+      "description": "Based on your provided keywords, this endpoint will return up to 3000 suitable keyword recommendations. Set up to 200 keywords and obtain the results that Bing Ads suggests for your query. Using this tool, you may obtain up to 3000 keyword ideas.",
+      "method": "GET",
+      "url": "https://bing-keyword-planner.p.rapidapi.com/urlseed",
+      "_file": "bing_keyword_planner.json",
+      "_tool": "bing_keyword_planner",
+      "qos": {
+        "rt_ms": 0.298,
+        "tp_rps": 10.067,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "score": -7.5,
+    "service": {
+      "api_id": "keyword_suggestion_api_questions",
+      "category": "Advertising",
+      "name": "Questions",
+      "description": "This will give you questions releated to your queried keyword",
+      "method": "GET",
+      "url": "https://keyword-suggestion-api.p.rapidapi.com/questions",
+      "_file": "keyword_suggestion_api.json",
+      "_tool": "keyword_suggestion_api",
+      "qos": {
+        "rt_ms": 0.344,
+        "tp_rps": 8.721499999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "as_customers_customerid_orders_productid_numbers_range",
+    "score": -8.0,
+    "service": {
+      "api_id": "as_customers_customerid_orders_productid_numbers_range",
+      "category": "Advertising",
+      "name": "/customers/{customerId}/orders/{productId}/numbers/range",
+      "description": "<p>Allows you to order a quantity of phone numbers of the specified product and in a specified range.</p><p>Use this to order one/more phone numbers of the specified product, where the system will pick matching numbers from a numbers range you give.</p><p>Make a new request if you wish to vary the elements of the order, and use the requestId field to correlate multiple orders together.</p>",
+      "method": "POST",
+      "url": "https://as6.p.rapidapi.com/customers/{customerId}/orders/{productId}/numbers/range",
+      "_file": "as.json",
+      "_tool": "as",
+      "qos": {
+        "rt_ms": 0.96,
+        "tp_rps": 540.107,
+        "availability": 0.9646,
+        "valid_qos": true
+      }
+    }
+  }
+]
