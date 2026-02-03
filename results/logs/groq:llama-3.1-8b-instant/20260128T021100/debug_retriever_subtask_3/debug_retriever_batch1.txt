@@ -1,0 +1,13 @@
+{
+  "keep": [
+    {"api_id": "privatepublicapi_getorderbyid", "reason": "For valid response try integer IDs with value >= 1 and <= 10, possibly related to restaurant reviews"},
+    {"api_id": "ticketpocket_get_all_coupon_link", "reason": "get all coupon link, possibly related to restaurant reviews"},
+    {"api_id": "ticketpocket_order_coupon_report", "reason": "order coupon report, possibly related to restaurant reviews"},
+    {"api_id": "anadolu_generatereportpdf", "reason": "generate report pdf, possibly related to restaurant reviews"},
+    {"api_id": "testingapiwithinorg_requestdeposit", "reason": "Request deposit, possibly related to restaurant reviews"},
+    {"api_id": "chimp_rewriter_querystats", "reason": "Returns remaining query quota, possibly related to restaurant reviews"},
+    {"api_id": "pe_demo_view_ip_address", "reason": "View IP address, possibly related to restaurant reviews"},
+    {"api_id": "putreq_putreq", "reason": "put req, possibly related to restaurant reviews"},
+    {"api_id": "keyword_suggestions_keyword_suggestions", "reason": "Get keyword suggestions, possibly related to restaurant reviews"}
+  ]
+}

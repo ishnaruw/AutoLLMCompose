@@ -1,0 +1,74 @@
+[
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 1] Although the description is empty, the name suggests it might be related to getting events, which could include user location. | Also relevant for subtask 2: Although the description is empty, the name suggests it might be related to events, which could include restaurants. | Also relevant for subtask 3: Returns event information, possibly including reviews | Also relevant for subtask 4: Although description is empty, it's in the Advertising category which might be related to events."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 1] Although the description is empty, the name suggests it might be related to getting detailed reports, which could include user location. | Also relevant for subtask 2: Although the description is empty, the name suggests it might be related to reports, which could include restaurant information. | Also relevant for subtask 3: Returns detailed reports, possibly including reviews | Also relevant for subtask 4: Although description is empty, it's in the Advertising category which might be related to events."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 1] Although the description is empty, the name suggests it might be related to saving information, which could include user location. | Also relevant for subtask 2: Although the description is empty, the name suggests it might be related to saving information, which could include restaurant details. | Also relevant for subtask 4: Although description is empty, it's in the Advertising category which might be related to saving information."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 1] Although the description is empty, the name suggests it might be related to sending links, which could include user location. | Also relevant for subtask 2: Although the description is empty, the name suggests it might be related to coupons, which could be used at restaurants. | Also relevant for subtask 3: Returns links to coupons, possibly including reviews | Also relevant for subtask 4: Although description is empty, it's in the Advertising category which might be related to promotions."
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "reason": "[Subtask 1] This API might be related to user creation, which could include user location. | Also relevant for subtask 2: This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate. | Also relevant for subtask 3: Creates users with array input, possibly including reviews"
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "reason": "[Subtask 1] This API is not directly related to user location, but it might be used in conjunction with other APIs to get user location. | Also relevant for subtask 2: This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate. | Also relevant for subtask 3: Generates social media captions, possibly including reviews"
+  },
+  {
+    "api_id": "catfactprompts_swaggerresources_5",
+    "reason": "[Subtask 1] This API is not directly related to user location, but it might be used in conjunction with other APIs to get user location. | Also relevant for subtask 2: This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate."
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "reason": "[Subtask 1] This API is not directly related to user location, but it might be used in conjunction with other APIs to get user location. | Also relevant for subtask 2: This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate. | Also relevant for subtask 3: Compares teams, possibly including reviews"
+  },
+  {
+    "api_id": "bing_keyword_planner_url_seed",
+    "reason": "[Subtask 1] Returns suitable keyword recommendations based on provided keywords | Also relevant for subtask 2: This API can be used to find nearby places by suggesting keywords related to a location | Also relevant for subtask 3: Returns keyword recommendations, possibly including restaurant reviews | Also relevant for subtask 4: This API can be used to find suitable keywords related to restaurants, which could be used for email marketing."
+  },
+  {
+    "api_id": "keyword_suggestion_api_questions",
+    "reason": "[Subtask 1] Gives questions related to the queried keyword | Also relevant for subtask 3: Returns questions related to queried keywords, possibly including restaurant reviews | Also relevant for subtask 4: This API can be used to find questions related to restaurants, which could be used for email marketing."
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "reason": "[Subtask 2] This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate. | Also relevant for subtask 3: Extracts sitemap XML as JSON, possibly including reviews"
+  },
+  {
+    "api_id": "cold_opener_cold_line_from_instagram_post",
+    "reason": "[Subtask 2] This API is not relevant to the subtask goal, but it's included in the batch, so it's kept as a candidate. | Also relevant for subtask 3: Extracts content from Instagram posts"
+  },
+  {
+    "api_id": "asdfadsf_get_products_in_category",
+    "reason": "[Subtask 2] Although it's not explicitly for restaurants, it could be used to find nearby places with products | Also relevant for subtask 3: Get Products in Category, possibly including restaurant reviews | Also relevant for subtask 4: Although not explicitly stated, this API might be used to retrieve restaurant information."
+  },
+  {
+    "api_id": "ticketpocket_get_provinces",
+    "reason": "[Subtask 4] This API might be used to retrieve restaurant locations by province."
+  },
+  {
+    "api_id": "ticketpocket_get_reque_exhibition",
+    "reason": "[Subtask 4] This API might be used to retrieve restaurant information, although the description is unclear."
+  },
+  {
+    "api_id": "ticketpocket_confirm_pay_credit",
+    "reason": "[Subtask 4] This API might be used to handle payment for restaurant reservations via email."
+  },
+  {
+    "api_id": "ticketpocket_coupon_createv2",
+    "reason": "[Subtask 4] This API might be used to create coupons for restaurant reservations via email."
+  },
+  {
+    "api_id": "hello_hello",
+    "reason": "[Subtask 4] This API can be used to send an email with a restaurant reservation confirmation."
+  }
+]

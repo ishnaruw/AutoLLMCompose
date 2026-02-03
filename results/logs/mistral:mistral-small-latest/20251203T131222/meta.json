@@ -1,8 +1,0 @@
-{
-  "model_tag": "mistral:mistral-small-latest",
-  "provider": "mistral",
-  "model": "mistral-small-latest",
-  "with_qos": true,
-  "user_goal": "Build a service that lists gyms near a user\u2019s location, compares pricing plans, and enables mobile booking.",
-  "num_subtasks": 4
-}

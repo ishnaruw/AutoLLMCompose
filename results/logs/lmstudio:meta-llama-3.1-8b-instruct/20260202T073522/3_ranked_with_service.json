@@ -1,0 +1,462 @@
+[
+  {
+    "api_id": "meteo_data_api_get_info",
+    "score": 0.0,
+    "service": {
+      "api_id": "meteo_data_api_get_info",
+      "category": "Advertising",
+      "name": "GET INFO",
+      "description": "GET INFO DATA with location",
+      "method": "GET",
+      "url": "https://meteo-data-api.p.rapidapi.com/weather",
+      "_file": "meteo_data_api.json",
+      "_tool": "meteo_data_api",
+      "qos": {
+        "rt_ms": 0.808,
+        "tp_rps": 278.28,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "instant_messaging_messages_info",
+    "score": 0.0,
+    "service": {
+      "api_id": "instant_messaging_messages_info",
+      "category": "Advertising",
+      "name": "messages/info",
+      "description": "This method allows you to get the information for a sent instant message.",
+      "method": "POST",
+      "url": "https://sends-im-instant-messaging-v1.p.rapidapi.com/messages/info/",
+      "_file": "instant_messaging.json",
+      "_tool": "instant_messaging",
+      "qos": {
+        "rt_ms": 0.1635,
+        "tp_rps": 42.813,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "privatepublicapi_addpet",
+    "score": 0.0,
+    "service": {
+      "api_id": "privatepublicapi_addpet",
+      "category": "Advertising",
+      "name": "addPet",
+      "description": "Add a new pet to the store",
+      "method": "POST",
+      "url": "https://privatepublicapi.p.rapidapi.com/pet",
+      "_file": "privatepublicapi.json",
+      "_tool": "privatepublicapi",
+      "qos": {
+        "rt_ms": 0.261,
+        "tp_rps": 7.662,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "document_scanner_document_scanner",
+    "score": 0.0,
+    "service": {
+      "api_id": "document_scanner_document_scanner",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Document scanner",
+      "description": "PresentID Document scanner API localizes document images with various distortion types from a single input image.",
+      "method": "POST",
+      "url": "https://document-scanner.p.rapidapi.com/DetectDocument",
+      "_file": "document_scanner.json",
+      "_tool": "document_scanner",
+      "qos": {
+        "rt_ms": 0.154,
+        "tp_rps": 529.2355,
+        "availability": 0.9735,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_query_explain_a_sql_query",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_query_explain_a_sql_query",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Explain a SQL Query",
+      "description": "Explain a SQL Query",
+      "method": "POST",
+      "url": "https://ai-query2.p.rapidapi.com/explain_sql/",
+      "_file": "ai_query.json",
+      "_tool": "ai_query",
+      "qos": {
+        "rt_ms": 0.1565,
+        "tp_rps": 57.555,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_text_processing_array_similarities",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_text_processing_array_similarities",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Array Similarities",
+      "description": "Calculates the pairwise cosine similarities between two arrays of texts.\r\n\r\nLeveraging AI techniques, it converts each text in both arrays into its corresponding embedding and computes the cosine similarity between each pair of texts from the two arrays. The cosine similarity value ranges from 0 to 1, with 1 indicating identical vectors and 0 indicating completely dissimilar vectors.\r\n\r\nThis is particularly useful in various applications such as cross-language similarity computation, multi-document comparison, and cross-domain text analysis.",
+      "method": "POST",
+      "url": "https://ai-text-processing.p.rapidapi.com/rapidapi/ai-text-processing/array-similarities",
+      "_file": "ai_text_processing.json",
+      "_tool": "ai_text_processing",
+      "qos": {
+        "rt_ms": 0.2995,
+        "tp_rps": 16.694000000000003,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_writer_qr_code",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_writer_qr_code",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "QR Code",
+      "description": "Generate a QR Code from a link or a text.",
+      "method": "GET",
+      "url": "https://ai-writer1.p.rapidapi.com/qr/",
+      "_file": "ai_writer.json",
+      "_tool": "ai_writer",
+      "qos": {
+        "rt_ms": 0.295,
+        "tp_rps": 6.779,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_text_to_code_generation_explain_code",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_text_to_code_generation_explain_code",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Explain Code",
+      "description": "Explains a snippet of code in natural language.",
+      "method": "POST",
+      "url": "https://ai-text-to-code-generation.p.rapidapi.com/explain",
+      "_file": "ai_text_to_code_generation.json",
+      "_tool": "ai_text_to_code_generation",
+      "qos": {
+        "rt_ms": 0.281,
+        "tp_rps": 24.911,
+        "availability": 0.5634,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "receipt_image_question_answering_receipt_question_answering",
+    "score": 0.0,
+    "service": {
+      "api_id": "receipt_image_question_answering_receipt_question_answering",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Receipt Question Answering",
+      "description": "Ask a question about your receipt.\n\nThe API takes two parameters `image_url` and `question`.",
+      "method": "POST",
+      "url": "https://receipt-image-question-answering.p.rapidapi.com/ask",
+      "_file": "receipt_image_question_answering.json",
+      "_tool": "receipt_image_question_answering",
+      "qos": {
+        "rt_ms": 1.374,
+        "tp_rps": 3.639,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "lokingai_image_classify_classify_post",
+    "score": 0.0,
+    "service": {
+      "api_id": "lokingai_image_classify_classify_post",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "classify_classify_post",
+      "description": "Image classification.\n\nClassify an uploaded image using an image classification model.\n\nParameters:\n- **payload**: The uploaded image file.\n\nReturns:\n- **ClassifyResponse**: A response containing classification results for the uploaded image.\n\nExample Response:\n```\n{\n    \"data\": [\n        {\"score\": 0.85, \"label\": \"cat\"},\n        {\"score\": 0.73, \"label\": \"dog\"}\n    ]\n}\n```",
+      "method": "POST",
+      "url": "https://lokingai-image.p.rapidapi.com/classify",
+      "_file": "lokingai_image.json",
+      "_tool": "lokingai_image",
+      "qos": {
+        "rt_ms": 0.419,
+        "tp_rps": 4.773,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "lokingai_text_mask_filler_mask_filler_post",
+    "score": 0.0,
+    "service": {
+      "api_id": "lokingai_text_mask_filler_mask_filler_post",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "mask_filler_mask_filler_post",
+      "description": "Mask filling.\n\nFill in masked values in the input text.\n\nParameters:\n- **payload**: TextRequest object containing the input text with masked values.\n\nReturns:\n- **MaskFillerResponse**: A response containing the filled-in masked values.\n\nExample Request:\n```\nPOST /mask-filler\n{\n    \"text\": \"Please buy [MASK] from the store.\"\n}\n```\n\nExample Response:\n```\n{\n  \"error\": null,\n  \"data\": [\n    {\n      \"score\": 0.17938034236431122,\n      \"token\": 2505,\n      \"token_str\": \"anything\",\n      \"sequence\": \"please buy anything from this store\"\n    },\n    {\n      \"score\": 0.11332187056541443,\n      \"token\": 2242,\n      \"token_str\": \"something\",\n      \"sequence\": \"please buy something from this store\"\n    },\n    {\n      \"score\": 0.05946308374404907,\n      \"token\": 3688,\n      \"token_str\": \"products\",\n      \"sequence\": \"please buy products from this store\"\n    },\n    {\n      \"score\": 0.04591205716133118,\n      \"token\": 5167,\n      \"token_str\": \"items\",\n      \"sequence\": \"please buy items from this store\"\n    },\n    {\n      \"score\": 0.04386703670024872,\n      \"token\": 2009,\n      \"token_str\": \"it\",\n      \"sequence\": \"please buy it from this store\"\n    }\n  ]\n}\n```",
+      "method": "POST",
+      "url": "https://lokingai-text.p.rapidapi.com/mask-filler",
+      "_file": "lokingai_text.json",
+      "_tool": "lokingai_text",
+      "qos": {
+        "rt_ms": 0.375,
+        "tp_rps": 5.333,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "text_moderation_api_text_moderation",
+    "score": 0.0,
+    "service": {
+      "api_id": "text_moderation_api_text_moderation",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Text Moderation",
+      "description": "The API takes in a text and gives output a probability (score between 1-5) which can be used to filter not suitable for work text. Scores < 2 indicate that the text is likely to be safe with high probability. Scores >= 4 indicate that the text is highly probable to be NSFW (not suitable for work). Scores in middle range may be binned for different NSFW levels. The API takes a general nsfw_likelihood score and also display custom params with labels like: \nsexually explicit\nsexually suggestive, and\noffensive\nGiving each one a score with the same range of values (1-5)\n\nThis is a POST endpoint where you will get the NSFW score",
+      "method": "POST",
+      "url": "https://text-moderation-api.p.rapidapi.com/text/moderation/2e7b23d3eb7fd3a4e6060184298673a5",
+      "_file": "text_moderation_api.json",
+      "_tool": "text_moderation_api",
+      "qos": {
+        "rt_ms": 0.39,
+        "tp_rps": 5.128,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "mad_gpt_api_chat_completion-2",
+    "score": 0.0,
+    "service": {
+      "api_id": "mad_gpt_api_chat_completion-2",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Chat Completion",
+      "description": "Performs chat completion using OpenAI GPT-3.5 based on user input messages",
+      "method": "POST",
+      "url": "https://mad-gpt-api.p.rapidapi.com/chat-completion",
+      "_file": "mad_gpt_api.json",
+      "_tool": "mad_gpt_api",
+      "qos": {
+        "rt_ms": 0.122,
+        "tp_rps": 32.786,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "openjourney_photomovieai",
+    "score": 0.0,
+    "service": {
+      "api_id": "openjourney_photomovieai",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "PhotoMovieAI",
+      "description": "Photo movie generation AI endpoint",
+      "method": "POST",
+      "url": "https://openjourney1.p.rapidapi.com/models/Yntec/photoMovieRealistic",
+      "_file": "openjourney.json",
+      "_tool": "openjourney",
+      "qos": {
+        "rt_ms": 0.695,
+        "tp_rps": 2.877,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "midjourney_best_experience_describe_fast-2",
+    "score": 0.0,
+    "service": {
+      "api_id": "midjourney_best_experience_describe_fast-2",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Describe Fast",
+      "description": "Generate four possible prompts based on the uploaded image",
+      "method": "POST",
+      "url": "https://midjourney-best-experience.p.rapidapi.com/mj/describe-fast",
+      "_file": "midjourney_best_experience.json",
+      "_tool": "midjourney_best_experience",
+      "qos": {
+        "rt_ms": 0.475,
+        "tp_rps": 12.631,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_based_text_paraphrasing_text",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_based_text_paraphrasing_text",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "text",
+      "description": "It can accept any text.",
+      "method": "POST",
+      "url": "https://ai-based-text-paraphrasing.p.rapidapi.com/data",
+      "_file": "ai_based_text_paraphrasing.json",
+      "_tool": "ai_based_text_paraphrasing",
+      "qos": {
+        "rt_ms": 0.099,
+        "tp_rps": 30.303,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "opennlp_api_api_v1_nlp_name_finder",
+    "score": 0.0,
+    "service": {
+      "api_id": "opennlp_api_api_v1_nlp_name_finder",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "/api/v1/nlp/name-finder",
+      "description": "supported languages: en, de, da, nl, pt, se",
+      "method": "POST",
+      "url": "https://opennlp-api.p.rapidapi.com/api/v1/nlp/name-finder",
+      "_file": "opennlp_api.json",
+      "_tool": "opennlp_api",
+      "qos": {
+        "rt_ms": 0.111,
+        "tp_rps": 36.036,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_1001fx_functions_tldr_wrapup",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_1001fx_functions_tldr_wrapup",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "tldr-WrapUp",
+      "description": "The \"toolongtoread AI\" REST endpoint is an API that summarizes long texts into shorter, easier to read paragraphs using natural language processing (NLP) techniques. To use this endpoint, users must provide the text they want to summarize as a prompt input. The endpoint then processes the text using NLP algorithms to extract the most important information and returns a summarized version as output.",
+      "method": "POST",
+      "url": "https://ai-1001fx-functions.p.rapidapi.com/ai/toolongtoread",
+      "_file": "ai_1001fx_functions.json",
+      "_tool": "ai_1001fx_functions",
+      "qos": {
+        "rt_ms": 1.0825,
+        "tp_rps": 12.0085,
+        "availability": 0.9676,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "blog_guru_ai_summarizeblogpost",
+    "score": 0.0,
+    "service": {
+      "api_id": "blog_guru_ai_summarizeblogpost",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "/summarizeBlogPost",
+      "description": "/summarizeBlogPost",
+      "method": "POST",
+      "url": "https://blog-guru-ai.p.rapidapi.com/summarizeBlogPost",
+      "_file": "blog_guru_ai.json",
+      "_tool": "blog_guru_ai",
+      "qos": {
+        "rt_ms": 1.2360000000000002,
+        "tp_rps": 2.4269999999999996,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "entity_detection_linking_entity_detection",
+    "score": 0.0,
+    "service": {
+      "api_id": "entity_detection_linking_entity_detection",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "entity_detection",
+      "description": "Named entities (e.g. persons, places, organisations, etc.) are found within the given text and additional info is provided for each entity (e.g. descriptions, images, position within the text. etc.).",
+      "method": "POST",
+      "url": "https://entity-detection-linking.p.rapidapi.com/v1/microfacts",
+      "_file": "entity_detection_linking.json",
+      "_tool": "entity_detection_linking",
+      "qos": {
+        "rt_ms": 0.169,
+        "tp_rps": 41.42,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ai_content_generator_blog_headline_seo",
+    "score": 0.0,
+    "service": {
+      "api_id": "ai_content_generator_blog_headline_seo",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Blog Headline SEO",
+      "description": "Maintaining a blog is a proven way to drive traffic to your website through SEO.",
+      "method": "POST",
+      "url": "https://ai-content-generator1.p.rapidapi.com/create/newBlogHeadline",
+      "_file": "ai_content_generator.json",
+      "_tool": "ai_content_generator",
+      "qos": {
+        "rt_ms": 0.352,
+        "tp_rps": 8.522,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "text_analysis_break_into_words",
+    "score": 0.0,
+    "service": {
+      "api_id": "text_analysis_break_into_words",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "break-into-words",
+      "description": "break-into-words",
+      "method": "POST",
+      "url": "https://text-analysis20.p.rapidapi.com/break-into-words",
+      "_file": "text_analysis.json",
+      "_tool": "text_analysis",
+      "qos": {
+        "rt_ms": 0.364,
+        "tp_rps": 24.725,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "text2speech_text2speech_endpoint",
+    "score": 0.0,
+    "service": {
+      "api_id": "text2speech_text2speech_endpoint",
+      "category": "Artificial_Intelligence_Machine_Learning",
+      "name": "Text2Speech Endpoint",
+      "description": "/tts",
+      "method": "GET",
+      "url": "https://text2speech3.p.rapidapi.com/tts",
+      "_file": "text2speech.json",
+      "_tool": "text2speech",
+      "qos": {
+        "rt_ms": 0.1445,
+        "tp_rps": 34.602000000000004,
+        "availability": 0.9853,
+        "valid_qos": true
+      }
+    }
+  }
+]

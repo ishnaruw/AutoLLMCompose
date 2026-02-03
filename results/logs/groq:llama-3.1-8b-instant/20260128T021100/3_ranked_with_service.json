@@ -1,0 +1,382 @@
+[
+  {
+    "api_id": "cold_opener_cold_line_from_instagram_post",
+    "score": 0.0,
+    "service": {
+      "api_id": "cold_opener_cold_line_from_instagram_post",
+      "category": "Advertising",
+      "name": "Cold line from Instagram post",
+      "description": "Cold line from Instagram post",
+      "method": "POST",
+      "url": "https://cold-opener.p.rapidapi.com/getline",
+      "_file": "cold_opener.json",
+      "_tool": "cold_opener",
+      "qos": {
+        "rt_ms": 0.34,
+        "tp_rps": 11.764,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 0.0,
+    "service": {
+      "api_id": "seo_automations_extract_sitemap_xml_as_json",
+      "category": "Advertising",
+      "name": "Extract Sitemap XML as JSON",
+      "description": "Are you looking for an API that can quickly and easily download and parse sitemap.xml files into JSON format? Look no further! Our API allows you to make a simple GET request, passing in the URL of a sitemap.xml file as a parameter. The API will handle the rest, downloading the file, parsing it into a JSON object, and returning the result in the response. And if you need a little extra information to help organize and navigate the URLs in the sitemap, we've got you covered there too. By adding a query parameter to the GET request, you can also include category and breadcrumb information for each URL in the parsed sitemap. Give it a try and see how much easier working with sitemaps can be!",
+      "method": "GET",
+      "url": "https://seo-automations.p.rapidapi.com/v1/seo/fetchsitemap/",
+      "_file": "seo_automations.json",
+      "_tool": "seo_automations",
+      "qos": {
+        "rt_ms": 0.118,
+        "tp_rps": 25.423,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_event",
+      "category": "Advertising",
+      "name": "get_all_event",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_event",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.433,
+        "tp_rps": 6.928,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "social_media_caption_social_media_caption",
+    "score": 0.0,
+    "service": {
+      "api_id": "social_media_caption_social_media_caption",
+      "category": "Advertising",
+      "name": "Social Media Caption",
+      "description": "Generate catchy captions for social media",
+      "method": "GET",
+      "url": "https://social-media-caption.p.rapidapi.com/social-caption",
+      "_file": "social_media_caption.json",
+      "_tool": "social_media_caption",
+      "qos": {
+        "rt_ms": 0.9,
+        "tp_rps": 2.222,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "catfactprompts_swaggerresources_5",
+    "score": 0.0,
+    "service": {
+      "api_id": "catfactprompts_swaggerresources_5",
+      "category": "Advertising",
+      "name": "swaggerResources_5",
+      "description": " ",
+      "method": "PATCH",
+      "url": "https://catfactprompts.p.rapidapi.com/swagger-resources",
+      "_file": "catfactprompts.json",
+      "_tool": "catfactprompts",
+      "qos": {
+        "rt_ms": 0.956,
+        "tp_rps": 3.138,
+        "availability": 0.9941,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "test_v2_some_operation_od-6",
+    "score": 0.0,
+    "service": {
+      "api_id": "test_v2_some_operation_od-6",
+      "category": "Advertising",
+      "name": "some-operation-od",
+      "description": "H2H team comparison",
+      "method": "GET",
+      "url": "https://test2527.p.rapidapi.com/teams/head2head.json",
+      "_file": "test_v2.json",
+      "_tool": "test_v2",
+      "qos": {
+        "rt_ms": 0.12,
+        "tp_rps": 25.0,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_get_detail_report",
+      "category": "Advertising",
+      "name": "get_detail_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_detail_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.471,
+        "tp_rps": 12.738,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_save_info_title",
+      "category": "Advertising",
+      "name": "save_info_title",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/save_info_title",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "petstoreratelimit_createuserswitharrayinput",
+    "score": 0.0,
+    "service": {
+      "api_id": "petstoreratelimit_createuserswitharrayinput",
+      "category": "Advertising",
+      "name": "createUsersWithArrayInput",
+      "description": "",
+      "method": "POST",
+      "url": "https://petstoreratelimit.p.rapidapi.com/user/createWithArray",
+      "_file": "petstoreratelimit.json",
+      "_tool": "petstoreratelimit",
+      "qos": {
+        "rt_ms": 6.343500000000001,
+        "tp_rps": 0.297,
+        "availability": 0.9027,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_send_link_coupon",
+      "category": "Advertising",
+      "name": "send_link_coupon",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/shop/send_link_coupon",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.8525,
+        "tp_rps": 3.5185,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.0,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "putreq_putreq",
+    "score": 0.0,
+    "service": {
+      "api_id": "putreq_putreq",
+      "category": "Advertising",
+      "name": "putReq",
+      "description": "put req",
+      "method": "POST",
+      "url": "https://putreq.p.rapidapi.com/",
+      "_file": "putreq.json",
+      "_tool": "putreq",
+      "qos": {
+        "rt_ms": 0.332,
+        "tp_rps": 9.036,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 0.0,
+    "service": {
+      "api_id": "pe_demo_view_ip_address",
+      "category": "Advertising",
+      "name": "View IP address",
+      "description": "View the IP address of the client in JSON format.",
+      "method": "GET",
+      "url": "https://pe-demo.p.rapidapi.com/ip",
+      "_file": "pe_demo.json",
+      "_tool": "pe_demo",
+      "qos": {
+        "rt_ms": 0.3765,
+        "tp_rps": 7.968999999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "score": 0.0,
+    "service": {
+      "api_id": "chimp_rewriter_querystats",
+      "category": "Advertising",
+      "name": "QueryStats",
+      "description": "Returns remaining query quota. Can also be used to test an account.",
+      "method": "POST",
+      "url": "https://akturatech-chimp-rewriter.p.rapidapi.com/",
+      "_file": "chimp_rewriter.json",
+      "_tool": "chimp_rewriter",
+      "qos": {
+        "rt_ms": 0.339,
+        "tp_rps": 11.799,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.0,
+    "service": {
+      "api_id": "privatepublicapi_getorderbyid",
+      "category": "Advertising",
+      "name": "getOrderById",
+      "description": "For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions",
+      "method": "GET",
+      "url": "https://privatepublicapi.p.rapidapi.com/store/order/{orderId}",
+      "_file": "privatepublicapi.json",
+      "_tool": "privatepublicapi",
+      "qos": {
+        "rt_ms": 0.441,
+        "tp_rps": 6.802,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_get_all_coupon_link",
+      "category": "Advertising",
+      "name": "get_all_coupon_link",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_coupon_link",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.519,
+        "tp_rps": 9.633,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": 0.0,
+    "service": {
+      "api_id": "testingapiwithinorg_requestdeposit",
+      "category": "Advertising",
+      "name": "Requestdeposit",
+      "description": "# Deposits and Withdrawals\nTransactions are requested with `paymentMethodDetails` (details of the transaction, passed to Stronghold) and responses contain `paymentMethodInstructions` (instructions for the user, given by Stronghold) as follows:\n\n## PaymentMethodDetails on Requests\n\nKey | Description | Used In\n--- | --- | ---\namount | The amount of the transaction as a string with a maximum of 7 decimal places | Withdrawals for all\nwithdrawal_address | The venue-specific address for the asset to be withdrawn to | Withdrawals for `bitcoin`, `litecoin`, `ethereum`, `stellar`, and `ripple`\nreference | The venue-specific reference to be attached to the withdrawal | Withdrawals for `stellar` and `ripple`\nbank_name | The name of the bank, e.g. 'JPMorgan Chase Bank N.A.' | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_routing_number | The routing number of the bank account | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_account_number | The account number of the bank account | Deposits for `us-ach` and withdrawals for `us-ach` and `us-wire`\nbank_account_type | The type of bank account, either 'checking' or 'savings' | Deposits and withdrawals for `us-ach`\n\n## PaymentMethodInstructions on Responses\n\nKey | Description | Used In\n--- | --- | ---\ndeposit_address | The venue-specific address that the asset should to be deposited into | Deposits for `bitcoin`, `litecoin`, `ethereum`, `stellar`, and `ripple`\nreference | The venue-specific reference that must be attached to the deposit | Deposits for `stellar`, `ripple`, and `us-wire`\ninterledger_payment_pointer | The Interledger SPSP Payment Pointer used to receive streaming payments in a certain asset | Deposits for `ilp-spsp`\namount | The amount that must be sent for the deposit to succeed | Deposits for `us-wire`\nrecipient_name | The name of the recipient that the funds should be sent to | Deposits for `us-wire`\nrecipient_address | The address of the recipient that the funds should be sent to | Deposits for `us-wire`\nbank_name | The name of the bank, e.g. 'JPMorgan Chase Bank N.A.' | Deposits for `us-wire`\nbank_routing_number | The routing number of the bank account | Deposits for `us-wire`\nbank_account_number | The account number of the bank account | Deposits for `us-wire`\nbank_swift_code | The SWIFT code to use where the wire is being sent internationally | Deposits for `us-wire`\n\n## Notes\n\n- For `us-ach` and `us-wire`, the name on the bank account must match the name on the entity's Stronghold account.\n- `us-ach` deposits take a variable amount of time to be credited to a Stronghold account. Please contact us for more information on the timings for your particular use case.\n- The entity must have completed the account verification to use all payment methods with the exception of `ilp-spsp`.\n\n## Request\n\nField | Type | Description\n--- | --- | ---\nassetId | string | The identifier of the asset to deposit.\npaymentMethod | string | The payment method for the deposit.\npaymentMethodDetails | key-value string pairs | (Optional) If required for the deposit method, the details of the deposit.\n\n## Response\n\nField | Type | Description\n--- | --- | ---\nresult | AccountTransaction | The account transaction. A transaction may not necessarily been created (as seen by the absence of an identifier) but the payment method instructions can be followed to initiate the deposit.",
+      "method": "POST",
+      "url": "https://testingapiwithinorg.p.rapidapi.com/venues/{venueid}/accounts/{accountid}/deposit",
+      "_file": "testingapiwithinorg.json",
+      "_tool": "testingapiwithinorg",
+      "qos": {
+        "rt_ms": 1.03,
+        "tp_rps": 551.258,
+        "availability": 0.9735,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 0.0,
+    "service": {
+      "api_id": "ticketpocket_order_coupon_report",
+      "category": "Advertising",
+      "name": "order_coupon_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/order_coupon_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 455.621,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 0.0,
+    "service": {
+      "api_id": "anadolu_generatereportpdf",
+      "category": "Advertising",
+      "name": "generateReportPdf",
+      "description": " ",
+      "method": "POST",
+      "url": "https://anadolu.p.rapidapi.com/v1/instagram/profile/nostrud proident qui eu Lorem/report/pdf",
+      "_file": "anadolu.json",
+      "_tool": "anadolu",
+      "qos": {
+        "rt_ms": 0.465,
+        "tp_rps": 96.774,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  }
+]

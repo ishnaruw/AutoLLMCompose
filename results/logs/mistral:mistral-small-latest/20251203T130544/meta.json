@@ -1,8 +1,0 @@
-{
-  "model_tag": "mistral:mistral-small-latest",
-  "provider": "mistral",
-  "model": "mistral-small-latest",
-  "with_qos": true,
-  "user_goal": "Design a travel app that books flights, suggests hotels, shows top-rated local attractions, and displays weather info.",
-  "num_subtasks": 4
-}

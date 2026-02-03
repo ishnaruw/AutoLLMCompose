@@ -51,7 +51,7 @@ Return strict JSON in this format:
         {
           "step": <integer starting from 1 within this path>,
           "api_id": "<api_id taken from the ranked candidates>",
-          "subtask_id": <integer matching an id from the subtasks, if applicable>,
+          "subtask_id": <integer matching an id from the subtasks; do not leave null unless the step truly does not map to any subtask>,
           "action": "one sentence describing what this step does",
           "why": "one sentence explaining why this API was chosen for this step, "
                   "optionally referring to its score or QoS-related information",

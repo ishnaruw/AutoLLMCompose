@@ -1,8 +1,0 @@
-{
-  "model_tag": "mistral:mistral-small-latest",
-  "provider": "mistral",
-  "model": "mistral-small-latest",
-  "with_qos": true,
-  "user_goal": "Build a service that finds local events based on interests and syncs selected ones to the user\u2019s Google Calendar.",
-  "num_subtasks": 4
-}

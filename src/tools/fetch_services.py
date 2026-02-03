@@ -45,3 +45,12 @@ def fetch_services(
 
     # Pagination
     return items[offset : offset + limit]
+
+def compress_service(s):
+    return {
+        "api_id": s["api_id"],
+        "name": s.get("name", ""),
+        "description": s.get("description", "")[:200],
+        "category": s.get("category"),
+    }
+

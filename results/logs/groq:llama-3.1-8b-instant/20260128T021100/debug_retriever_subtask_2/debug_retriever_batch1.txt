@@ -1,0 +1,12 @@
+{
+  "keep": [
+    {"api_id": "privatepublicapi_getorderbyid", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "ticketpocket_get_all_coupon_link", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "testingapiwithinorg_requestdeposit", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "ticketpocket_order_coupon_report", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "catfactprompts_securityconfiguration_5", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "anadolu_generatereportpdf", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "pe_demo_view_ip_address", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"},
+    {"api_id": "chimp_rewriter_querystats", "reason": "Does not match the goal, but has a category of Advertising which might be related to searching for nearby restaurants"}
+  ]
+}

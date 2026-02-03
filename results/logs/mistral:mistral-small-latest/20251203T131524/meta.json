@@ -1,8 +1,0 @@
-{
-  "model_tag": "mistral:mistral-small-latest",
-  "provider": "mistral",
-  "model": "mistral-small-latest",
-  "with_qos": true,
-  "user_goal": "Build a mobile app that detects when a user enters a shopping area and sends active retail coupons via push or SMS.",
-  "num_subtasks": 4
-}

@@ -1,0 +1,60 @@
+{
+  "mode": "mode1_ranker_candidates",
+  "primary_path_id": 1,
+  "path_score": 0.9,
+  "microservices": [
+    {
+      "step": 1,
+      "subtask_id": 1,
+      "planner_choice_api_id": "cold_opener_cold_line_from_instagram_post",
+      "candidate_source": "subtask_scoped",
+      "num_candidates_requested": 0,
+      "num_candidates_valid_qos": 0,
+      "num_candidates_dropped": 0,
+      "dropped": [],
+      "status": "insufficient_qos_candidates"
+    },
+    {
+      "step": 2,
+      "subtask_id": 2,
+      "planner_choice_api_id": "seo_automations_extract_sitemap_xml_as_json",
+      "candidate_source": "subtask_scoped",
+      "num_candidates_requested": 0,
+      "num_candidates_valid_qos": 0,
+      "num_candidates_dropped": 0,
+      "dropped": [],
+      "status": "insufficient_qos_candidates"
+    },
+    {
+      "step": 3,
+      "subtask_id": 3,
+      "planner_choice_api_id": "ticketpocket_get_reque_exhibition",
+      "candidate_source": "subtask_scoped",
+      "num_candidates_requested": 0,
+      "num_candidates_valid_qos": 0,
+      "num_candidates_dropped": 0,
+      "dropped": [],
+      "status": "insufficient_qos_candidates"
+    },
+    {
+      "step": 4,
+      "subtask_id": 4,
+      "planner_choice_api_id": "hello_hello",
+      "candidate_source": "subtask_scoped",
+      "num_candidates_requested": 0,
+      "num_candidates_valid_qos": 0,
+      "num_candidates_dropped": 0,
+      "dropped": [],
+      "status": "insufficient_qos_candidates"
+    }
+  ],
+  "path_summary": {
+    "num_steps": 4,
+    "num_ok": 0,
+    "num_insufficient_qos": 4,
+    "planner_hit5_rate": null,
+    "ranker_hit5_rate": null,
+    "planner_avg_rank": null,
+    "ranker_avg_rank": null
+  }
+}
