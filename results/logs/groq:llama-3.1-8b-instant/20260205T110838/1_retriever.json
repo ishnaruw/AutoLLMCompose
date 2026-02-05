@@ -1,0 +1,38 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "reason": "[Subtask 1] View the IP address of the client in JSON format."
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "reason": "[Subtask 1] For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "reason": "[Subtask 2] Get keyword suggestions from a keyword seed. | Also relevant for subtask 3: Get keyword suggestions from a keyword seed."
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "reason": "[Subtask 4] Sends a link via email, potentially for restaurant reservations."
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "reason": "[Subtask 4] Returns all coupon links, possibly for restaurant reservations."
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "reason": "[Subtask 4] Generates a report on ordered coupons, potentially for restaurant reservations."
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "reason": "[Subtask 4] Returns a detailed report, possibly for restaurant reservations."
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "reason": "[Subtask 4] Saves information with a title, potentially for restaurant reservations."
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "reason": "[Subtask 4] Returns all events, possibly for restaurant reservations."
+  }
+]

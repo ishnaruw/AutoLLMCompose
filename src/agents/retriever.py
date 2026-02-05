@@ -44,6 +44,9 @@ def retriever_call(llm_call, prompt: str, debug_path: str | None = None):
     return out
 
 
+from pathlib import Path
+import json
+
 def collect_candidates(
     llm_call,
     user_goal: str,
@@ -61,7 +64,10 @@ def collect_candidates(
     """
     keep: dict[str, str] = {}
     offset = 0
-    limit = 200  # keep small to reduce prompt size and provider TPM issues
+
+    # Keep this genuinely small to avoid prompt size / TPM / context errors.
+    # 10–25 is a good range for most providers.
+    limit = 20
 
     prompt_tmpl = Path("prompts/retriever.md").read_text(encoding="utf-8")
 
@@ -78,6 +84,10 @@ def collect_candidates(
             prompt_tmpl
             .replace("{user_goal}", user_goal)
             .replace("{batch_json}", json.dumps(batch, ensure_ascii=False))
+            + "\n\nIMPORTANT:\n"
+              "If NONE of the APIs in this batch are relevant to the user goal, "
+              "return exactly this JSON and nothing else:\n"
+              "{\"keep\": []}\n"
         )
 
         debug_path = None
@@ -98,7 +108,9 @@ def collect_candidates(
         if len(keep) >= 12:
             break
 
-        offset += limit  # consistent pagination
+        # Correct pagination: move by what you requested (or len(batch)).
+        offset += limit
 
     items = list(keep.items())[:12]
     return [{"api_id": k, "reason": v} for k, v in items]
+

@@ -1,0 +1,37 @@
+[
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.9,
+    "reason": "Matches subtask 4 for email reservation system integration"
+  },
+  {
+    "api_id": "chimp_rewriter_querystats",
+    "score": 0.8,
+    "reason": "High availability and high throughput, but no direct match to the goal"
+  },
+  {
+    "api_id": "anadolu_generatereportpdf",
+    "score": 0.7,
+    "reason": "No clear match to any subtask, but has good QoS metrics"
+  },
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 0.6,
+    "reason": "Matches subtask 1 for geolocation API, but no further relevance"
+  },
+  {
+    "api_id": "seo_automations_extract_sitemap_xml_as_json",
+    "score": 0.5,
+    "reason": "No clear match to any subtask, and poor QoS metrics"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.4,
+    "reason": "No clear match to any subtask, and poor QoS metrics"
+  },
+  {
+    "api_id": "testingapiwithinorg_requestdeposit",
+    "score": 0.3,
+    "reason": "No clear match to any subtask, and poor QoS metrics"
+  }
+]

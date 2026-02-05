@@ -1,0 +1,3 @@
+{"keep":[{"api_id": "chimp_rewriter_querystats", "reason":"Returns remaining query quota."}, 
+         {"api_id": "privatepublicapi_getorderbyid", "reason":""}, 
+         {"api_id": "testingapiwithinorg_requestdeposit", "reason":""}]}

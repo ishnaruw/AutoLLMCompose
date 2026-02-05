@@ -1,0 +1,182 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 0.9,
+    "service": {
+      "api_id": "pe_demo_view_ip_address",
+      "category": "Advertising",
+      "name": "View IP address",
+      "description": "View the IP address of the client in JSON format.",
+      "method": "GET",
+      "url": "https://pe-demo.p.rapidapi.com/ip",
+      "_file": "pe_demo.json",
+      "_tool": "pe_demo",
+      "qos": {
+        "rt_ms": 0.3765,
+        "tp_rps": 7.968999999999999,
+        "availability": 0.9912,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.7,
+    "service": {
+      "api_id": "privatepublicapi_getorderbyid",
+      "category": "Advertising",
+      "name": "getOrderById",
+      "description": "For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions",
+      "method": "GET",
+      "url": "https://privatepublicapi.p.rapidapi.com/store/order/{orderId}",
+      "_file": "privatepublicapi.json",
+      "_tool": "privatepublicapi",
+      "qos": {
+        "rt_ms": 0.441,
+        "tp_rps": 6.802,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_get_all_event",
+      "category": "Advertising",
+      "name": "get_all_event",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_event",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.433,
+        "tp_rps": 6.928,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_get_detail_report",
+      "category": "Advertising",
+      "name": "get_detail_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/get_detail_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.471,
+        "tp_rps": 12.738,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_save_info_title",
+      "category": "Advertising",
+      "name": "save_info_title",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/save_info_title",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.1375,
+        "tp_rps": 21.817999999999998,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_send_link_coupon",
+      "category": "Advertising",
+      "name": "send_link_coupon",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/api/v1/shop/send_link_coupon",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.8525,
+        "tp_rps": 3.5185,
+        "availability": 0.9971,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_get_all_coupon_link",
+      "category": "Advertising",
+      "name": "get_all_coupon_link",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/members/get_all_coupon_link",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.519,
+        "tp_rps": 9.633,
+        "availability": 1.0,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 0.5,
+    "service": {
+      "api_id": "ticketpocket_order_coupon_report",
+      "category": "Advertising",
+      "name": "order_coupon_report",
+      "description": " ",
+      "method": "POST",
+      "url": "https://ticketpocket1.p.rapidapi.com/ticket/v1/shops/order_coupon_report",
+      "_file": "ticketpocket.json",
+      "_tool": "ticketpocket",
+      "qos": {
+        "rt_ms": 0.141,
+        "tp_rps": 455.621,
+        "availability": 0.9794,
+        "valid_qos": true
+      }
+    }
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.2,
+    "service": {
+      "api_id": "keyword_suggestions_keyword_suggestions",
+      "category": "Advertising",
+      "name": "Keyword Suggestions",
+      "description": "Get keyword suggestions from a keyword seed.",
+      "method": "POST",
+      "url": "https://keyword-suggestions.p.rapidapi.com/",
+      "_file": "keyword_suggestions.json",
+      "_tool": "keyword_suggestions",
+      "qos": {
+        "rt_ms": 1.484,
+        "tp_rps": 1.347,
+        "availability": 0.9823,
+        "valid_qos": true
+      }
+    }
+  }
+]

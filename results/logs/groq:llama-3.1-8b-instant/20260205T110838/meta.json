@@ -1,0 +1,25 @@
+{
+  "model_tag": "groq:llama-3.1-8b-instant",
+  "provider": "groq",
+  "model": "llama-3.1-8b-instant",
+  "with_qos": true,
+  "user_goal": "Build a service that uses a user\u2019s location to discover restaurants, show reviews, and offer reservations via email.",
+  "num_subtasks": 4,
+  "max_batches": 1,
+  "policy": {
+    "max_batches": 2,
+    "sleep_after_subtask": 0.6,
+    "sleep_after_query": 0.8
+  },
+  "topsis_enabled": true,
+  "topsis_mode": "mode1_ranker_candidates",
+  "topsis_top_k_candidates": 12,
+  "topsis_min_qos_candidates": 5,
+  "topsis_outlier_mitigation": "winsorize_p5_p95",
+  "topsis_normalization": "vector (inside TOPSIS; implemented by method)",
+  "topsis_criteria": [
+    "rt_ms(cost)",
+    "tp_rps(benefit)",
+    "availability(benefit)"
+  ]
+}

@@ -1,0 +1,47 @@
+[
+  {
+    "api_id": "pe_demo_view_ip_address",
+    "score": 0.9,
+    "reason": "Best match for getting user location, with high availability and low latency"
+  },
+  {
+    "api_id": "privatepublicapi_getorderbyid",
+    "score": 0.7,
+    "reason": "Good match for getting user location, but requires integer IDs and has lower availability"
+  },
+  {
+    "api_id": "ticketpocket_get_all_event",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "ticketpocket_get_detail_report",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "ticketpocket_save_info_title",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "ticketpocket_send_link_coupon",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "ticketpocket_get_all_coupon_link",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "ticketpocket_order_coupon_report",
+    "score": 0.5,
+    "reason": "No match for getting user location, but has high availability and low latency for other tasks"
+  },
+  {
+    "api_id": "keyword_suggestions_keyword_suggestions",
+    "score": 0.2,
+    "reason": "No match for getting user location, and has low availability and high latency"
+  }
+]
