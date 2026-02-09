@@ -1,9 +1,16 @@
 # src/agents/retriever.py
 import json
+import os
 import re
 from pathlib import Path
 
 from src.tools.fetch_services import compress_service
+
+# RAG
+try:
+    from src.rag.retriever import FaissServiceRetriever
+except Exception:
+    FaissServiceRetriever = None  # type: ignore
 
 
 def _coerce_json(s: str) -> str:
@@ -42,11 +49,6 @@ def retriever_call(llm_call, prompt: str, debug_path: str | None = None):
         if api_id:
             out.append({"api_id": api_id, "reason": k.get("reason", "")})
     return out
-
-
-from pathlib import Path
-import json
-
 def collect_candidates(
     llm_call,
     user_goal: str,
@@ -57,11 +59,27 @@ def collect_candidates(
     debug_dir: str | None = None,
 ):
     """
-    Iterate through catalog batches, ask the LLM to keep relevant APIs,
-    and return up to 8–12 unique candidates.
+    Retrieval modes:
+
+    1) LLM batch scanning (existing behavior)
+       - set MAOF_RETRIEVER_MODE=llm_batch (default)
+
+    2) RAG-only
+       - set MAOF_RETRIEVER_MODE=rag_only
+       - candidates are the top embedding matches (no LLM filtering)
+
+    3) RAG + LLM filter
+       - set MAOF_RETRIEVER_MODE=rag_llm_filter
+       - FAISS topK -> LLM selects 8–12 and writes reasons
 
     If category is None, fetch_fn returns entries from all categories.
     """
+    mode = (os.getenv("MAOF_RETRIEVER_MODE") or "llm_batch").strip().lower()
+    rag_index_dir = os.getenv("MAOF_RAG_INDEX_DIR", "data/index/maof_v1/with_qos" if with_qos else "data/index/maof_v1/no_qos")
+    rag_topk = int(os.getenv("MAOF_RAG_TOPK", "60"))
+    keep_min = int(os.getenv("MAOF_RAG_KEEP_MIN", "8"))
+    keep_max = int(os.getenv("MAOF_RAG_KEEP_MAX", "12"))
+
     keep: dict[str, str] = {}
     offset = 0
 
@@ -73,6 +91,78 @@ def collect_candidates(
 
     if debug_dir:
         Path(debug_dir).mkdir(parents=True, exist_ok=True)
+
+    # ---------- RAG path ----------
+    if mode in {"rag_only", "rag_llm_filter"}:
+        if FaissServiceRetriever is None:
+            raise RuntimeError(
+                "RAG mode requested but src.rag.retriever could not be imported. "
+                "Install dependencies: faiss-cpu and sentence-transformers."
+            )
+
+        rag = FaissServiceRetriever(rag_index_dir)
+
+        # Retrieve topK
+        retrieved = rag.query(user_goal, top_k=rag_topk)
+
+        if debug_dir:
+            Path(debug_dir).mkdir(parents=True, exist_ok=True)
+            (Path(debug_dir) / "retrieved.json").write_text(
+                json.dumps(
+                    [
+                        {
+                            "api_id": c.api_id,
+                            "score": c.score,
+                            "category": c.category,
+                            "service": c.compressed,
+                        }
+                        for c in retrieved
+                    ],
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+                encoding="utf-8",
+            )
+
+        # RAG-only: just take the top N
+        if mode == "rag_only":
+            n = min(keep_max, len(retrieved))
+            n = max(min(n, keep_max), min(keep_min, n))
+            out = []
+            for c in retrieved[:n]:
+                out.append({"api_id": c.api_id, "reason": "High embedding similarity to subtask."})
+
+            if debug_dir:
+                (Path(debug_dir) / "keep.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
+            return out
+
+        # RAG + LLM filter: call the LLM once over topK candidates
+        candidates = [c.compressed for c in retrieved]
+        prompt = (
+            "You are a retrieval filter. Select the most functionally relevant APIs.\n"
+            "Return STRICT JSON ONLY with this schema: {\"keep\":[{\"api_id\":\"...\",\"reason\":\"...\"}]}.\n\n"
+            f"Subtask goal:\n{user_goal}\n\n"
+            f"Candidates (JSON list):\n{json.dumps(candidates, ensure_ascii=False)}\n\n"
+            f"Rules:\n"
+            f"1) Keep {keep_min} to {keep_max} candidates.\n"
+            "2) Prefer direct functional match to the goal.\n"
+            "3) Do not invent api_ids. Use only api_id values present in candidates.\n"
+            "4) If nothing matches, return {\"keep\":[]}.\n"
+        )
+
+        debug_path = str(Path(debug_dir) / "debug_rag_filter_llm_raw.txt") if debug_dir else None
+        picks = retriever_call(llm_call, prompt, debug_path=debug_path)
+
+        # Fallback if model returns nothing useful
+        if not picks:
+            n = min(keep_max, len(retrieved))
+            picks = [{"api_id": c.api_id, "reason": "Fallback to embedding similarity."} for c in retrieved[:n]]
+
+        if debug_dir:
+            (Path(debug_dir) / "keep.json").write_text(json.dumps(picks, indent=2, ensure_ascii=False), encoding="utf-8")
+        return picks
+
+    # ---------- Existing LLM batch scan path ----------
 
     for batch_idx in range(max_batches):
         batch = fetch_fn(category=category, offset=offset, limit=limit, with_qos=with_qos)

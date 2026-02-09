@@ -1,0 +1,34 @@
+[
+  {
+    "api_id": "places_nearby_a_coordinates_nearby",
+    "reason": "Returns nearby places sorted by distance from the origin coordinates in ascending order."
+  },
+  {
+    "api_id": "places_places_list_by_radius_nearby_search",
+    "reason": "Method returns objects closest to the selected point optionally filtered by parameters."
+  },
+  {
+    "api_id": "locationiq_limitbyviewbox",
+    "reason": "Specify the preferred area to find search results."
+  },
+  {
+    "api_id": "world_countries_cities_nearby",
+    "reason": "Returns Nearby Cities."
+  },
+  {
+    "api_id": "city_and_state_search_api_cities_search",
+    "reason": "This endpoint allows you to search for specific cities by name."
+  },
+  {
+    "api_id": "geocoding_and_reverse_geocoding_getgeocodingdataforsearchmatches",
+    "reason": "Returns latitude, longitude for locations that may match the search string - useful for building search suggest or autocomplete functionality."
+  },
+  {
+    "api_id": "locationiq_postalcodequery",
+    "reason": "It takes postalcode & countrycode as input."
+  },
+  {
+    "api_id": "world_cities_and_countries_searchcities",
+    "reason": "API to search cities based on the matching search keyword passed in url param."
+  }
+]

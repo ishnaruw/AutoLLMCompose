@@ -1,0 +1,12 @@
+{
+  "index_dir": "data/index/maof_v1/with_qos",
+  "embed_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "normalize": true,
+  "with_qos": true,
+  "fetch_limit": 1000,
+  "batch_size": 64,
+  "created_at": "2026-02-06T23:06:13Z",
+  "dims": 384,
+  "count": 5559,
+  "build_seconds": 22.054
+}

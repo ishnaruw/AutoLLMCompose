@@ -1,0 +1,34 @@
+[
+  {
+    "api_id": "veggie_me_restaurants",
+    "reason": "Directly aggregates vegetarian restaurants"
+  },
+  {
+    "api_id": "bigoven_getreciperaves",
+    "reason": "Provides recipe/comment tuples for highly rated recipes"
+  },
+  {
+    "api_id": "worldwide_hotels_reviews",
+    "reason": "Lists reviews of hotels"
+  },
+  {
+    "api_id": "airbnb_search_properties_reviews",
+    "reason": "Provides property reviews"
+  },
+  {
+    "api_id": "unofficial_shein_reviews_list",
+    "reason": "Lists reviews related to a product"
+  },
+  {
+    "api_id": "amazon_data_scraper_by_kgaur_get_amazon_product_reviews",
+    "reason": "Gets all the reviews of any specific Amazon product"
+  },
+  {
+    "api_id": "jumia_service_get_product_reviews",
+    "reason": "Returns product reviews"
+  },
+  {
+    "api_id": "bigoven_getreviewreplies",
+    "reason": "Provides a paged list of replies for a given review"
+  }
+]

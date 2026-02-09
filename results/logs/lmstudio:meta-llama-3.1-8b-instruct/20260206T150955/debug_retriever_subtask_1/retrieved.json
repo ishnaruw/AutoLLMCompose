@@ -1,0 +1,662 @@
+[
+  {
+    "api_id": "address_details_by_location_reverse_geocoding",
+    "score": 0.6668627858161926,
+    "category": "Search",
+    "service": {
+      "api_id": "address_details_by_location_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "With our Reverse Geocoding API, you can get an address by its Lon/Lat coordinates. This makes it easy to define a user's location by GPS coordinates or find a building address on a map, for example, w",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "greip_geoip",
+    "score": 0.6479178667068481,
+    "category": "Cybersecurity",
+    "service": {
+      "api_id": "greip_geoip",
+      "name": "/GeoIP",
+      "description": "Returns the geolocation data of the visitor.",
+      "category": "Cybersecurity"
+    }
+  },
+  {
+    "api_id": "address_from_to_latitude_longitude_coordinates_latitude_longitude_to_address-2",
+    "score": 0.6304124593734741,
+    "category": "Mapping",
+    "service": {
+      "api_id": "address_from_to_latitude_longitude_coordinates_latitude_longitude_to_address-2",
+      "name": "Coordinates  (latitude longitude) to Address",
+      "description": "By using this geographic tool you can get the lat long coordinates from an address. Please type the address which would include the name of the city/town, state and street name to get more accurate la",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "ip_geolocation_apis_ip_lookup",
+    "score": 0.6255842447280884,
+    "category": "Location",
+    "service": {
+      "api_id": "ip_geolocation_apis_ip_lookup",
+      "name": "IP Lookup",
+      "description": "Provides geo information for the given IPv4/IPv6",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "fast_real_time_ip_to_country_geolocation_ip_to_country_code",
+    "score": 0.6225253343582153,
+    "category": "Location",
+    "service": {
+      "api_id": "fast_real_time_ip_to_country_geolocation_ip_to_country_code",
+      "name": "IP to Country Code",
+      "description": "It fetches the 2 digit country code of the visitor IP",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "locations_and_postcodes_uk_getlocationforpostcode",
+    "score": 0.6191239953041077,
+    "category": "Location",
+    "service": {
+      "api_id": "locations_and_postcodes_uk_getlocationforpostcode",
+      "name": "getLocationForPostcode",
+      "description": "Send a postcode in the UK and it will return the nearest geo coordinate",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "greip_iplookup",
+    "score": 0.6133986711502075,
+    "category": "Cybersecurity",
+    "service": {
+      "api_id": "greip_iplookup",
+      "name": "/IPLookup",
+      "description": "Returns the geolocation data of a specific IP Address.",
+      "category": "Cybersecurity"
+    }
+  },
+  {
+    "api_id": "ip_to_country_geolocation_ip_to_country",
+    "score": 0.6123709082603455,
+    "category": "Location",
+    "service": {
+      "api_id": "ip_to_country_geolocation_ip_to_country",
+      "name": "IP to Country",
+      "description": "Quickly and accurately resolve where your website visitors are actually coming from",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "find_any_ip_address_or_domain_location_world_wide_ip_location_by_ipv6_ip_address",
+    "score": 0.6121024489402771,
+    "category": "Business_Software",
+    "service": {
+      "api_id": "find_any_ip_address_or_domain_location_world_wide_ip_location_by_ipv6_ip_address",
+      "name": "IP location by IPv6 IP Address",
+      "description": "Free IP Geo Location API which provide 100% accurate complete information of any IP address or Domain name with its city latitude, longitude, zipcode, state/province, country, country codes, country f",
+      "category": "Business_Software"
+    }
+  },
+  {
+    "api_id": "geolocation_simulation_for_mobile_apps_view_user_s_profile",
+    "score": 0.6051886081695557,
+    "category": "Devices",
+    "service": {
+      "api_id": "geolocation_simulation_for_mobile_apps_view_user_s_profile",
+      "name": "View User's Profile",
+      "description": "View Profile (Enter your user-id in route)",
+      "category": "Devices"
+    }
+  },
+  {
+    "api_id": "gps_coordinate_to_address_reverse_geocoding",
+    "score": 0.602392315864563,
+    "category": "Transportation",
+    "service": {
+      "api_id": "gps_coordinate_to_address_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "Lookup an address and place information by coordinate or GPS location",
+      "category": "Transportation"
+    }
+  },
+  {
+    "api_id": "geoapify_forward_geocoding_geocoding",
+    "score": 0.6007694602012634,
+    "category": "Location",
+    "service": {
+      "api_id": "geoapify_forward_geocoding_geocoding",
+      "name": "geocoding",
+      "description": "Geoapify provides Geocoding API that searches addresses worldwide. The API works via HTTP GET API. So it's cross-platform and can be used with most of the programming languages.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "ip_to_geo_location_api",
+    "score": 0.5978189706802368,
+    "category": "Location",
+    "service": {
+      "api_id": "ip_to_geo_location_api",
+      "name": "API",
+      "description": "IP Address",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "catchloc_checking_the_recent_location_information_api",
+    "score": 0.5941433310508728,
+    "category": "Location",
+    "service": {
+      "api_id": "catchloc_checking_the_recent_location_information_api",
+      "name": "Checking the Recent Location Information API",
+      "description": "API for checking the last collected location of an object.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "ipapi_getipaddresslocation",
+    "score": 0.5935277938842773,
+    "category": "eCommerce",
+    "service": {
+      "api_id": "ipapi_getipaddresslocation",
+      "name": "getIPAddressLocation",
+      "description": "This endpoint retrieves location for the IP address specified",
+      "category": "eCommerce"
+    }
+  },
+  {
+    "api_id": "mymappi_reverse_geocoding",
+    "score": 0.5893349051475525,
+    "category": "Location",
+    "service": {
+      "api_id": "mymappi_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "Translates a coordinate as input into its postal address.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "accuweather_searchbygeoposition",
+    "score": 0.5857841372489929,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_searchbygeoposition",
+      "name": "searchByGeoposition",
+      "description": "Returns information about a specific location, by GeoPosition (Latitude and Longitude).",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "locationiq_postalcodequery",
+    "score": 0.5841559767723083,
+    "category": "Mapping",
+    "service": {
+      "api_id": "locationiq_postalcodequery",
+      "name": "postalCodeQuery",
+      "description": "It takes postalcode & countrycode as input.\n\n> The Search API allows converting addresses, such as a street address, into geographic coordinates (latitude and longitude). These coordinates can serve v",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "accuweather_searchbylocationkey",
+    "score": 0.5822629928588867,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_searchbylocationkey",
+      "name": "searchByLocationKey",
+      "description": "Returns information about a specific location, by location key. ",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "quick_geo_location_search_location_by_name",
+    "score": 0.5772398114204407,
+    "category": "Location",
+    "service": {
+      "api_id": "quick_geo_location_search_location_by_name",
+      "name": "Search Location By Name",
+      "description": "You may quickly discover all the information about any location by using the Search Location By Name APIs. It returns an array containing iframes, geometry, properties, location, and addresses.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "navitime_geocoding_address_reverse_geocoding",
+    "score": 0.5757101774215698,
+    "category": "Location",
+    "service": {
+      "api_id": "navitime_geocoding_address_reverse_geocoding",
+      "name": "address_reverse_geocoding",
+      "description": "逆ジオコーディング\n緯度経度を指定して住所情報を取得します。",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "places_by_name_place_by_name",
+    "score": 0.574627697467804,
+    "category": "Search",
+    "service": {
+      "api_id": "places_by_name_place_by_name",
+      "name": "Place by name",
+      "description": "Parse, validate, and locate an address or place",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "geosource_api_phone_code_by_country",
+    "score": 0.5700216889381409,
+    "category": "Location",
+    "service": {
+      "api_id": "geosource_api_phone_code_by_country",
+      "name": "Phone Code By Country",
+      "description": "Retrives a Phone code of the country.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "accuweather_get24hoursconditionsbylocationkey",
+    "score": 0.5681663751602173,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_get24hoursconditionsbylocationkey",
+      "name": "get24HoursConditionsByLocationKey",
+      "description": "Historical Current Conditions (past 24 hours) By LocationKey",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "world_cities_geocode_free_geocode",
+    "score": 0.5641940832138062,
+    "category": "Location",
+    "service": {
+      "api_id": "world_cities_geocode_free_geocode",
+      "name": "/geocode",
+      "description": "Search city geocode by partial name.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "geo_location_coordinates_from_address",
+    "score": 0.5627534985542297,
+    "category": "Logistics",
+    "service": {
+      "api_id": "geo_location_coordinates_from_address",
+      "name": "Coordinates from address",
+      "description": "Gets latitude and longitude from an address.",
+      "category": "Logistics"
+    }
+  },
+  {
+    "api_id": "mygeocodingapi_geocode",
+    "score": 0.562424898147583,
+    "category": "Location",
+    "service": {
+      "api_id": "mygeocodingapi_geocode",
+      "name": "Geocode",
+      "description": "Basic endpoint",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "maps_api_get_distance",
+    "score": 0.5621155500411987,
+    "category": "Location",
+    "service": {
+      "api_id": "maps_api_get_distance",
+      "name": "Get Distance",
+      "description": "This API returns traffic-related information between the origin and destination\n\nRequest Parameters\nThe following parameters are available for use with the /getDistance endpoint:\n\n1) origins: The star",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "navitime_geocoding_address_autocomplete",
+    "score": 0.5614385604858398,
+    "category": "Location",
+    "service": {
+      "api_id": "navitime_geocoding_address_autocomplete",
+      "name": "address_autocomplete",
+      "description": "Return address predictions from the specified keyword of request parameters.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "photo_geolocation_get_exif_geolocation_from_photo",
+    "score": 0.5587316155433655,
+    "category": "Location",
+    "service": {
+      "api_id": "photo_geolocation_get_exif_geolocation_from_photo",
+      "name": "Get Exif Geolocation From Photo",
+      "description": "This API returns geolocation data (latitude and longitude) for an image file. Also, it generates Google Maps URL",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "verify_and_geocode_address_geocoding",
+    "score": 0.5557591319084167,
+    "category": "Mapping",
+    "service": {
+      "api_id": "verify_and_geocode_address_geocoding",
+      "name": "Geocoding",
+      "description": "Parse, validate, and locate an address or place",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "geocoding_and_reverse_geocoding_getgeocodingdataforsearchmatches",
+    "score": 0.5553406476974487,
+    "category": "Data",
+    "service": {
+      "api_id": "geocoding_and_reverse_geocoding_getgeocodingdataforsearchmatches",
+      "name": "getGeocodingDataForSearchMatches",
+      "description": "Returns latitude, longitude for locations that may match the search string - useful for building search suggest or autocomplete functionality",
+      "category": "Data"
+    }
+  },
+  {
+    "api_id": "accuweather_searchlocationwithcountrycode",
+    "score": 0.5552860498428345,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_searchlocationwithcountrycode",
+      "name": "searchLocationWithCountryCode",
+      "description": "Returns information for an array of locations that match the search text.",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "tunisia_api_geocode",
+    "score": 0.5536633133888245,
+    "category": "Location",
+    "service": {
+      "api_id": "tunisia_api_geocode",
+      "name": "Geocode",
+      "description": "This endpoint allows you to lookup locations in Tunisia by providing an address query parameter. It returns the latitude, longitude and city name of the location.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "forward_and_reverse_geocoding_reverse_geocoding",
+    "score": 0.553208589553833,
+    "category": "Mapping",
+    "service": {
+      "api_id": "forward_and_reverse_geocoding_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "This endpoint allows to get address by latitude and longitude inserted in a query and separated by comma. Response of this API looks like Google Maps API compact response .",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "geocoding_forward_and_reverse_reverse_geocoding",
+    "score": 0.5531221032142639,
+    "category": "Mapping",
+    "service": {
+      "api_id": "geocoding_forward_and_reverse_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "This endpoint allows to get address by latitude and longitude inserted in a query and separated by comma. Response of this API looks like Google Maps API compact response .",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "uganda_api_measure_distance",
+    "score": 0.5518215894699097,
+    "category": "Location",
+    "service": {
+      "api_id": "uganda_api_measure_distance",
+      "name": "Measure Distance",
+      "description": "This endpoint calculates the distance between two locations based on their latitude and longitude coordinates, while allowing the user to specify the unit of measurement.\n\nBelow Example: **Distance fr",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "city_in_the_world_get_city_by_country",
+    "score": 0.5504748225212097,
+    "category": "Location",
+    "service": {
+      "api_id": "city_in_the_world_get_city_by_country",
+      "name": "Get City by Country",
+      "description": "This endpoint will give you information about city with filter by country of city",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "ip_geolocation_with_confidence_area_ip_geolocation_with_confidence_area",
+    "score": 0.5495232343673706,
+    "category": "Location",
+    "service": {
+      "api_id": "ip_geolocation_with_confidence_area_ip_geolocation_with_confidence_area",
+      "name": "IP Geolocation with Confidence Area",
+      "description": "IP Geolocation with Confidence Area",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "geolocation_simulation_for_mobile_apps_login-2",
+    "score": 0.5484986305236816,
+    "category": "Devices",
+    "service": {
+      "api_id": "geolocation_simulation_for_mobile_apps_login-2",
+      "name": "Login",
+      "description": "",
+      "category": "Devices"
+    }
+  },
+  {
+    "api_id": "geosource_api_states_by_country",
+    "score": 0.5480239391326904,
+    "category": "Location",
+    "service": {
+      "api_id": "geosource_api_states_by_country",
+      "name": "states By Country",
+      "description": "Retrives a list of all states of the country.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "cameroon_reverse_geocode",
+    "score": 0.5475490093231201,
+    "category": "Location",
+    "service": {
+      "api_id": "cameroon_reverse_geocode",
+      "name": "Reverse Geocode",
+      "description": "This endpoint allows you to perform reverse geocoding in Cameroon by providing query parameters for latitude and longitude. It returns the name of the city where the location is located.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "greip_bulklookup",
+    "score": 0.5459625124931335,
+    "category": "Cybersecurity",
+    "service": {
+      "api_id": "greip_bulklookup",
+      "name": "/BulkLookup",
+      "description": "BulkLookup endpoint: Returns the geolocation data of multiple IP Addresses.",
+      "category": "Cybersecurity"
+    }
+  },
+  {
+    "api_id": "cameroon_measure_distance",
+    "score": 0.5458607077598572,
+    "category": "Location",
+    "service": {
+      "api_id": "cameroon_measure_distance",
+      "name": "Measure Distance",
+      "description": "This endpoint calculates the distance between two locations based on their latitude and longitude coordinates, while allowing the user to specify the unit of measurement.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "priceline_com_hotel_city_nearby",
+    "score": 0.5448305606842041,
+    "category": "Travel",
+    "service": {
+      "api_id": "priceline_com_hotel_city_nearby",
+      "name": "hotel city nearby",
+      "description": "Search city id by geolocation",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "forward_reverse_geocoding_by_googlemap_api_forward",
+    "score": 0.5417776107788086,
+    "category": "Location",
+    "service": {
+      "api_id": "forward_reverse_geocoding_by_googlemap_api_forward",
+      "name": "forward",
+      "description": " ",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "itcooking_eu_ip_geolocation_geoip_v1_lite_getipinfolitebatch",
+    "score": 0.5401546955108643,
+    "category": "Location",
+    "service": {
+      "api_id": "itcooking_eu_ip_geolocation_geoip_v1_lite_getipinfolitebatch",
+      "name": "/geoip/v1/lite/GetIpInfoLiteBatch",
+      "description": "Batch identification of location for max 16 IP address per request.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "countries_cities_city_details",
+    "score": 0.539827287197113,
+    "category": "Location",
+    "service": {
+      "api_id": "countries_cities_city_details",
+      "name": "City Details",
+      "description": "Returns a detailed information about the city and it's location",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "country_information_and_conversion_api_bycountryname",
+    "score": 0.5376761555671692,
+    "category": "Location",
+    "service": {
+      "api_id": "country_information_and_conversion_api_bycountryname",
+      "name": "ByCountryName",
+      "description": "# Country Information and Conversion API\n\nThe Country Information and Conversion API provides comprehensive country-related data and conversion capabilities, allowing developers to access detailed inf",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "get_cities_v1_geo_cities",
+    "score": 0.5363425612449646,
+    "category": "Location",
+    "service": {
+      "api_id": "get_cities_v1_geo_cities",
+      "name": "v1/geo/cities",
+      "description": "s",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "geolocation_simulation_for_mobile_apps_view_application",
+    "score": 0.535636842250824,
+    "category": "Devices",
+    "service": {
+      "api_id": "geolocation_simulation_for_mobile_apps_view_application",
+      "name": "View Application",
+      "description": "Enter your applicationID in the route",
+      "category": "Devices"
+    }
+  },
+  {
+    "api_id": "senegal_api_reverse_geocode",
+    "score": 0.5326594710350037,
+    "category": "Location",
+    "service": {
+      "api_id": "senegal_api_reverse_geocode",
+      "name": "Reverse Geocode",
+      "description": "This endpoint allows you to perform reverse geocoding in Senegal by providing query parameters for latitude and longitude. It returns the name of the city where the location is located.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "climate_data_search_location_by_name_or_zip_code",
+    "score": 0.5322942137718201,
+    "category": "Weather",
+    "service": {
+      "api_id": "climate_data_search_location_by_name_or_zip_code",
+      "name": "Search location by Name or zip code",
+      "description": "Search location by Name or zip code and get the key for the forecast",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "rapidweather_coordinates_by_location_name",
+    "score": 0.5322936773300171,
+    "category": "Weather",
+    "service": {
+      "api_id": "rapidweather_coordinates_by_location_name",
+      "name": "Coordinates by location name",
+      "description": "Coordinates by location name",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "quick_geo_location_get_directions_coordinates_by_lat_lan",
+    "score": 0.5321807861328125,
+    "category": "Location",
+    "service": {
+      "api_id": "quick_geo_location_get_directions_coordinates_by_lat_lan",
+      "name": "Get Directions Coordinates By Lat, Lan",
+      "description": "You may quickly get all the directions coordinates to the required destinations by using the Get Directions Coordinates By Lat, Lan. It returns an location directions, distance, time, steps and signs",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "countrylayer_get",
+    "score": 0.5317680239677429,
+    "category": "Location",
+    "service": {
+      "api_id": "countrylayer_get",
+      "name": "get",
+      "description": "exemple",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "itcooking_eu_ip_geolocation_geoip_v1_lite_getipinfolitebatch-2",
+    "score": 0.5308907628059387,
+    "category": "Location",
+    "service": {
+      "api_id": "itcooking_eu_ip_geolocation_geoip_v1_lite_getipinfolitebatch-2",
+      "name": "/geoip/v1/lite/GetIpInfoLiteBatch",
+      "description": "Batch identification of location for max 16 IP address per request.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "weather_forecast_14_days_search_location_by_name_or_zip_code",
+    "score": 0.5293593406677246,
+    "category": "Weather",
+    "service": {
+      "api_id": "weather_forecast_14_days_search_location_by_name_or_zip_code",
+      "name": "Search location by Name or zip code",
+      "description": "Search location by Name or zip code and get the key for the forecast",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "world_cities_query",
+    "score": 0.5289812088012695,
+    "category": "Location",
+    "service": {
+      "api_id": "world_cities_query",
+      "name": "Query",
+      "description": "Use a query with at least 3 characters to search for a city, state or country matching the query",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "accuweather_getalertsbylocationkey",
+    "score": 0.5279021263122559,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_getalertsbylocationkey",
+      "name": "getAlertsByLocationKey",
+      "description": "Alerts By LocationKey",
+      "category": "Weather"
+    }
+  }
+]

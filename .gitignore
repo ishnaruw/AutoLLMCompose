@@ -44,3 +44,7 @@ data/raw/toolbench/
 
 # Ignore test files
 test_endpoint.ipynb
+
+# Zipped files
+*.zip
+

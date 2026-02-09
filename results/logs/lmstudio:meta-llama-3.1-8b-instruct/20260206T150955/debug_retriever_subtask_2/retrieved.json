@@ -1,0 +1,662 @@
+[
+  {
+    "api_id": "places_nearby_a_coordinates_nearby",
+    "score": 0.6482816338539124,
+    "category": "Mapping",
+    "service": {
+      "api_id": "places_nearby_a_coordinates_nearby",
+      "name": "Nearby",
+      "description": "Returns nearby places sorted by distance from the origin coordinates in ascending order.\n\nReturns up to 60 places per request.",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "tripadvisor_search_restaurant_location",
+    "score": 0.6319365501403809,
+    "category": "Travel",
+    "service": {
+      "api_id": "tripadvisor_search_restaurant_location",
+      "name": "Search Restaurant Location",
+      "description": "-",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "places_by_name_place_by_name",
+    "score": 0.6280522346496582,
+    "category": "Search",
+    "service": {
+      "api_id": "places_by_name_place_by_name",
+      "name": "Place by name",
+      "description": "Parse, validate, and locate an address or place",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "places_places_list_by_radius_nearby_search",
+    "score": 0.6195082664489746,
+    "category": "Mapping",
+    "service": {
+      "api_id": "places_places_list_by_radius_nearby_search",
+      "name": "Places list by radius (Nearby Search) ",
+      "description": "Method returns objects closest to the selected point optionally filtered by parameters. Only basic information is include in response: xid, name, kinds, osm, wikidata of each object. Depending on the ",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "priceline_com_hotel_city_nearby",
+    "score": 0.6193740963935852,
+    "category": "Travel",
+    "service": {
+      "api_id": "priceline_com_hotel_city_nearby",
+      "name": "hotel city nearby",
+      "description": "Search city id by geolocation",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "directapi_directions_search",
+    "score": 0.6191314458847046,
+    "category": "Mapping",
+    "service": {
+      "api_id": "directapi_directions_search",
+      "name": "Search",
+      "description": "Search for locations based on a text search",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "worldwide_restaurants_search",
+    "score": 0.6154200434684753,
+    "category": "Search",
+    "service": {
+      "api_id": "worldwide_restaurants_search",
+      "name": "Search",
+      "description": "Search Restaurants",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "cannafinder_shops_in_radius_around_coordinates",
+    "score": 0.6051836013793945,
+    "category": "Location",
+    "service": {
+      "api_id": "cannafinder_shops_in_radius_around_coordinates",
+      "name": "/shops-in-radius-around-coordinates",
+      "description": "Find shops in input radius and coordinates. Returns multiple tags for every entry and distance in km.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "worldwide_restaurants_detail",
+    "score": 0.6040003299713135,
+    "category": "Search",
+    "service": {
+      "api_id": "worldwide_restaurants_detail",
+      "name": "Detail",
+      "description": "Restaurant Detail",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "hotels_locations_v2_search_deprecated",
+    "score": 0.6007804870605469,
+    "category": "Travel",
+    "service": {
+      "api_id": "hotels_locations_v2_search_deprecated",
+      "name": "locations/v2/search (Deprecated)",
+      "description": "Search for related locations and suggestions",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "locationiq_listofallnearbypoisexceptgyms",
+    "score": 0.5996261835098267,
+    "category": "Mapping",
+    "service": {
+      "api_id": "locationiq_listofallnearbypoisexceptgyms",
+      "name": "listOfAllNearbyPoIsExceptGyms",
+      "description": "The Nearby Points of Interest (PoI) API returns specified PoIs or Places around a given coordinate.\r\n\r\n",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "world_cities_and_countries_searchcities",
+    "score": 0.5994012951850891,
+    "category": "Location",
+    "service": {
+      "api_id": "world_cities_and_countries_searchcities",
+      "name": "SearchCities",
+      "description": "API to search cities based on the matching search keyword passed in url param.\ne.g. \n`/v1/locations/cities/new y`: This will return all the matching cities whose name starts from `new y`.\nYou can also",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "locationiq_limitbyviewbox",
+    "score": 0.5958149433135986,
+    "category": "Mapping",
+    "service": {
+      "api_id": "locationiq_limitbyviewbox",
+      "name": "limitByViewbox",
+      "description": "Specify the preferred area to find search results.\r\n\r\n> The Autocomplete API is a variant of the Search API that returns place predictions in response to an HTTP request. The request specifies a textu",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "world_countries_cities_nearby",
+    "score": 0.5833121538162231,
+    "category": "Location",
+    "service": {
+      "api_id": "world_countries_cities_nearby",
+      "name": "Cities Nearby",
+      "description": "Returns Nearby Cities",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "world_cities_query",
+    "score": 0.578538179397583,
+    "category": "Location",
+    "service": {
+      "api_id": "world_cities_query",
+      "name": "Query",
+      "description": "Use a query with at least 3 characters to search for a city, state or country matching the query",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "australian_suburb_information_get_all_suburb_information_based_on_state_and_name",
+    "score": 0.5715906620025635,
+    "category": "Location",
+    "service": {
+      "api_id": "australian_suburb_information_get_all_suburb_information_based_on_state_and_name",
+      "name": "Get all Suburb Information Based on State and Name",
+      "description": "Get all Suburb Information Based on State and Name",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "breweries_search",
+    "score": 0.568139910697937,
+    "category": "Food",
+    "service": {
+      "api_id": "breweries_search",
+      "name": "search",
+      "description": "Search our database of breweries.",
+      "category": "Food"
+    }
+  },
+  {
+    "api_id": "hotelapi_hotelsearch",
+    "score": 0.5604050159454346,
+    "category": "Search",
+    "service": {
+      "api_id": "hotelapi_hotelsearch",
+      "name": "HotelSearch",
+      "description": "Search Hotel List",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "city_and_state_search_api_cities_search",
+    "score": 0.5583631992340088,
+    "category": "Search",
+    "service": {
+      "api_id": "city_and_state_search_api_cities_search",
+      "name": "Cities Search",
+      "description": "This endpoint allows you to search for specific cities by name. It returns a list of cities that match the specified search query.",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "foursquare_getsuggestedcompletion",
+    "score": 0.5561195015907288,
+    "category": "Social",
+    "service": {
+      "api_id": "foursquare_getsuggestedcompletion",
+      "name": "getSuggestedCompletion",
+      "description": "Returns a list of mini-venues partially matching the search term, near the location.",
+      "category": "Social"
+    }
+  },
+  {
+    "api_id": "accuweather_searchlocationwithcountrycode",
+    "score": 0.5550004839897156,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_searchlocationwithcountrycode",
+      "name": "searchLocationWithCountryCode",
+      "description": "Returns information for an array of locations that match the search text.",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "travel_advisor_restaurant_filters_v2_list",
+    "score": 0.5533297061920166,
+    "category": "Transportation",
+    "service": {
+      "api_id": "travel_advisor_restaurant_filters_v2_list",
+      "name": "restaurant-filters/v2/list",
+      "description": "Get available filters for listing restaurants",
+      "category": "Transportation"
+    }
+  },
+  {
+    "api_id": "geocoding_and_reverse_geocoding_getgeocodingdataforsearchmatches",
+    "score": 0.5516608953475952,
+    "category": "Data",
+    "service": {
+      "api_id": "geocoding_and_reverse_geocoding_getgeocodingdataforsearchmatches",
+      "name": "getGeocodingDataForSearchMatches",
+      "description": "Returns latitude, longitude for locations that may match the search string - useful for building search suggest or autocomplete functionality",
+      "category": "Data"
+    }
+  },
+  {
+    "api_id": "locationiq_postalcodequery",
+    "score": 0.5509884357452393,
+    "category": "Mapping",
+    "service": {
+      "api_id": "locationiq_postalcodequery",
+      "name": "postalCodeQuery",
+      "description": "It takes postalcode & countrycode as input.\n\n> The Search API allows converting addresses, such as a street address, into geographic coordinates (latitude and longitude). These coordinates can serve v",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "address_details_by_location_reverse_geocoding",
+    "score": 0.5502036809921265,
+    "category": "Search",
+    "service": {
+      "api_id": "address_details_by_location_reverse_geocoding",
+      "name": "Reverse Geocoding",
+      "description": "With our Reverse Geocoding API, you can get an address by its Lon/Lat coordinates. This makes it easy to define a user's location by GPS coordinates or find a building address on a map, for example, w",
+      "category": "Search"
+    }
+  },
+  {
+    "api_id": "zillow_v2_search_for_agents",
+    "score": 0.5500293970108032,
+    "category": "Data",
+    "service": {
+      "api_id": "zillow_v2_search_for_agents",
+      "name": "Search for agents",
+      "description": "Search for agents by location and name",
+      "category": "Data"
+    }
+  },
+  {
+    "api_id": "ai_weather_by_meteosource_nearest_place",
+    "score": 0.5499952435493469,
+    "category": "Weather",
+    "service": {
+      "api_id": "ai_weather_by_meteosource_nearest_place",
+      "name": "nearest_place",
+      "description": "Use this endpoint to search for the **nearest named place** (village/town/city) from a given GPS coordinates. You will get **place_id** for the `Weather Forecast Endpoints` and detailed **geographical",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "airbnb_listings_count_listings_by_lat_lng",
+    "score": 0.5488531589508057,
+    "category": "Travel",
+    "service": {
+      "api_id": "airbnb_listings_count_listings_by_lat_lng",
+      "name": "Count  listings by lat lng",
+      "description": "Retrieve listings count in a range from a given geographical point. Can be filtered on bedrooms and max guest capacity",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "ai_weather_by_meteosource_find_places_prefix",
+    "score": 0.5486342906951904,
+    "category": "Weather",
+    "service": {
+      "api_id": "ai_weather_by_meteosource_find_places_prefix",
+      "name": "find_places_prefix",
+      "description": "**Search places by beginning of the name** to get **place_id** for the `Weather Forecast Endpoints` and detailed **geographical information** (country, region, elevation, timezone, etc.) for a given l",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "target_com_store_product_reviews_locations_data_target_store_location_search",
+    "score": 0.5467038154602051,
+    "category": "eCommerce",
+    "service": {
+      "api_id": "target_com_store_product_reviews_locations_data_target_store_location_search",
+      "name": "Target Store Location Search",
+      "description": "The endpoint returns Target Store locations details\n\n- Only US **zip** codes are accepted\n- **radius** is in miles",
+      "category": "eCommerce"
+    }
+  },
+  {
+    "api_id": "geography_v2_cities",
+    "score": 0.5452497601509094,
+    "category": "Location",
+    "service": {
+      "api_id": "geography_v2_cities",
+      "name": "cities",
+      "description": "get a list of all the cities filtering by name",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "quick_geo_location_search_location_by_name",
+    "score": 0.541597843170166,
+    "category": "Location",
+    "service": {
+      "api_id": "quick_geo_location_search_location_by_name",
+      "name": "Search Location By Name",
+      "description": "You may quickly discover all the information about any location by using the Search Location By Name APIs. It returns an array containing iframes, geometry, properties, location, and addresses.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "lightbase_zip_codes_find_nearest_cities",
+    "score": 0.5414670705795288,
+    "category": "Location",
+    "service": {
+      "api_id": "lightbase_zip_codes_find_nearest_cities",
+      "name": "Find Nearest Cities",
+      "description": "Find cities within a given radius.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "fast_food_restaurants_usa_top_50_chains_get_all_city_names",
+    "score": 0.5412662029266357,
+    "category": "Food",
+    "service": {
+      "api_id": "fast_food_restaurants_usa_top_50_chains_get_all_city_names",
+      "name": "GET all {City} names",
+      "description": "GET all City names",
+      "category": "Food"
+    }
+  },
+  {
+    "api_id": "skyscanner_v2_get_things_to_do",
+    "score": 0.5411232113838196,
+    "category": "Travel",
+    "service": {
+      "api_id": "skyscanner_v2_get_things_to_do",
+      "name": "Get Things To Do",
+      "description": "Use this API to get Thing  to do nearby the hotel selected.",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "places_autosuggest",
+    "score": 0.5410799980163574,
+    "category": "Mapping",
+    "service": {
+      "api_id": "places_autosuggest",
+      "name": "Autosuggest",
+      "description": "Method returns suggestions for search term closest to the selected point optionally filtered by parameters. Only basic information is include in response: xid, name, kinds, osm, wikidata of each objec",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "world_cities_and_countries_searchcountries",
+    "score": 0.5389865040779114,
+    "category": "Location",
+    "service": {
+      "api_id": "world_cities_and_countries_searchcountries",
+      "name": "SearchCountries",
+      "description": "API to search county based on the matching search keyword passed in url param.\nNOTE: This API is case insensitive.\ne.g. \n`/v1/locations/countries/uni`: This will return all the matching countries whos",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "airbnb_search_properties_auto_complete",
+    "score": 0.538718581199646,
+    "category": "Travel",
+    "service": {
+      "api_id": "airbnb_search_properties_auto_complete",
+      "name": "properties/auto-complete",
+      "description": "Find location for search",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "world_cities_get_cities_by_name_autocomplete",
+    "score": 0.536544680595398,
+    "category": "Mapping",
+    "service": {
+      "api_id": "world_cities_get_cities_by_name_autocomplete",
+      "name": "Get cities by name (Autocomplete)",
+      "description": "Returns cities from city name.\nCities that include the city name you are searching for.  This allows for autocomplete features. \nResults are paginated.",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "city_in_the_world_get_city_by_iso",
+    "score": 0.536276638507843,
+    "category": "Location",
+    "service": {
+      "api_id": "city_in_the_world_get_city_by_iso",
+      "name": "Get City by ISO",
+      "description": "This endpoint will give you information about city that you can filter by ISO",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "airbnb_v2_search_property",
+    "score": 0.5356422066688538,
+    "category": "Travel",
+    "service": {
+      "api_id": "airbnb_v2_search_property",
+      "name": "Search Property",
+      "description": "-",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "realtor_search_search_similar_homes",
+    "score": 0.5353387594223022,
+    "category": "Data",
+    "service": {
+      "api_id": "realtor_search_search_similar_homes",
+      "name": "Search similar homes",
+      "description": "Search similar homes",
+      "category": "Data"
+    }
+  },
+  {
+    "api_id": "yandexplaces_searchbyorganization",
+    "score": 0.5352405905723572,
+    "category": "Mapping",
+    "service": {
+      "api_id": "yandexplaces_searchbyorganization",
+      "name": "searchByOrganization",
+      "description": "Search service by organizations is designed to search for geographical objects (toponyms) and organizations. The service allows you to search for houses, streets, attractions, cafes and other faciliti",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "address_autosuggest_address_autosuggest",
+    "score": 0.5306188464164734,
+    "category": "Location",
+    "service": {
+      "api_id": "address_autosuggest_address_autosuggest",
+      "name": "Address Autosuggest",
+      "description": "\"Address Autosuggest\" API buit to suggests address results for a given search term. This API provides a JSON interface to extract address suggestions for a complete or partial address query.\n\nThe Auto",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "ambee_pollen_data_latest_by_lat_lng",
+    "score": 0.5298211574554443,
+    "category": "Monitoring",
+    "service": {
+      "api_id": "ambee_pollen_data_latest_by_lat_lng",
+      "name": "/latest/by-lat-lng",
+      "description": "Get nearest places readings based around the given latitude and longitude",
+      "category": "Monitoring"
+    }
+  },
+  {
+    "api_id": "ipinfo_by_cc_get_poc_records_by_poc_id",
+    "score": 0.5287322998046875,
+    "category": "Location",
+    "service": {
+      "api_id": "ipinfo_by_cc_get_poc_records_by_poc_id",
+      "name": "Get POC records by POC ID",
+      "description": "Search POC records by POC ID",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "airbnb_search_properties_detail",
+    "score": 0.5272732973098755,
+    "category": "Travel",
+    "service": {
+      "api_id": "airbnb_search_properties_detail",
+      "name": "properties/detail",
+      "description": "Property details",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "city_in_the_world_get_city_by_name",
+    "score": 0.5271750092506409,
+    "category": "Location",
+    "service": {
+      "api_id": "city_in_the_world_get_city_by_name",
+      "name": "Get City By Name",
+      "description": "This endpoint will give you information about city with filter by name of city",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "accuweather_searchbylocationkey",
+    "score": 0.5253121852874756,
+    "category": "Weather",
+    "service": {
+      "api_id": "accuweather_searchbylocationkey",
+      "name": "searchByLocationKey",
+      "description": "Returns information about a specific location, by location key. ",
+      "category": "Weather"
+    }
+  },
+  {
+    "api_id": "real_estate_records_summary",
+    "score": 0.525122880935669,
+    "category": "Data",
+    "service": {
+      "api_id": "real_estate_records_summary",
+      "name": "summary",
+      "description": "Get a summary of property records by units given an address (if it's a multi-unit building). Street number, name and zipcode are needed to match records. The street names are normalized using Here.com",
+      "category": "Data"
+    }
+  },
+  {
+    "api_id": "ipinfo_by_cc_get_net_by_domain",
+    "score": 0.5245803594589233,
+    "category": "Location",
+    "service": {
+      "api_id": "ipinfo_by_cc_get_net_by_domain",
+      "name": "Get Net by domain",
+      "description": "Search Net via domain.",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "store_groceries_search_a_grocery",
+    "score": 0.5240216255187988,
+    "category": "Food",
+    "service": {
+      "api_id": "store_groceries_search_a_grocery",
+      "name": "Search a Grocery",
+      "description": "Search a specific grocery",
+      "category": "Food"
+    }
+  },
+  {
+    "api_id": "city_in_the_world_get_city_by_country",
+    "score": 0.5200828313827515,
+    "category": "Location",
+    "service": {
+      "api_id": "city_in_the_world_get_city_by_country",
+      "name": "Get City by Country",
+      "description": "This endpoint will give you information about city with filter by country of city",
+      "category": "Location"
+    }
+  },
+  {
+    "api_id": "tripadvisor_search_hotels",
+    "score": 0.516108512878418,
+    "category": "Travel",
+    "service": {
+      "api_id": "tripadvisor_search_hotels",
+      "name": "Search Hotels",
+      "description": "-",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "smart_locations_get_location",
+    "score": 0.5159381628036499,
+    "category": "Mapping",
+    "service": {
+      "api_id": "smart_locations_get_location",
+      "name": "get-location",
+      "description": "smart-location",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "verify_and_geocode_address_geocoding",
+    "score": 0.5152678489685059,
+    "category": "Mapping",
+    "service": {
+      "api_id": "verify_and_geocode_address_geocoding",
+      "name": "Geocoding",
+      "description": "Parse, validate, and locate an address or place",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "worldwide_recipes_search",
+    "score": 0.513690710067749,
+    "category": "Food",
+    "service": {
+      "api_id": "worldwide_recipes_search",
+      "name": "Search",
+      "description": "Search Recipe",
+      "category": "Food"
+    }
+  },
+  {
+    "api_id": "airbnb_listings_markets",
+    "score": 0.5136551856994629,
+    "category": "Travel",
+    "service": {
+      "api_id": "airbnb_listings_markets",
+      "name": "Markets",
+      "description": "Retrieve Market names to be used in Listing by market endpoint. Returns 50 results",
+      "category": "Travel"
+    }
+  },
+  {
+    "api_id": "mapfanapi_search_spot",
+    "score": 0.5134944319725037,
+    "category": "Mapping",
+    "service": {
+      "api_id": "mapfanapi_search_spot",
+      "name": "spot",
+      "description": "## スポット検索\nスポット検索機能を提供します。",
+      "category": "Mapping"
+    }
+  },
+  {
+    "api_id": "ambee_air_quality_by_coordinates",
+    "score": 0.5120896697044373,
+    "category": "Weather",
+    "service": {
+      "api_id": "ambee_air_quality_by_coordinates",
+      "name": "By Coordinates",
+      "description": "Get nearest places readings based around the given latitude and longitude",
+      "category": "Weather"
+    }
+  }
+]
