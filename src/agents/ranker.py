@@ -1,7 +1,78 @@
 # src/agents/ranker.py
+from __future__ import annotations
+
 import json
+import os
 import re
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List
+
+
+def _truncate(s: Any, n: int) -> str:
+    s = "" if s is None else str(s)
+    s = s.strip()
+    return s if len(s) <= n else (s[: n - 1] + "…")
+
+
+def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Reduce a candidate to a compact representation to avoid context overflow.
+
+    The RAG index metadata can be large. For ranking we only need a few fields.
+    """
+    comp = c.get("compressed") or {}
+    if not isinstance(comp, dict):
+        comp = {}
+
+    # Common functional fields
+    name = comp.get("name") or comp.get("operation") or comp.get("title")
+    summary = comp.get("summary") or comp.get("description") or comp.get("desc")
+    method = comp.get("method")
+    path = comp.get("path") or comp.get("endpoint") or comp.get("url")
+    category = comp.get("category") or c.get("category")
+
+    # Params can explode prompt size; keep only names.
+    params = comp.get("params") or comp.get("parameters")
+    param_names: List[str] = []
+    if isinstance(params, list):
+        for p in params[:30]:
+            if isinstance(p, dict) and p.get("name"):
+                param_names.append(str(p.get("name")))
+            elif isinstance(p, str):
+                param_names.append(p)
+    elif isinstance(params, dict):
+        # sometimes parameters is a dict keyed by name
+        param_names = [str(k) for k in list(params.keys())[:30]]
+
+    # QoS fields: include only if present (and compact).
+    qos: Dict[str, Any] = {}
+    for k in [
+        "availability",
+        "reliability",
+        "throughput",
+        "tp_rps",
+        "rt_ms",
+        "response_time_ms",
+        "latency_ms",
+        "p95_latency_ms",
+    ]:
+        if k in comp:
+            qos[k] = comp.get(k)
+        elif k in c:
+            qos[k] = c.get(k)
+
+    slim: Dict[str, Any] = {
+        "api_id": c.get("api_id"),
+        "rag_score": c.get("rag_score"),
+        "category": category,
+        "name": _truncate(name, 120),
+        "summary": _truncate(summary, 240),
+        "method": _truncate(method, 16),
+        "path": _truncate(path, 140),
+    }
+    if param_names:
+        slim["param_names"] = param_names
+    if qos:
+        slim["qos"] = qos
+    return slim
 
 
 def _coerce_json(s: str) -> str:
@@ -14,89 +85,93 @@ def _coerce_json(s: str) -> str:
         return s
     except Exception:
         pass
-    # Fallback: try to extract the largest {...} block
-    m = re.search(r"\{.*\}", s, flags=re.DOTALL)
-    return m.group(0) if m else "{}"
+    m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.DOTALL)
+    return m.group(1) if m else "{}"
 
 
-def ranker_call(
+def rank_subtask(
     llm_call: Callable[[str], str],
-    services: List[Dict[str, Any]],
-    user_goal: str,
-    subtasks: Optional[List[Dict[str, Any]]] = None,
+    *,
+    user_query: str,
+    subtask: Dict[str, Any],
+    candidates: List[Dict[str, Any]],
+    debug_raw_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
-    Ask the LLM to rank candidate services based on:
-      - the overall user_goal, and
-      - optionally decomposed subtasks,
-    using whatever information is available in each service record.
+    Rank candidates for ONE subtask.
 
-    The prompt template (prompts/ranker.md) is expected to instruct the LLM to
-    return strict JSON of the form:
+    Input candidates should already include any relevant catalog fields, including:
+      - api_id
+      - rag_score (weak hint)
+      - service / compressed fields
+      - qos fields if present
 
-        {
-          "ranked": [
-            {
-              "api_id": "...",
-              "score": <numeric>,
-              "reason": "short explanation"
-            },
-            ...
-          ]
-        }
+    Prompt (prompts/ranker.md) must return strict JSON:
+      {
+        "ranked": [
+          {"api_id": "...", "reason": "..."},
+          ...
+        ]
+      }
 
-    This function:
-      * Fills the prompt template with user_goal, subtasks, and candidates.
-      * Calls the LLM and parses the JSON.
-      * Normalizes "score" to a float (default 0.0 on error).
-      * Sorts the results in descending order of score.
-      * Returns a list like:
-            [
-              {"api_id": "...", "score": 0.87, "reason": "..."},
-              ...
-            ]
+    Returns the ranked list in order (best first).
     """
-    # Read prompt template
     with open("prompts/ranker.md", "r", encoding="utf-8") as f:
         template = f.read()
 
-    subtasks_json = json.dumps(subtasks or [], ensure_ascii=False)
-    candidates_json = json.dumps(services, ensure_ascii=False)
+    # --- Context safety ---
+    # RAG retrieval can return large "compressed" payloads. Sending all topK
+    # (e.g., 60) candidates verbatim can exceed local model context windows.
+    # We:
+    #   1) take the top N by rag_score
+    #   2) slim each candidate down to only essential fields
+    MAX_RANK_CANDIDATES = int(os.getenv("MAOF_RANKER_MAX_CANDIDATES", "25"))
+    cand_sorted = sorted(
+        (c for c in candidates if isinstance(c, dict) and c.get("api_id")),
+        key=lambda x: float(x.get("rag_score") or 0.0),
+        reverse=True,
+    )
+    cand_trimmed = cand_sorted[:MAX_RANK_CANDIDATES]
+    cand_slim = [_slim_candidate(c) for c in cand_trimmed]
 
     prompt = (
         template
-        .replace("{user_goal}", user_goal)
-        .replace("{subtasks_json}", subtasks_json)
-        .replace("{candidates_json}", candidates_json)
+        .replace("{user_query}", user_query)
+        .replace("{subtask_json}", json.dumps(subtask, ensure_ascii=False))
+        .replace("{candidates_json}", json.dumps(cand_slim, ensure_ascii=False))
     )
 
-    # Call LLM
-    resp = llm_call(prompt)
-    resp = _coerce_json(resp)
-    data = json.loads(resp)
+    resp_raw = llm_call(prompt)
+    if debug_raw_path:
+        from pathlib import Path
+        Path(debug_raw_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(debug_raw_path).write_text(resp_raw or "", encoding="utf-8")
+
+    resp = _coerce_json(resp_raw)
+    data = json.loads(resp) if resp else {}
 
     ranked_raw = data.get("ranked", [])
     ranked: List[Dict[str, Any]] = []
+    if isinstance(ranked_raw, list):
+        for r in ranked_raw:
+            if not isinstance(r, dict):
+                continue
+            api_id = r.get("api_id")
+            if not api_id:
+                continue
+            ranked.append(
+                {
+                    "api_id": api_id,
+                    "reason": r.get("reason", "") or "",
+                }
+            )
 
-    for r in ranked_raw:
-        api_id = r.get("api_id")
-        if not api_id:
-            continue
+    # If model failed, fall back to rag_score ordering (descending)
+    if not ranked:
+        ranked = [
+            {"api_id": c.get("api_id"), "reason": "Fallback: rag_score ordering."}
+            for c in cand_trimmed
+            if c.get("api_id")
+        ]
 
-        # Parse score as float, defaulting to 0.0
-        raw_score = r.get("score", 0.0)
-        try:
-            score_val = float(raw_score)
-        except Exception:
-            score_val = 0.0
-
-        ranked.append(
-            {
-                "api_id": api_id,
-                "score": score_val,
-                "reason": r.get("reason", ""),
-            }
-        )
-
-    ranked.sort(key=lambda x: x["score"], reverse=True)
     return ranked

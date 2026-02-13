@@ -179,162 +179,157 @@ def _run_topsis_pydecision(X: np.ndarray, w: List[float]) -> Tuple[List[float], 
 
 def evaluate_topsis_mode1(
     *,
-    picks: List[Dict[str, Any]],
-    ranked: List[Dict[str, Any]],
+    subtasks: List[Dict[str, Any]],
     ranked_top: List[Dict[str, Any]],
     plan: Dict[str, Any],
     top_k_candidates: int = 12,
     min_qos_candidates: int = 5,
-    weights: Optional[Dict[str, float]] = None,
+    weights: Optional[List[float]] = None,
 ) -> Dict[str, Any]:
     """
-    Mode 1 evaluator:
-      Candidate set per microservice = ranker-scored APIs that retriever marked relevant for that subtask.
-      TOPSIS runs only on that candidate set (8 to 12 typical).
+    Mode 1 TOPSIS evaluation over the per-subtask candidate set.
 
-    Outputs a JSON-serializable report.
+    Inputs:
+      - subtasks: decomposed subtasks [{"id":..., "description":...}, ...]
+      - ranked_top: list of candidates passed to planner, each including:
+            {"api_id", "subtask_id", "rank", "score", "rag_score", "service": {...}}
+      - plan: planner output JSON that includes steps with subtask_id and api_id
+
+    For each subtask:
+      - consider up to top_k_candidates candidates from ranked_top for that subtask
+      - extract QoS metrics (rt_ms, tp_rps, availability) from service.qos when present
+      - run TOPSIS if enough valid QoS candidates exist
+      - report whether planner chose the TOPSIS best
+
+    Note: Ranker score is not used here. TOPSIS uses QoS metrics only.
     """
-    api_to_subtasks = _build_api_to_subtasks(picks)
+    weights = weights or [1.0, 1.0, 1.0]
 
-    # build ranker lookup: api_id -> (ranker_score, ranker_rank)
-    ranked_sorted = sorted(ranked, key=lambda r: float(r.get("score", 0.0)), reverse=True)
-    ranker_pos = {r["api_id"]: i for i, r in enumerate(ranked_sorted)}
-    ranker_score = {r["api_id"]: float(r.get("score", 0.0) or 0.0) for r in ranked_sorted}
+    # Build plan selection: subtask_id -> first api_id used for that subtask
+    chosen_by_subtask: Dict[str, str] = {}
+    try:
+        paths = plan.get("paths", []) or []
+        if paths:
+            steps = paths[0].get("steps", []) or []
+            for st in steps:
+                sid = st.get("subtask_id")
+                aid = st.get("api_id")
+                if sid is None or not aid:
+                    continue
+                sid_s = str(sid)
+                if sid_s not in chosen_by_subtask:
+                    chosen_by_subtask[sid_s] = aid
+    except Exception:
+        pass
 
-    # service lookup for qos
-    id_to_service = {r.get("api_id"): (r.get("service") or {}) for r in ranked_top}
-    id_to_qos = {api_id: (svc.get("qos") if isinstance(svc, dict) else None) for api_id, svc in id_to_service.items()}
+    # Group candidates by subtask_id
+    cand_by_sub: Dict[str, List[Dict[str, Any]]] = {}
+    for c in ranked_top:
+        sid = c.get("subtask_id")
+        if sid is None:
+            continue
+        sid_s = str(sid)
+        cand_by_sub.setdefault(sid_s, []).append(c)
 
-    primary_path = _select_primary_path(plan)
-    if not primary_path:
-        return {
-            "mode": "mode1_ranker_candidates",
-            "error": "No paths found in planner output",
-        }
+    # For each subtask, run TOPSIS if possible
+    eval_steps: List[Dict[str, Any]] = []
+    for sub in subtasks:
+        sid_s = str(sub.get("id", "unknown"))
+        cands = cand_by_sub.get(sid_s, [])[:top_k_candidates]
 
-    steps = primary_path.get("steps") or []
-
-    w = _get_weights(weights)
-
-    microservice_reports: List[Dict[str, Any]] = []
-    for step in steps:
-        step_num = step.get("step")
-        step_api = step.get("api_id")
-        subtask_id = step.get("subtask_id")
-
-        # Build candidate pool for this microservice
-        candidates_ids: List[str] = []
-        if isinstance(subtask_id, int):
-            for api_id, st_ids in api_to_subtasks.items():
-                if subtask_id in st_ids:
-                    candidates_ids.append(api_id)
-        else:
-            # fallback: global top-k candidates
-            candidates_ids = [r["api_id"] for r in ranked_sorted[:top_k_candidates]]
-
-        # intersect with ranker outputs and keep ranker order
-        candidates_ids = [api_id for api_id in ranked_sorted if api_id["api_id"] in set(candidates_ids)]
-        candidates_ids = [x["api_id"] for x in candidates_ids[:top_k_candidates]]
-
-        # collect candidate rows with valid QoS
+        # Extract QoS rows
         rows: List[CandidateRow] = []
-        dropped: List[Dict[str, Any]] = []
-        for api_id in candidates_ids:
-            qos_obj = id_to_qos.get(api_id)
-            vec = _extract_qos(qos_obj if isinstance(qos_obj, dict) else {})
-            if vec is None:
-                dropped.append({"api_id": api_id, "reason": "missing_or_invalid_qos"})
+        for c in cands:
+            api_id = c.get("api_id")
+            service = c.get("service") or {}
+            qos = service.get("qos") or {}
+            if not api_id or not isinstance(qos, dict):
                 continue
-            rows.append(CandidateRow(api_id=api_id, ranker_score=ranker_score.get(api_id, 0.0), qos=qos_obj))
+            rows.append(CandidateRow(api_id=str(api_id), ranker_score=float(c.get("score", 0.0) or 0.0), qos=qos))
 
-        report: Dict[str, Any] = {
-            "step": step_num,
-            "subtask_id": subtask_id,
-            "planner_choice_api_id": step_api,
-            "candidate_source": "subtask_scoped" if isinstance(subtask_id, int) else "global_fallback",
-            "num_candidates_requested": len(candidates_ids),
-            "num_candidates_valid_qos": len(rows),
-            "num_candidates_dropped": len(dropped),
-            "dropped": dropped[:50],  # cap
-        }
+        # Build TOPSIS matrix
+        dataset = []
+        kept_ids = []
+        for r in rows:
+            rt = r.qos.get("rt_ms")
+            tp = r.qos.get("tp_rps")
+            av = r.qos.get("availability")
+            try:
+                rt_f = float(rt)
+                tp_f = float(tp)
+                av_f = float(av)
+            except Exception:
+                continue
+            dataset.append([rt_f, tp_f, av_f])
+            kept_ids.append(r.api_id)
 
-        if len(rows) < min_qos_candidates:
-            report["status"] = "insufficient_qos_candidates"
-            microservice_reports.append(report)
+        if len(dataset) < min_qos_candidates:
+            eval_steps.append({
+                "subtask_id": sid_s,
+                "subtask": sub.get("description", ""),
+                "status": "insufficient_qos_candidates",
+                "qos_candidates": len(dataset),
+                "planner_choice": chosen_by_subtask.get(sid_s),
+            })
             continue
 
-        # build matrix X in fixed order
-        X = np.array([_extract_qos(r.qos) for r in rows], dtype=float)
+        ds = np.array(dataset, dtype=float)
 
-        # outlier mitigation
-        X2, outlier_log = _winsorize_matrix(X, p_low=5.0, p_high=95.0)
-        report["outlier_mitigation"] = outlier_log
+        # Winsorize outliers (p5-p95) per metric to reduce dominance of extreme values
+        def winsorize(col: np.ndarray, p_lo: float = 5.0, p_hi: float = 95.0) -> np.ndarray:
+            lo = np.percentile(col, p_lo)
+            hi = np.percentile(col, p_hi)
+            return np.clip(col, lo, hi)
 
-        # run topsis
-        scores, order = _run_topsis_pydecision(X2, w)
+        ds_w = ds.copy()
+        for j in range(ds.shape[1]):
+            ds_w[:, j] = winsorize(ds_w[:, j])
 
-        # order: indices best-first
-        ranked_rows = [rows[i] for i in order]
-        top5 = ranked_rows[:5]
+        # Run TOPSIS (robust to pyDecision return-shape changes)
+        try:
+            scores, ranking = _run_topsis_pydecision(ds_w, [float(x) for x in weights])
+        except Exception as e:
+            eval_steps.append({
+                "subtask_id": sid_s,
+                "subtask": sub.get("description", ""),
+                "status": "topsis_error",
+                "error": str(e),
+            })
+            continue
 
-        def _rank_of(api_id: str) -> Optional[int]:
-            for idx, r in enumerate(ranked_rows, start=1):
-                if r.api_id == api_id:
-                    return idx
-            return None
+        if not scores:
+            eval_steps.append({
+                "subtask_id": sid_s,
+                "subtask": sub.get("description", ""),
+                "status": "topsis_error",
+                "error": "empty topsis scores",
+            })
+            continue
 
-        planner_rank = _rank_of(step_api) if step_api else None
-        planner_hit5 = bool(planner_rank is not None and planner_rank <= 5)
+        best_idx = int(np.argmax(np.array(scores, dtype=float)))
+        topsis_best = kept_ids[best_idx]
+        planner_choice = chosen_by_subtask.get(sid_s)
 
-        # ranker_top1 among this candidate set is the first by ranker score/order
-        # since candidates_ids were in ranker order, use first valid-qos row that appears in that order
-        ranker_top1 = None
-        valid_set = {r.api_id for r in rows}
-        for api_id in candidates_ids:
-            if api_id in valid_set:
-                ranker_top1 = api_id
-                break
-
-        ranker_rank = _rank_of(ranker_top1) if ranker_top1 else None
-        ranker_hit5 = bool(ranker_rank is not None and ranker_rank <= 5)
-
-        # Best by TOPSIS is ranked_rows[0]
-        topsis_best = ranked_rows[0].api_id if ranked_rows else None
-
-        report.update({
+        eval_steps.append({
+            "subtask_id": sid_s,
+            "subtask": sub.get("description", ""),
             "status": "ok",
-            "weights": {"rt_ms": w[0], "tp_rps": w[1], "availability": w[2]},
-            "topsis_best_api_id": topsis_best,
-            "topsis_top5_api_ids": [r.api_id for r in top5],
-            "planner_hit5": planner_hit5,
-            "planner_rank": planner_rank,
-            "ranker_top1_api_id": ranker_top1,
-            "ranker_hit5": ranker_hit5,
-            "ranker_rank": ranker_rank,
+            "qos_candidates": len(dataset),
+            "topsis_best": topsis_best,
+            "planner_choice": planner_choice,
+            "planner_matches_topsis": (planner_choice == topsis_best) if planner_choice else None,
+            "topsis_ranking": [
+                {"api_id": kept_ids[i], "topsis_score": float(scores[i])}
+                for i in (ranking if ranking else list(np.argsort(-np.array(scores, dtype=float))))
+            ],
         })
 
-        microservice_reports.append(report)
-
-    # Path-level aggregation
-    ok = [m for m in microservice_reports if m.get("status") == "ok"]
-    def avg(xs):
-        xs = [x for x in xs if x is not None]
-        return float(sum(xs) / len(xs)) if xs else None
-
-    path_summary = {
-        "num_steps": len(microservice_reports),
-        "num_ok": len(ok),
-        "num_insufficient_qos": len([m for m in microservice_reports if m.get("status") != "ok"]),
-        "planner_hit5_rate": avg([1.0 if m.get("planner_hit5") else 0.0 for m in ok]),
-        "ranker_hit5_rate": avg([1.0 if m.get("ranker_hit5") else 0.0 for m in ok]),
-        "planner_avg_rank": avg([m.get("planner_rank") for m in ok]),
-        "ranker_avg_rank": avg([m.get("ranker_rank") for m in ok]),
-    }
-
     return {
-        "mode": "mode1_ranker_candidates",
-        "primary_path_id": primary_path.get("path_id"),
-        "path_score": primary_path.get("path_score"),
-        "microservices": microservice_reports,
-        "path_summary": path_summary,
+        "mode": "mode1_per_subtask_candidates",
+        "criteria": CRITERIA,
+        "criteria_types": CRITERIA_TYPES,
+        "weights": weights,
+        "top_k_candidates": top_k_candidates,
+        "min_qos_candidates": min_qos_candidates,
+        "steps": eval_steps,
     }

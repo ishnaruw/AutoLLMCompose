@@ -48,3 +48,16 @@ test_endpoint.ipynb
 # Zipped files
 *.zip
 
+
+# outputs
+results/logs/
+
+
+# data + artifacts
+*.pt
+*.bin
+*.safetensors
+*.faiss
+*.index
+
+

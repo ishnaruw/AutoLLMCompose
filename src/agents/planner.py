@@ -94,6 +94,9 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
         compact.append({
             "api_id": r.get("api_id"),
             "score": float(r.get("score", 0) or 0),
+            "rank": r.get("rank"),
+            "subtask_id": r.get("subtask_id"),
+            "rag_score": r.get("rag_score"),
             "service": r.get("service", {}),
         })
 
@@ -110,6 +113,49 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
         .replace("{ranked_compact}", ranked_json)
     )
 
+    def _parse_plan(text: str):
+        text = _coerce_json(text)
+        return json.loads(text)
+
     resp = llm_call(prompt)
-    resp = _coerce_json(resp)
-    return json.loads(resp)
+    plan = _parse_plan(resp)
+
+    # Enforce 3 paths: retry once with a short corrective instruction.
+    try:
+        paths = plan.get("paths") or []
+    except Exception:
+        paths = []
+
+    if not isinstance(paths, list) or len(paths) < 3:
+        retry_prompt = prompt + "\n\nIMPORTANT: Return EXACTLY 3 paths in 'paths' with path_id = 1, 2, 3. Output JSON only."
+        resp2 = llm_call(retry_prompt)
+        plan2 = _parse_plan(resp2)
+        try:
+            paths2 = plan2.get("paths") or []
+        except Exception:
+            paths2 = []
+        plan = plan2 if isinstance(paths2, list) and len(paths2) >= 1 else plan
+
+    # If still fewer than 3 paths, pad by cloning the best path into valid alternatives.
+    try:
+        paths = plan.get("paths") or []
+    except Exception:
+        paths = []
+
+    if not isinstance(paths, list):
+        paths = []
+    if paths and len(paths) < 3:
+        base = paths[0]
+        for pid in range(len(paths) + 1, 4):
+            clone = json.loads(json.dumps(base))  # deep copy
+            clone["path_id"] = pid
+            clone["summary"] = f"Alternative plan {pid} (fallback)"
+            # Slightly lower score to keep ordering deterministic
+            try:
+                clone["path_score"] = float(clone.get("path_score", 0.0)) - (pid * 0.01)
+            except Exception:
+                clone["path_score"] = 0.0
+            paths.append(clone)
+        plan["paths"] = paths[:3]
+
+    return plan

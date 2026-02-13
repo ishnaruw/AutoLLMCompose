@@ -1,35 +1,28 @@
+# src/rag/retriever.py
 from __future__ import annotations
-
-"""FAISS-based retriever for MAOF.
-
-Loads the FAISS index built by src.rag.index_build and retrieves top-K APIs
-for a given subtask string.
-"""
 
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 
 try:
     import faiss  # type: ignore
 except Exception as e:
-    raise RuntimeError("FAISS is required. Install faiss-cpu or faiss-gpu.") from e
+    raise RuntimeError("faiss is required. Install faiss-cpu (recommended) or faiss-gpu.") from e
 
 try:
     from sentence_transformers import SentenceTransformer  # type: ignore
 except Exception as e:
-    raise RuntimeError(
-        "sentence-transformers is required. pip install sentence-transformers"
-    ) from e
+    raise RuntimeError("sentence-transformers is required. pip install sentence-transformers") from e
 
 
 @dataclass
 class RetrievedCandidate:
     api_id: str
-    score: float
+    rag_score: float
     category: Optional[str]
     compressed: Dict[str, Any]
 
@@ -51,12 +44,15 @@ class _Embedder:
 
 
 class FaissServiceRetriever:
+    """
+    Loads a FAISS index + metadata produced by src/rag/index_build.py
+    and returns topK candidates for a subtask string.
+    """
     def __init__(self, index_dir: str) -> None:
         self.index_dir = Path(index_dir)
-
         self.index = faiss.read_index(str(self.index_dir / "faiss.index"))
-        self.meta = self._load_meta(self.index_dir / "meta.jsonl")
-        self.config = self._load_config(self.index_dir / "config.json")
+        self.meta = self._load_jsonl(self.index_dir / "meta.jsonl")
+        self.config = json.loads((self.index_dir / "config.json").read_text(encoding="utf-8"))
 
         model_name = self.config.get("embed_model", "sentence-transformers/all-MiniLM-L6-v2")
         normalize = bool(self.config.get("normalize", True))
@@ -64,11 +60,11 @@ class FaissServiceRetriever:
 
         if int(self.index.ntotal) != len(self.meta):
             raise RuntimeError(
-                f"Index rows mismatch: faiss.ntotal={self.index.ntotal} meta={len(self.meta)}"
+                f"FAISS index size ({self.index.ntotal}) != meta rows ({len(self.meta)})."
             )
 
     @staticmethod
-    def _load_meta(path: Path) -> List[Dict[str, Any]]:
+    def _load_jsonl(path: Path) -> List[Dict[str, Any]]:
         rows: List[Dict[str, Any]] = []
         with path.open("r", encoding="utf-8") as f:
             for line in f:
@@ -78,13 +74,9 @@ class FaissServiceRetriever:
                 rows.append(json.loads(line))
         return rows
 
-    @staticmethod
-    def _load_config(path: Path) -> Dict[str, Any]:
-        return json.loads(path.read_text(encoding="utf-8"))
-
     def query(self, subtask: str, *, top_k: int = 60) -> List[RetrievedCandidate]:
         vec = self.embedder.encode_one(subtask)
-        scores, idxs = self.index.search(vec, int(top_k))
+        scores, idxs = self.index.search(vec, top_k)
 
         out: List[RetrievedCandidate] = []
         for score, idx in zip(scores[0].tolist(), idxs[0].tolist()):
@@ -94,7 +86,7 @@ class FaissServiceRetriever:
             out.append(
                 RetrievedCandidate(
                     api_id=str(row.get("api_id", "")),
-                    score=float(score),
+                    rag_score=float(score),
                     category=row.get("category"),
                     compressed=row.get("compressed", {}) or {},
                 )
