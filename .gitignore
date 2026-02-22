@@ -50,7 +50,7 @@ test_endpoint.ipynb
 
 
 # outputs
-results/logs/
+results/*
 
 
 # data + artifacts
@@ -59,5 +59,10 @@ results/logs/
 *.safetensors
 *.faiss
 *.index
+data/index/*
 
 
+
+data/index/maof_v1/with_qos/config.json
+data/index/maof_v1/with_qos/faiss.index
+data/index/maof_v1/with_qos/meta.jsonl
