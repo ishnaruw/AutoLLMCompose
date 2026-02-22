@@ -11,10 +11,11 @@ from src.tools.fetch_services import fetch_services
 from src.agents.decomposer import decompose_goal
 from src.agents.retriever import collect_candidates
 from src.agents.ranker import rank_subtask
+from src.agents.selector import select_top_apis_for_subtask
 from src.agents.planner import planner_call
 from src.core.retry import call_with_backoff
-from src.eval.topsis_eval import evaluate_topsis_mode1
 from src.eval.export_excel import export_run_excel
+from src.eval.compare_selector_modes import write_comparison_reports
 
 
 QUERIES_PATH = Path("data/queries/one_user_query.jsonl")
@@ -197,8 +198,8 @@ def run_autogen_once(user_goal: str, with_qos: bool, provider: str | None = None
     # 4) RANKER (per subtask, QoS-aware when implied by the user query)
     id_to_service = {s["api_id"]: s for s in cat_items}
 
-    keep_max = int(os.getenv("MAOF_RAG_KEEP_MAX", "12"))
-    keep_min = int(os.getenv("MAOF_RAG_KEEP_MIN", "8"))
+    # Current experiment constraint: fixed candidate limit to Top 8 APIs per subtask.
+    selected_top_n = int(os.getenv("MAOF_SELECTED_TOP_N", "8"))
 
     ranked_by_subtask: dict[str, list[dict[str, Any]]] = {}
 
@@ -237,59 +238,127 @@ def run_autogen_once(user_goal: str, with_qos: bool, provider: str | None = None
         ranked_by_subtask[sub_id] = ranked
 
         (debug_ranker_dir / "ranked.json").write_text(json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8")
-    # 4.5) Build ranked_top for planner (top 8–12 per subtask)
-    ranked_top: List[Dict[str, Any]] = []
+    # 4.5) SELECTOR (DUAL-MODE): build ranked pool (Top 20) and select Top 8 per subtask
+    ranked_pool_with_service: List[Dict[str, Any]] = []
+
+    selected_with_service_pure: List[Dict[str, Any]] = []
+    selected_with_service_topsis: List[Dict[str, Any]] = []
+
+    selector_traces_pure: Dict[str, Any] = {}
+    selector_traces_topsis: Dict[str, Any] = {}
+
+    ranker_pool_n = int(os.getenv("MAOF_RANKER_POOL_N", "20"))
+    topsis_top_k = int(os.getenv("MAOF_TOPSIS_TOP_K", "12"))
+    topsis_min_qos = int(os.getenv("MAOF_TOPSIS_MIN_QOS", "5"))
 
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        # map api_id -> rag_score for this subtask
         rag_map = {r.get("api_id"): float(r.get("rag_score", 0.0) or 0.0) for r in retrieved_by_subtask.get(sub_id, [])}
 
-        ranked_list = ranked_by_subtask.get(sub_id, [])
-        # Ensure we always pass at least keep_min candidates if available
-        target_n = min(keep_max, max(keep_min, 0))
-        target_n = min(target_n, len(ranked_list))
+        ranked_list = (ranked_by_subtask.get(sub_id, []) or [])[:ranker_pool_n]
+        pool_for_sub: List[Dict[str, Any]] = []
 
-        for idx, r in enumerate(ranked_list[:target_n], start=1):
+        for idx, r in enumerate(ranked_list, start=1):
             api_id = r.get("api_id")
             if not api_id:
                 continue
-            # Derived score for planner convenience (1.0 for rank 1, decreasing)
-            score = (target_n - idx + 1) / float(target_n) if target_n else 0.0
-            ranked_top.append({
+            pool_for_sub.append({
                 "api_id": api_id,
-                "score": score,
                 "rank": idx,
                 "subtask_id": sub.get("id"),
                 "rag_score": rag_map.get(api_id, 0.0),
                 "service": id_to_service.get(api_id, {}),
+                "reason": r.get("reason", "") or "",
             })
-    # 5) PLANNER
-    plan = planner_call(
+
+        ranked_pool_with_service.extend(pool_for_sub)
+
+        # Run BOTH selector modes side-by-side on the SAME ranked pool
+        selected_pure, trace_pure = select_top_apis_for_subtask(
+            subtask_id=sub_id,
+            ranked_pool=pool_for_sub,
+            mode_override="PURE_LLM",
+            top_n=selected_top_n,
+            topsis_top_k=topsis_top_k,
+            min_qos_candidates=topsis_min_qos,
+        )
+        selected_topsis, trace_topsis = select_top_apis_for_subtask(
+            subtask_id=sub_id,
+            ranked_pool=pool_for_sub,
+            mode_override="TOPSIS",
+            top_n=selected_top_n,
+            topsis_top_k=topsis_top_k,
+            min_qos_candidates=topsis_min_qos,
+        )
+
+        selector_traces_pure[sub_id] = trace_pure
+        selector_traces_topsis[sub_id] = trace_topsis
+
+        # Derived score for planner convenience (1.0 for selected_rank 1, decreasing)
+        def _append_selected(out_list: List[Dict[str, Any]], selected: List[Dict[str, Any]]) -> None:
+            target_n = len(selected)
+            for j, c in enumerate(selected, start=1):
+                score = (target_n - j + 1) / float(target_n) if target_n else 0.0
+                c2 = dict(c)
+                c2["score"] = score
+                c2["selected_rank"] = j
+                out_list.append(c2)
+
+        _append_selected(selected_with_service_pure, selected_pure)
+        _append_selected(selected_with_service_topsis, selected_topsis)
+
+        # per-subtask logs
+        debug_sel_dir = out / f"debug_selector_subtask_{sub_id}"
+        debug_sel_dir.mkdir(exist_ok=True)
+        (debug_sel_dir / "selector_input.json").write_text(
+            json.dumps({"subtask": sub, "ranked_pool": pool_for_sub}, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selector_trace_pure_llm.json").write_text(
+            json.dumps(trace_pure, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selector_trace_topsis.json").write_text(
+            json.dumps(trace_topsis, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selected_pure_llm.json").write_text(
+            json.dumps(selected_pure, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selected_topsis.json").write_text(
+            json.dumps(selected_topsis, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+    # 5) PLANNER (DUAL-MODE): run planner twice using the two selected candidate sets
+    plan_pure = planner_call(
         llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
         user_goal=user_goal,
-        ranked_top=ranked_top,
+        ranked_top=selected_with_service_pure,
         subtasks=subtasks,
     )
 
-    # 5.5) TOPSIS EVALUATION (Mode 1: ranker candidate set per subtask)
-    topsis_eval = evaluate_topsis_mode1(
+    plan_topsis = planner_call(
+        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
+        user_goal=user_goal,
+        ranked_top=selected_with_service_topsis,
         subtasks=subtasks,
-        ranked_top=ranked_top,
-        plan=plan,
-        top_k_candidates=12,
-        min_qos_candidates=5,
-        weights=None,
     )
 
 
     # 6) LOGS
+
     (out / "0_decomposer.json").write_text(json.dumps(subtasks, indent=2))
     (out / "1_retriever.json").write_text(json.dumps(retrieved_by_subtask, indent=2, ensure_ascii=False))
     (out / "2_ranker_raw.json").write_text(json.dumps(ranked_by_subtask, indent=2, ensure_ascii=False))
-    (out / "3_ranked_with_service.json").write_text(json.dumps(ranked_top, indent=2))
-    (out / "4_planner.json").write_text(json.dumps(plan, indent=2))
-    (out / "5_topsis_eval.json").write_text(json.dumps(topsis_eval, indent=2))
+    (out / "3_ranked_pool_with_service.json").write_text(json.dumps(ranked_pool_with_service, indent=2, ensure_ascii=False))
+    (out / "4_selected_with_service_pure_llm.json").write_text(json.dumps(selected_with_service_pure, indent=2, ensure_ascii=False))
+    (out / "4_selected_with_service_topsis.json").write_text(json.dumps(selected_with_service_topsis, indent=2, ensure_ascii=False))
+    (out / "5_planner_pure_llm.json").write_text(json.dumps(plan_pure, indent=2, ensure_ascii=False))
+    (out / "5_planner_topsis.json").write_text(json.dumps(plan_topsis, indent=2, ensure_ascii=False))
+    (out / "selector_traces_pure_llm.json").write_text(json.dumps(selector_traces_pure, indent=2, ensure_ascii=False))
+    (out / "selector_traces_topsis.json").write_text(json.dumps(selector_traces_topsis, indent=2, ensure_ascii=False))
     (out / "meta.json").write_text(json.dumps({
         "model_tag": model_tag,
         "provider": model_tag.split(":")[0],
@@ -297,23 +366,25 @@ def run_autogen_once(user_goal: str, with_qos: bool, provider: str | None = None
         "with_qos": with_qos,
         "rag_index_dir": index_dir,
         "rag_topk": top_k,
-        "rag_keep_min": keep_min,
-        "rag_keep_max": keep_max,
         "ranker_candidates_used": int(os.getenv("MAOF_RANKER_MAX_CANDIDATES", "25")),
+        "ranker_pool_n": int(os.getenv("MAOF_RANKER_POOL_N", "20")),
+        "selected_top_n": selected_top_n,
+        "dual_selector": True,
+        "topsis_top_k": int(os.getenv("MAOF_TOPSIS_TOP_K", "12")),
+        "topsis_min_qos_candidates": int(os.getenv("MAOF_TOPSIS_MIN_QOS", "5")),
         "user_goal": user_goal,
         "num_subtasks": len(subtasks),
         "max_batches": max_batches,
         "policy": get_policy(provider),
-        "topsis_enabled": True,
-        "topsis_mode": "mode1_ranker_candidates",
-        "topsis_top_k_candidates": 12,
-        "topsis_min_qos_candidates": 5,
-        "topsis_outlier_mitigation": "winsorize_p5_p95",
-        "topsis_normalization": "vector (inside TOPSIS; implemented by method)",
-        "topsis_criteria": ["rt_ms(cost)", "tp_rps(benefit)", "availability(benefit)"],
     }, indent=2))
 
-    # 7) EXCEL REPORT (one per query/run)
+    # 7) SELECTOR COMPARISON REPORTS (PURE_LLM vs TOPSIS)
+    try:
+        write_comparison_reports(run_dir=out)
+    except Exception as e:
+        (out / "selector_comparison_error.txt").write_text(str(e), encoding="utf-8")
+
+# 8) EXCEL REPORT (one per query/run)
     try:
         export_run_excel(run_dir=out)
     except Exception as e:
@@ -325,7 +396,7 @@ def run_autogen_once(user_goal: str, with_qos: bool, provider: str | None = None
     # ✅ pacing between queries (all providers, policy driven)
     throttle(provider, "after_query")
 
-    return ranked, plan
+    return ranked_by_subtask, {'PURE_LLM': plan_pure, 'TOPSIS': plan_topsis}
 
 
 if __name__ == "__main__":

@@ -126,6 +126,8 @@ def rank_subtask(
     #   1) take the top N by rag_score
     #   2) slim each candidate down to only essential fields
     MAX_RANK_CANDIDATES = int(os.getenv("MAOF_RANKER_MAX_CANDIDATES", "25"))
+    # Ranker outputs a stable pool size for the Selector.
+    RANKER_POOL_N = int(os.getenv("MAOF_RANKER_POOL_N", "20"))
     cand_sorted = sorted(
         (c for c in candidates if isinstance(c, dict) and c.get("api_id")),
         key=lambda x: float(x.get("rag_score") or 0.0),
@@ -174,4 +176,20 @@ def rank_subtask(
             if c.get("api_id")
         ]
 
-    return ranked
+    # Enforce a stable pool size: append missing IDs (rag_score order) if the
+    # model returned too few items.
+    ranked_ids = {str(r.get("api_id")) for r in ranked if r.get("api_id")}
+    if len(ranked) < RANKER_POOL_N:
+        for c in cand_trimmed:
+            cid = c.get("api_id")
+            if not cid:
+                continue
+            cid_s = str(cid)
+            if cid_s in ranked_ids:
+                continue
+            ranked.append({"api_id": cid, "reason": "Appended to fill pool size."})
+            ranked_ids.add(cid_s)
+            if len(ranked) >= RANKER_POOL_N:
+                break
+
+    return ranked[:RANKER_POOL_N]
