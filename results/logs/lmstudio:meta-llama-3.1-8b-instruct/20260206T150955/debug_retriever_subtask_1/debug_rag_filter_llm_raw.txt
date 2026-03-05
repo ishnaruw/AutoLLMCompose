@@ -1,9 +1,0 @@
-{"keep":[{"api_id":"address_details_by_location_reverse_geocoding","reason":"Directly gets user location using geolocation API"},
-{"api_id":"greip_geoip","reason":"Returns the geolocation data of the visitor."},
-{"api_id":"ip_geolocation_apis_ip_lookup","reason":"Provides geo information for the given IPv4/IPv6"},
-{"api_id":"fast_real_time_ip_to_country_geolocation_ip_to_country_code","reason":"It fetches the 2 digit country code of the visitor IP"},
-{"api_id":"locations_and_postcodes_uk_getlocationforpostcode","reason":"Send a postcode in the UK and it will return the nearest geo coordinate"},
-{"api_id":"ip_to_country_geolocation_ip_to_country","reason":"Quickly and accurately resolve where your website visitors are actually coming from"},
-{"api_id":"find_any_ip_address_or_domain_location_world_wide_ip_location_by_ipv6_ip_address","reason":"Free IP Geo Location API which provide 100% accurate complete information of any IP address or Domain name with its city latitude, longitude, zipcode, state/province, country, country codes, country f"},
-{"api_id":"geoapify_forward_geocoding_geocoding","reason":"Geoapify provides Geocoding API that searches addresses worldwide."},
-{"api_id":"ip_to_geo_location_api","reason":"IP Address"}]}

@@ -16,7 +16,7 @@ def _coerce_json(s: str) -> str:
     return m.group(0) if m else "{}"
 
 
-def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
+def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner.md"):
     """
     Compose one or more alternative orchestration paths from ranked candidates.
 
@@ -103,7 +103,7 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None):
     subtasks_json = json.dumps(subtasks or [], ensure_ascii=False)
     ranked_json = json.dumps(compact, ensure_ascii=False)
 
-    with open("prompts/planner.md", "r", encoding="utf-8") as f:
+    with open(prompt_path, "r", encoding="utf-8") as f:
         tmpl = f.read()
 
     prompt = (

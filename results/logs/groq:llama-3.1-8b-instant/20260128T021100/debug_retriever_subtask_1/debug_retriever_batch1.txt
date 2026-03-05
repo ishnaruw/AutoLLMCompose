@@ -1,6 +1,0 @@
-{
-  "keep": [
-    {"api_id": "pe_demo_view_ip_address", "reason": "View the IP address of the client in JSON format."},
-    {"api_id": "privatepublicapi_getorderbyid", "reason": "No direct match, but could potentially be used to get location information"}
-  ]
-}

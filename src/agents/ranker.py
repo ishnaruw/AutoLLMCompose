@@ -95,6 +95,7 @@ def rank_subtask(
     user_query: str,
     subtask: Dict[str, Any],
     candidates: List[Dict[str, Any]],
+    prompt_path: str = "prompts/ranker.md",
     debug_raw_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
@@ -116,7 +117,7 @@ def rank_subtask(
 
     Returns the ranked list in order (best first).
     """
-    with open("prompts/ranker.md", "r", encoding="utf-8") as f:
+    with open(prompt_path, "r", encoding="utf-8") as f:
         template = f.read()
 
     # --- Context safety ---

@@ -1,6 +1,0 @@
-{
-  "keep": [
-    {"api_id": "pe_demo_view_ip_address", "reason": "View the IP address of the client in JSON format."},
-    {"api_id": "privatepublicapi_getorderbyid", "reason": "For valid response try integer IDs with value >= 1 and <= 10. Other values will generated exceptions"}
-  ]
-}
