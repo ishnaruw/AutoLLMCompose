@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from typing import Any, Callable, Dict, List
 
@@ -126,9 +125,11 @@ def rank_subtask(
     # We:
     #   1) take the top N by rag_score
     #   2) slim each candidate down to only essential fields
-    MAX_RANK_CANDIDATES = int(os.getenv("MAOF_RANKER_MAX_CANDIDATES", "25"))
+    from src.config import CONFIG
+
+    MAX_RANK_CANDIDATES = CONFIG.ranker_max_candidates
     # Ranker outputs a stable pool size for the Selector.
-    RANKER_POOL_N = int(os.getenv("MAOF_RANKER_POOL_N", "20"))
+    RANKER_POOL_N = CONFIG.ranker_pool_n
     cand_sorted = sorted(
         (c for c in candidates if isinstance(c, dict) and c.get("api_id")),
         key=lambda x: float(x.get("rag_score") or 0.0),

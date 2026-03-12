@@ -31,8 +31,8 @@ def select_top_apis_for_subtask(
     subtask_id: str,
     ranked_pool: List[Dict[str, Any]],
     mode_override: str | None = None,
-    top_n: int = 8,
-    topsis_top_k: int = 12,
+    top_n: int = 10,
+    topsis_top_k: int = 20,
     min_qos_candidates: int = 5,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     """Select final APIs for one subtask.
@@ -47,7 +47,7 @@ def select_top_apis_for_subtask(
         - select first top_n by rank order
 
       TOPSIS:
-        - run TOPSIS on QoS over the top `topsis_top_k` items in ranked_pool
+        - run TOPSIS on QoS over the top `topsis_top_k` items in ranked_pool (default 20)
         - pick top_n by TOPSIS score
         - if QoS candidates are insufficient, fall back to rank order
         - always de-dup api_id in selected

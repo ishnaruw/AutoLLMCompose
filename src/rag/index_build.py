@@ -1,4 +1,3 @@
-# src/rag/index_build.py
 from __future__ import annotations
 
 import argparse
@@ -6,7 +5,7 @@ import json
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -25,10 +24,35 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def default_embed_text(comp: Dict[str, Any]) -> str:
+def _qos_hint_from_raw(raw: Dict[str, Any], *, enabled: bool) -> str:
+    """
+    Add a weak QoS hint only for the with_qos index.
+    Semantic match must still dominate retrieval.
+    """
+    if not enabled:
+        return ""
+
+    vals: List[str] = []
+    for key in ("rt_ms", "tp_rps", "availability"):
+        val = raw.get(key)
+        if val is None:
+            continue
+        vals.append(f"{key}={val}")
+
+    if not vals:
+        return ""
+
+    return (
+        "qos_hint: semantic match first; qos is secondary. "
+        "Prefer lower rt_ms, higher tp_rps, and higher availability. "
+        + "qos_values: " + ", ".join(vals)
+    )
+
+
+def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any], *, include_qos_hint: bool = False) -> str:
     """
     Build the embedding text from compressed API fields.
-    Keep it functional and compact; avoid dumping huge schemas.
+    Keep it functional and compact. QoS is only a weak appended hint for with_qos builds.
     """
     parts: List[str] = []
 
@@ -71,6 +95,10 @@ def default_embed_text(comp: Dict[str, Any]) -> str:
                 pbits.append(str(pn))
         if pbits:
             parts.append("params: " + "; ".join(pbits))
+
+    qos_hint = _qos_hint_from_raw(raw, enabled=include_qos_hint)
+    if qos_hint:
+        parts.append(qos_hint)
 
     return "\n".join(parts).strip()
 
@@ -144,7 +172,7 @@ def main() -> None:
             break
         for raw in batch:
             comp = compress_service(raw)
-            txt = default_embed_text(comp)
+            txt = default_embed_text(comp, raw, include_qos_hint=cfg.with_qos)
             api_id = comp.get("api_id") or raw.get("api_id") or raw.get("id")
             meta_rows.append(
                 {
@@ -165,7 +193,7 @@ def main() -> None:
 
     emb = embedder.encode(texts, batch_size=int(args.batch_size))
     d = emb.shape[1]
-    index = faiss.IndexFlatIP(d)  # cosine similarity when normalized
+    index = faiss.IndexFlatIP(d)
     index.add(emb)
 
     faiss.write_index(index, str(index_dir / "faiss.index"))

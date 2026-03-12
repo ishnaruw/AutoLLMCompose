@@ -1,71 +1,46 @@
-You create multiple alternative orchestration plans using only the provided candidate APIs.
+You create sequential API workflows using only the provided candidates.
 
-You are given:
-- The overall user goal (original query).
-- A list of decomposed subtasks (JSON array).
-- Candidate APIs (JSON array). Each item has:
-  - api_id
-  - subtask_id: which subtask this API is intended for
-  - rank: the within-subtask rank (1 is best)
-  - score: a derived score (higher is better)
-  - rag_score: semantic similarity score from retrieval (for context only)
-  - service: the full catalog entry for this API, which may include fields such as
-             description, category, qos, endpoints, or other metadata.
-    - If present, service.qos contains QoS-related information for that API.
+Priority order:
+1) Respect the given subtask order.
+2) Functional correctness and step-to-step compatibility come first.
+3) Prefer stronger QoS only when multiple APIs are similarly suitable.
 
-User goal:
+QoS meanings:
+- rt_ms = response time in milliseconds, lower is better
+- tp_rps = throughput in requests per second, higher is better
+- availability = value out of 1, higher is better
+
+Input user goal:
 {user_goal}
 
-Decomposed subtasks (JSON array):
+Ordered subtasks:
 {subtasks_json}
 
-Candidate APIs (JSON array):
+Candidate APIs:
 {ranked_compact}
 
-Instructions:
-1) Use the subtasks to design a valid multi-step workflow.
-2) For each subtask, prefer higher-ranked candidates (rank 1 first), but only if they actually fit the needed function.
-3) Use only APIs from the candidate list. Never invent APIs.
-4) If the user goal implies non-functional constraints (speed, reliability, etc.), use service.qos fields when deciding between candidates.
-5) Return EXACTLY 3 alternative paths. Use path_id = 1, 2, 3.
-   - Path 1 should be the best overall plan.
-   - Paths 2 and 3 should be valid alternatives (fallbacks), for example using different APIs where possible.
-6) Return strict JSON as specified below. Output JSON only.
+Rules:
+- Use only the provided candidates.
+- Keep workflows sequential.
+- Return exactly 3 alternative paths.
+- Each path should follow the subtask order.
+- Do not invent APIs or reorder subtasks.
 
-Return strict JSON in this format:
-
+Return JSON only:
 {
   "paths": [
     {
       "path_id": 1,
       "path_score": 0.0,
-      "summary": "short summary of this plan",
+      "summary": "...",
       "steps": [
-        {
-          "step": 1,
-          "api_id": "string",
-          "subtask_id": 1,
-          "action": "what you would do with this API",
-          "why": "brief reasoning",
-          "qos": null
-        }
+        {"step": 1, "api_id": "...", "subtask_id": 1, "action": "...", "why": "...", "qos": null}
       ],
       "subtask_coverage": [
-        {
-          "subtask_id": 1,
-          "description": "string",
-          "steps": [1],
-          "coverage": "full"
-        }
+        {"subtask_id": 1, "description": "...", "steps": [1], "coverage": "full"}
       ]
     }
   ],
   "selected_api_ids": ["..."],
-  "overall_rationale": "brief overall reasoning"
+  "overall_rationale": "..."
 }
-
-Requirements:
-- Return exactly 3 items in paths, with path_id = 1, 2, 3.
-- Ensure each step's api_id exists in the candidates.
-- subtask_id should refer to an id from the subtasks list.
-- Keep responses concise and valid JSON only.
