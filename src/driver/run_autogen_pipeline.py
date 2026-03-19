@@ -1,13 +1,11 @@
 # src/driver/run_autogen_pipeline.py
 
-from __future__ import annotations
-
 import json
+import os
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List
 
-from src.config import CONFIG
 from src.llm.backends import make_backend
 from src.tools.fetch_services import fetch_services
 from src.agents.decomposer import decompose_goal
@@ -16,38 +14,40 @@ from src.agents.ranker import rank_subtask
 from src.agents.selector import select_top_apis_for_subtask
 from src.agents.planner import planner_call
 from src.core.retry import call_with_backoff
+from src.eval.export_excel import export_run_excel
+from src.eval.compare_selector_modes import write_comparison_reports
+from src.config.pipeline_config import QUERIES_PATH, PREFIX_RUN_DIR_WITH_QUERY_ID
 
 
-QUERIES_PATH = Path(CONFIG.queries_path)
-
+# -------- role prompts --------
 DECOMPOSER_SYS = (
     "You are a task decomposition agent. "
     "You break a user goal into ordered subtasks. "
     "Return strict JSON as instructed by the prompt."
 )
 
+RETRIEVER_SYS = (
+    "You are a retrieval agent that selects relevant APIs from a JSON catalog "
+    "based on a subtask goal. Return strict JSON as instructed by the prompt; "
+    "never invent services."
+)
+
 RANKER_SYS = (
     "You are a ranking agent. Given the original user query, a single subtask, and "
-    "a list of candidate APIs from a catalog, rank the candidates best-to-worst for "
-    "that subtask. Follow the prompt strictly and return valid JSON."
+    "a list of candidate APIs from a catalog (with QoS fields when present), "
+    "rank the candidates best-to-worst for that subtask. Follow the prompt strictly "
+    "and return valid JSON."
 )
 
 PLANNER_SYS = (
-    "You are an orchestration planner that composes a logical sequential API workflow "
-    "using only the selected APIs provided. Follow the prompt strictly and return valid JSON."
+    "You are an orchestration planner that composes a logical API workflow "
+    "using only the ranked APIs provided. You have access to an agent rank "
+    "and the full catalog entry for each API (including any QoS-related "
+    "information if present). Follow the prompt strictly and return valid JSON."
 )
 
-PROVIDER_POLICY = {
-    "mistral":       {"sleep_after_query": 0.5},
-    "groq":          {"sleep_after_query": 0.8},
-    "gemini":        {"sleep_after_query": 0.4},
-    "azure_foundry": {"sleep_after_query": 0.2},
-    "azure":         {"sleep_after_query": 0.2},
-    "_default":      {"sleep_after_query": 0.4},
-}
 
-
-def load_queries(path: Path = QUERIES_PATH) -> List[Dict[str, Any]]:
+def load_queries(path: Path = QUERIES_PATH):
     if not path.exists():
         raise FileNotFoundError(f"Queries file not found: {path.resolve()}")
     queries = []
@@ -56,7 +56,8 @@ def load_queries(path: Path = QUERIES_PATH) -> List[Dict[str, Any]]:
             line = line.strip()
             if not line:
                 continue
-            queries.append(json.loads(line))
+            obj = json.loads(line)
+            queries.append(obj)
     return queries
 
 
@@ -65,7 +66,7 @@ def choose_provider_interactive() -> str:
         ("mistral", "Mistral"),
         ("groq", "Groq"),
         ("azure_foundry", "Azure (DeepSeek via Foundry endpoint)"),
-        ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)"),
+        ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)")
     ]
 
     print("\nSelect model provider:")
@@ -74,115 +75,208 @@ def choose_provider_interactive() -> str:
 
     while True:
         choice = input("Enter choice number: ").strip()
-        if choice.isdigit() and 1 <= int(choice) <= len(options):
-            provider = options[int(choice) - 1][0]
-            print(f"Selected: {options[int(choice) - 1][1]}\n")
+        if not choice.isdigit():
+            print("Please enter a number.")
+            continue
+        idx = int(choice)
+        if 1 <= idx <= len(options):
+            provider = options[idx - 1][0]
+            print(f"Selected: {options[idx - 1][1]}\n")
             return provider
         print("Invalid choice. Try again.")
 
 
-def _run_dir(model_tag: str) -> Path:
+
+def _safe_name(text: str) -> str:
+    text = (text or "unknown").strip()
+    out = []
+    for ch in text:
+        if ch.isalnum() or ch in {"-", "_"}:
+            out.append(ch)
+        else:
+            out.append("_")
+    safe = "".join(out).strip("_")
+    return safe or "unknown"
+
+
+def _run_dir(model_tag: str, query_id: str | None = None) -> Path:
     run_id = time.strftime("%Y%m%dT%H%M%S")
-    d = Path(CONFIG.results_root) / model_tag / run_id
+    if PREFIX_RUN_DIR_WITH_QUERY_ID and query_id:
+        run_name = f"{_safe_name(query_id)}_{run_id}"
+    else:
+        run_name = run_id
+    d = Path(f"results/logs/{model_tag}/{run_name}")
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def get_policy(provider: str | None) -> Dict[str, Any]:
+# One place to tune pacing behavior per provider.
+# This applies to ALL providers, and you can tune each independently.
+PROVIDER_POLICY = {
+    "mistral":       {"max_batches": 2, "sleep_after_subtask": 0.5, "sleep_after_query": 0.5},
+    "groq":          {"max_batches": 2, "sleep_after_subtask": 0.6, "sleep_after_query": 0.8},
+    "gemini":        {"max_batches": 2, "sleep_after_subtask": 0.4, "sleep_after_query": 0.4},
+    "azure_foundry": {"max_batches": 3, "sleep_after_subtask": 0.2, "sleep_after_query": 0.2},
+    "azure":         {"max_batches": 3, "sleep_after_subtask": 0.2, "sleep_after_query": 0.2},
+    # fallback default
+    "_default":      {"max_batches": 2, "sleep_after_subtask": 0.4, "sleep_after_query": 0.4},
+}
+
+
+def get_policy(provider: str | None):
     provider = provider or "_default"
     return PROVIDER_POLICY.get(provider, PROVIDER_POLICY["_default"])
 
 
-def throttle(provider: str | None) -> None:
-    t = float(get_policy(provider).get("sleep_after_query", 0.0) or 0.0)
+def throttle(provider: str | None, phase: str):
+    """
+    phase:
+      - "after_subtask": pause after each subtask retrieval
+      - "after_query":   pause after finishing a full query
+    """
+    pol = get_policy(provider)
+    if phase == "after_subtask":
+        t = pol.get("sleep_after_subtask", 0.0) or 0.0
+    elif phase == "after_query":
+        t = pol.get("sleep_after_query", 0.0) or 0.0
+    else:
+        t = 0.0
     if t > 0:
         time.sleep(t)
 
 
-def _mode_dir(base: Path, mode_name: str) -> Path:
-    d = base / mode_name
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def run_autogen_once(user_goal: str, with_qos: bool, provider: str | None = None, model: str | None = None, query_id: str | None = None, query_title: str | None = None):
+    backend = make_backend(provider=provider, model=model)
+    model_tag = backend.name()
 
+    policy = get_policy(provider)
+    max_batches = 1
+    # max_batches = int(policy.get("max_batches", 2))
 
-def _fetch_services_by_ids(api_ids: List[str], *, with_qos: bool) -> Dict[str, Dict[str, Any]]:
-    wanted = set(api_ids)
-    out: Dict[str, Dict[str, Any]] = {}
+    # Single call helper: always backoff, for all providers.
+    def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
+        # Planner benefits from a small amount of randomness to produce multiple valid alternatives.
+        temp = 0.2 if role_name == "planner" else 0
+        return call_with_backoff(
+            lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True),
+            name=role_name
+        )
+    
+    out = _run_dir(model_tag, query_id=query_id)
+
+    # 1) DECOMPOSER
+    subtasks = decompose_goal(
+        llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p),
+        user_goal=user_goal
+    )
+
+    # 2) RETRIEVER (RAG-only) per subtask
+    # We always use RAG retrieval in this pipeline.
+    index_dir = os.getenv("MAOF_RAG_INDEX_DIR", "data/index/maof_v1/with_qos")
+    top_k = int(os.getenv("MAOF_RAG_TOPK", "60"))
+
+    retrieved_by_subtask: dict[str, list[dict[str, Any]]] = {}
+    pick_ids_set: set[str] = set()
+
+    for sub in subtasks:
+        sub_goal = sub["description"]
+        sub_id = str(sub.get("id", "unknown"))
+
+        debug_dir = out / f"debug_retriever_subtask_{sub_id}"
+        debug_dir.mkdir(exist_ok=True)
+
+        retrieved = collect_candidates(
+            user_query=user_goal,
+            subtask_goal=sub_goal,
+            index_dir=index_dir,
+            top_k=top_k,
+            debug_dir=str(debug_dir),
+        )
+
+        retrieved_by_subtask[sub_id] = retrieved
+        for r in retrieved:
+            if r.get("api_id"):
+                pick_ids_set.add(r["api_id"])
+
+    pick_ids = sorted(list(pick_ids_set))
+    # 3) GATHER CATALOG ITEMS FOR RANKER
+    cat_items = []
     offset = 0
     while True:
         batch = fetch_services(category=None, offset=offset, limit=200, with_qos=with_qos)
         if not batch:
             break
-        for item in batch:
-            aid = item.get("api_id")
-            if aid in wanted:
-                out[aid] = item
+        cat_items.extend([b for b in batch if b["api_id"] in pick_ids])
         offset += 200
-    return out
 
+    # 4) RANKER (per subtask, QoS-aware when implied by the user query)
+    id_to_service = {s["api_id"]: s for s in cat_items}
 
-def _retrieve_for_subtasks(
-    *,
-    user_goal: str,
-    subtasks: List[Dict[str, Any]],
-    index_dir: str,
-) -> Dict[str, List[Dict[str, Any]]]:
-    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
-    for sub in subtasks:
-        sub_id = str(sub.get("id", "unknown"))
-        retrieved_by_subtask[sub_id] = collect_candidates(
-            user_query=user_goal,
-            subtask_goal=sub["description"],
-            index_dir=index_dir,
-            top_k=CONFIG.rag_top_k,
-            debug_dir=None,
-        )
-    return retrieved_by_subtask
+    # Current experiment constraint: fixed candidate limit to Top 8 APIs per subtask.
+    selected_top_n = int(os.getenv("MAOF_SELECTED_TOP_N", "8"))
 
-
-def _rank_for_subtasks(
-    *,
-    user_goal: str,
-    subtasks: List[Dict[str, Any]],
-    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]],
-    id_to_service: Dict[str, Dict[str, Any]],
-    prompt_path: str,
-    llm_call,
-) -> Tuple[Dict[str, List[Dict[str, Any]]], List[Dict[str, Any]]]:
-    ranked_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
-    ranked_pool_with_service: List[Dict[str, Any]] = []
+    ranked_by_subtask: dict[str, list[dict[str, Any]]] = {}
 
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         retrieved = retrieved_by_subtask.get(sub_id, [])
+
+        # Build ranker candidate payload: include rag_score as a weak hint + full service (incl. qos)
         candidates_for_ranker: List[Dict[str, Any]] = []
         for r in retrieved:
             api_id = r.get("api_id")
             if not api_id:
                 continue
+            service = id_to_service.get(api_id, {})
             candidates_for_ranker.append({
                 "api_id": api_id,
                 "rag_score": r.get("rag_score", 0.0),
                 "compressed": r.get("compressed", {}),
-                "service": id_to_service.get(api_id, {}),
+                "service": service,
             })
 
+        debug_ranker_dir = out / f"debug_ranker_subtask_{sub_id}"
+        debug_ranker_dir.mkdir(exist_ok=True)
+        (debug_ranker_dir / "ranker_input.json").write_text(
+            json.dumps({"user_query": user_goal, "subtask": sub, "candidates": candidates_for_ranker}, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
         ranked = rank_subtask(
-            llm_call=llm_call,
+            llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
             user_query=user_goal,
             subtask=sub,
             candidates=candidates_for_ranker,
-            prompt_path=prompt_path,
-            debug_raw_path=None,
+            debug_raw_path=str(debug_ranker_dir / "ranker_raw.txt"),
         )
         ranked_by_subtask[sub_id] = ranked
 
-        rag_map = {r.get("api_id"): float(r.get("rag_score", 0.0) or 0.0) for r in retrieved}
-        for idx, r in enumerate(ranked[: CONFIG.ranker_pool_n], start=1):
+        (debug_ranker_dir / "ranked.json").write_text(json.dumps(ranked, indent=2, ensure_ascii=False), encoding="utf-8")
+    # 4.5) SELECTOR (DUAL-MODE): build ranked pool (Top 20) and select Top 8 per subtask
+    ranked_pool_with_service: List[Dict[str, Any]] = []
+
+    selected_with_service_pure: List[Dict[str, Any]] = []
+    selected_with_service_topsis: List[Dict[str, Any]] = []
+
+    selector_traces_pure: Dict[str, Any] = {}
+    selector_traces_topsis: Dict[str, Any] = {}
+
+    ranker_pool_n = int(os.getenv("MAOF_RANKER_POOL_N", "20"))
+    topsis_top_k = int(os.getenv("MAOF_TOPSIS_TOP_K", "12"))
+    topsis_min_qos = int(os.getenv("MAOF_TOPSIS_MIN_QOS", "5"))
+
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        rag_map = {r.get("api_id"): float(r.get("rag_score", 0.0) or 0.0) for r in retrieved_by_subtask.get(sub_id, [])}
+
+        ranked_list = (ranked_by_subtask.get(sub_id, []) or [])[:ranker_pool_n]
+        pool_for_sub: List[Dict[str, Any]] = []
+
+        for idx, r in enumerate(ranked_list, start=1):
             api_id = r.get("api_id")
             if not api_id:
                 continue
-            ranked_pool_with_service.append({
+            pool_for_sub.append({
                 "api_id": api_id,
                 "rank": idx,
                 "subtask_id": sub.get("id"),
@@ -191,222 +285,140 @@ def _rank_for_subtasks(
                 "reason": r.get("reason", "") or "",
             })
 
-    return ranked_by_subtask, ranked_pool_with_service
+        ranked_pool_with_service.extend(pool_for_sub)
 
-
-def _select_for_subtasks(
-    *,
-    subtasks: List[Dict[str, Any]],
-    ranked_pool_with_service: List[Dict[str, Any]],
-    selector_mode: str,
-) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    selected_with_service: List[Dict[str, Any]] = []
-    selector_traces: Dict[str, Any] = {}
-
-    for sub in subtasks:
-        sub_id = str(sub.get("id", "unknown"))
-        pool_for_sub = [c for c in ranked_pool_with_service if str(c.get("subtask_id")) == sub_id]
-        selected, trace = select_top_apis_for_subtask(
+        # Run BOTH selector modes side-by-side on the SAME ranked pool
+        selected_pure, trace_pure = select_top_apis_for_subtask(
             subtask_id=sub_id,
             ranked_pool=pool_for_sub,
-            mode_override=selector_mode,
-            top_n=CONFIG.selector_top_n,
-            topsis_top_k=CONFIG.topsis_top_k,
-            min_qos_candidates=CONFIG.topsis_min_qos_candidates,
+            mode_override="PURE_LLM",
+            top_n=selected_top_n,
+            topsis_top_k=topsis_top_k,
+            min_qos_candidates=topsis_min_qos,
         )
-        selector_traces[sub_id] = trace
-
-        target_n = len(selected)
-        for j, c in enumerate(selected, start=1):
-            score = (target_n - j + 1) / float(target_n) if target_n else 0.0
-            c2 = dict(c)
-            c2["score"] = score
-            c2["selected_rank"] = j
-            selected_with_service.append(c2)
-
-
-    return selected_with_service, selector_traces
-
-
-def _write_mode_outputs(
-    *,
-    mode_dir: Path,
-    mode_suffix: str,
-    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]],
-    ranked_pool_with_service: List[Dict[str, Any]],
-    selected_with_service: List[Dict[str, Any]],
-    plan: Dict[str, Any],
-    selector_traces: Dict[str, Any],
-) -> None:
-    (mode_dir / f"1_retriever_{mode_suffix}.json").write_text(json.dumps(retrieved_by_subtask, indent=2, ensure_ascii=False))
-    (mode_dir / f"2_ranker_pool_{mode_suffix}.json").write_text(json.dumps(ranked_pool_with_service, indent=2, ensure_ascii=False))
-    (mode_dir / f"3_selected_{mode_suffix}.json").write_text(json.dumps(selected_with_service, indent=2, ensure_ascii=False))
-    (mode_dir / f"4_planner_{mode_suffix}.json").write_text(json.dumps(plan, indent=2, ensure_ascii=False))
-    (mode_dir / f"selector_trace_{mode_suffix}.json").write_text(json.dumps(selector_traces, indent=2, ensure_ascii=False))
-
-
-def run_autogen_once(user_goal: str, provider: str | None = None, model: str | None = None):
-    backend = make_backend(provider=provider, model=model)
-    model_tag = backend.name()
-
-    def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
-        temp = 0.2 if role_name == "planner" else 0
-        return call_with_backoff(
-            lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True),
-            name=role_name,
+        selected_topsis, trace_topsis = select_top_apis_for_subtask(
+            subtask_id=sub_id,
+            ranked_pool=pool_for_sub,
+            mode_override="TOPSIS",
+            top_n=selected_top_n,
+            topsis_top_k=topsis_top_k,
+            min_qos_candidates=topsis_min_qos,
         )
 
-    out = _run_dir(model_tag)
-    # write meta early so failed runs still record context
-    top_meta = {
+        selector_traces_pure[sub_id] = trace_pure
+        selector_traces_topsis[sub_id] = trace_topsis
+
+        # Derived score for planner convenience (1.0 for selected_rank 1, decreasing)
+        def _append_selected(out_list: List[Dict[str, Any]], selected: List[Dict[str, Any]]) -> None:
+            target_n = len(selected)
+            for j, c in enumerate(selected, start=1):
+                score = (target_n - j + 1) / float(target_n) if target_n else 0.0
+                c2 = dict(c)
+                c2["score"] = score
+                c2["selected_rank"] = j
+                out_list.append(c2)
+
+        _append_selected(selected_with_service_pure, selected_pure)
+        _append_selected(selected_with_service_topsis, selected_topsis)
+
+        # per-subtask logs
+        debug_sel_dir = out / f"debug_selector_subtask_{sub_id}"
+        debug_sel_dir.mkdir(exist_ok=True)
+        (debug_sel_dir / "selector_input.json").write_text(
+            json.dumps({"subtask": sub, "ranked_pool": pool_for_sub}, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selector_trace_pure_llm.json").write_text(
+            json.dumps(trace_pure, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selector_trace_topsis.json").write_text(
+            json.dumps(trace_topsis, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selected_pure_llm.json").write_text(
+            json.dumps(selected_pure, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+        (debug_sel_dir / "selected_topsis.json").write_text(
+            json.dumps(selected_topsis, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+
+    # 5) PLANNER (DUAL-MODE): run planner twice using the two selected candidate sets
+    plan_pure = planner_call(
+        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
+        user_goal=user_goal,
+        ranked_top=selected_with_service_pure,
+        subtasks=subtasks,
+    )
+
+    plan_topsis = planner_call(
+        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
+        user_goal=user_goal,
+        ranked_top=selected_with_service_topsis,
+        subtasks=subtasks,
+    )
+
+
+    # 6) LOGS
+
+    (out / "0_decomposer.json").write_text(json.dumps(subtasks, indent=2))
+    (out / "1_retriever.json").write_text(json.dumps(retrieved_by_subtask, indent=2, ensure_ascii=False))
+    (out / "2_ranker_raw.json").write_text(json.dumps(ranked_by_subtask, indent=2, ensure_ascii=False))
+    (out / "3_ranked_pool_with_service.json").write_text(json.dumps(ranked_pool_with_service, indent=2, ensure_ascii=False))
+    (out / "4_selected_with_service_pure_llm.json").write_text(json.dumps(selected_with_service_pure, indent=2, ensure_ascii=False))
+    (out / "4_selected_with_service_topsis.json").write_text(json.dumps(selected_with_service_topsis, indent=2, ensure_ascii=False))
+    (out / "5_planner_pure_llm.json").write_text(json.dumps(plan_pure, indent=2, ensure_ascii=False))
+    (out / "5_planner_topsis.json").write_text(json.dumps(plan_topsis, indent=2, ensure_ascii=False))
+    (out / "selector_traces_pure_llm.json").write_text(json.dumps(selector_traces_pure, indent=2, ensure_ascii=False))
+    (out / "selector_traces_topsis.json").write_text(json.dumps(selector_traces_topsis, indent=2, ensure_ascii=False))
+    (out / "meta.json").write_text(json.dumps({
         "model_tag": model_tag,
         "provider": model_tag.split(":")[0],
         "model": model_tag.split(":")[1] if ":" in model_tag else model_tag,
+        "with_qos": with_qos,
+        "rag_index_dir": index_dir,
+        "rag_topk": top_k,
+        "ranker_candidates_used": int(os.getenv("MAOF_RANKER_MAX_CANDIDATES", "25")),
+        "ranker_pool_n": int(os.getenv("MAOF_RANKER_POOL_N", "20")),
+        "selected_top_n": selected_top_n,
+        "dual_selector": True,
+        "topsis_top_k": int(os.getenv("MAOF_TOPSIS_TOP_K", "12")),
+        "topsis_min_qos_candidates": int(os.getenv("MAOF_TOPSIS_MIN_QOS", "5")),
+        "query_id": query_id,
+        "query_title": query_title,
         "user_goal": user_goal,
-        "modes": ["no_qos", "qos_pure_llm", "qos_topsis"],
-        "status": "started",
-    }
-    (out / "meta.json").write_text(json.dumps(top_meta, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    # 0) shared decomposition
-    subtasks = decompose_goal(
-        llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p),
-        user_goal=user_goal,
-    )
-    (out / "0_decomposer.json").write_text(json.dumps(subtasks, indent=2, ensure_ascii=False), encoding="utf-8")
-    (out / "run_config.json").write_text(json.dumps({
-        "rag_index_dir_qos": CONFIG.rag_index_dir_qos,
-        "rag_index_dir_no_qos": CONFIG.rag_index_dir_no_qos,
-        "rag_top_k": CONFIG.rag_top_k,
-        "ranker_max_candidates": CONFIG.ranker_max_candidates,
-        "ranker_pool_n": CONFIG.ranker_pool_n,
-        "selector_top_n": CONFIG.selector_top_n,
-        "topsis_top_k": CONFIG.topsis_top_k,
-        "topsis_min_qos_candidates": CONFIG.topsis_min_qos_candidates,
-    }, indent=2), encoding="utf-8")
-
-    # --- no_qos mode ---
-    no_qos_dir = _mode_dir(out, "no_qos")
-    retrieved_no_qos = _retrieve_for_subtasks(
-        user_goal=user_goal,
-        subtasks=subtasks,
-        index_dir=CONFIG.rag_index_dir_no_qos,
-    )
-    no_qos_ids = sorted({r["api_id"] for rows in retrieved_no_qos.values() for r in rows if r.get("api_id")})
-    no_qos_services = _fetch_services_by_ids(no_qos_ids, with_qos=False)
-    _, ranker_pool_no_qos = _rank_for_subtasks(
-        user_goal=user_goal,
-        subtasks=subtasks,
-        retrieved_by_subtask=retrieved_no_qos,
-        id_to_service=no_qos_services,
-        prompt_path="prompts/ranker_no_qos.md",
-        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
-    )
-    selected_no_qos, trace_no_qos = _select_for_subtasks(
-        subtasks=subtasks,
-        ranked_pool_with_service=ranker_pool_no_qos,
-        selector_mode="PURE_LLM",
-    )
-    plan_no_qos = planner_call(
-        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
-        user_goal=user_goal,
-        ranked_top=selected_no_qos,
-        subtasks=subtasks,
-        prompt_path="prompts/planner_no_qos.md",
-    )
-    _write_mode_outputs(
-        mode_dir=no_qos_dir,
-        mode_suffix="no_qos",
-        retrieved_by_subtask=retrieved_no_qos,
-        ranked_pool_with_service=ranker_pool_no_qos,
-        selected_with_service=selected_no_qos,
-        plan=plan_no_qos,
-        selector_traces=trace_no_qos,
-    )
-
-    # --- shared with_qos retrieval + ranking ---
-    retrieved_qos = _retrieve_for_subtasks(
-        user_goal=user_goal,
-        subtasks=subtasks,
-        index_dir=CONFIG.rag_index_dir_qos,
-    )
-    qos_ids = sorted({r["api_id"] for rows in retrieved_qos.values() for r in rows if r.get("api_id")})
-    qos_services = _fetch_services_by_ids(qos_ids, with_qos=True)
-    _, ranker_pool_qos = _rank_for_subtasks(
-        user_goal=user_goal,
-        subtasks=subtasks,
-        retrieved_by_subtask=retrieved_qos,
-        id_to_service=qos_services,
-        prompt_path="prompts/ranker.md",
-        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
-    )
-
-    # --- qos pure llm selector ---
-    qos_pure_dir = _mode_dir(out, "qos_pure_llm")
-    selected_qos_pure, trace_qos_pure = _select_for_subtasks(
-        subtasks=subtasks,
-        ranked_pool_with_service=ranker_pool_qos,
-        selector_mode="PURE_LLM",
-    )
-    plan_qos_pure = planner_call(
-        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
-        user_goal=user_goal,
-        ranked_top=selected_qos_pure,
-        subtasks=subtasks,
-        prompt_path="prompts/planner.md",
-    )
-    _write_mode_outputs(
-        mode_dir=qos_pure_dir,
-        mode_suffix="qos_pure_llm",
-        retrieved_by_subtask=retrieved_qos,
-        ranked_pool_with_service=ranker_pool_qos,
-        selected_with_service=selected_qos_pure,
-        plan=plan_qos_pure,
-        selector_traces=trace_qos_pure,
-    )
-
-    # --- qos topsis selector ---
-    qos_topsis_dir = _mode_dir(out, "qos_topsis")
-    selected_qos_topsis, trace_qos_topsis = _select_for_subtasks(
-        subtasks=subtasks,
-        ranked_pool_with_service=ranker_pool_qos,
-        selector_mode="TOPSIS",
-    )
-    plan_qos_topsis = planner_call(
-        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
-        user_goal=user_goal,
-        ranked_top=selected_qos_topsis,
-        subtasks=subtasks,
-        prompt_path="prompts/planner.md",
-    )
-    _write_mode_outputs(
-        mode_dir=qos_topsis_dir,
-        mode_suffix="qos_topsis",
-        retrieved_by_subtask=retrieved_qos,
-        ranked_pool_with_service=ranker_pool_qos,
-        selected_with_service=selected_qos_topsis,
-        plan=plan_qos_topsis,
-        selector_traces=trace_qos_topsis,
-    )
-
-    top_meta.update({
         "num_subtasks": len(subtasks),
-        "status": "completed",
-    })
-    (out / "meta.json").write_text(json.dumps(top_meta, indent=2, ensure_ascii=False), encoding="utf-8")
+        "max_batches": max_batches,
+        "policy": get_policy(provider),
+    }, indent=2))
+
+    # 7) SELECTOR COMPARISON REPORTS (PURE_LLM vs TOPSIS)
+    try:
+        write_comparison_reports(run_dir=out)
+    except Exception as e:
+        (out / "selector_comparison_error.txt").write_text(str(e), encoding="utf-8")
+
+# 8) EXCEL REPORT (one per query/run)
+    try:
+        export_run_excel(run_dir=out)
+    except Exception as e:
+        # Do not fail the run if export fails; keep logs for debugging.
+        (out / "excel_export_error.txt").write_text(str(e), encoding="utf-8")
 
     print(f"Saved to {out}")
-    throttle(provider)
 
-    return {
-        "no_qos": plan_no_qos,
-        "qos_pure_llm": plan_qos_pure,
-        "qos_topsis": plan_qos_topsis,
-    }
+    # ✅ pacing between queries (all providers, policy driven)
+    throttle(provider, "after_query")
+
+    return ranked_by_subtask, {'PURE_LLM': plan_pure, 'TOPSIS': plan_topsis}
 
 
 if __name__ == "__main__":
     provider = choose_provider_interactive()
+    with_qos = True
+
     queries = load_queries()
     print(f"Loaded {len(queries)} queries from file.\n")
 
@@ -420,4 +432,11 @@ if __name__ == "__main__":
         print(f"User goal: {goal}")
         print("=" * 80)
 
-        run_autogen_once(user_goal=goal, provider=provider, model=None)
+        run_autogen_once(
+            user_goal=goal,
+            with_qos=with_qos,
+            provider=provider,
+            model=None,
+            query_id=qid,
+            query_title=title,
+        )
