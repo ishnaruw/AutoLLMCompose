@@ -26,27 +26,31 @@ def build_llm_prompt(
             }
         )
 
-    schema = {
-        "results": [
-            {"api_id": "<string>", "relevant": 0, "comment": "<short reason>"}
-        ]
-    }
-
     return (
-        "You are evaluating whether APIs are functionally relevant to a specific subtask.\n"
-        "Be conservative. If an API cannot clearly help accomplish the subtask, mark it as 0.\n"
-        "Use functional capability, not category similarity alone.\n"
-        "Do not rank APIs. Do not infer QoS. Do not add extra text.\n"
-        "Return strict JSON only.\n\n"
+        "You are evaluating whether APIs are functionally relevant to one subtask.\n"
+        "Return ONLY one JSON object.\n"
+        "Do not omit any API.\n"
+        "For every input api_id, you must return exactly one output item.\n"
+        "Use the same api_id string exactly as given.\n"
+        "Do not change field names.\n"
+        "Do not add markdown.\n"
+        "Do not add explanation outside JSON.\n\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
         f"Subtask Description: {subtask_description}\n"
         f"Expected Function: {expected_function}\n\n"
-        "For each API, output:\n"
-        "- relevant: 1 if the API can realistically help accomplish the subtask\n"
-        "- relevant: 0 otherwise\n"
-        "- comment: one short reason\n\n"
-        f"JSON Schema:\n{json.dumps(schema, ensure_ascii=False)}\n\n"
+        "Output format:\n"
+        "{\n"
+        '  "results": [\n'
+        '    {"api_id": "...", "relevant": 0, "comment": "..."},\n'
+        '    {"api_id": "...", "relevant": 1, "comment": "..."}\n'
+        "  ]\n"
+        "}\n\n"
+        "Important rules:\n"
+        "- relevant must be 0 or 1\n"
+        "- return one item for every api_id\n"
+        "- keep comments short\n"
+        "- judge only functional relevance\n\n"
         f"APIs:\n{json.dumps(compact_entries, ensure_ascii=False)}"
     )
