@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_excel import write_relevancy_excel
@@ -12,9 +14,10 @@ from src.llm.backends import make_backend
 
 CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.jsonl")
 CATALOG_NO_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl")
-CACHE_PATH = Path("results/relevancy_eval/relevancy_cache.json")
-OUT_DIR = Path("results/relevancy_eval")
+DEFAULT_RUNS_ROOT = Path("results/logs/lmstudio_meta-llama-3.1-8b-instruct")
+DEFAULT_OUTPUT_ROOT = Path("results/relevancy_eval_runs")
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis"]
+MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
 CHUNK_SIZE = 5
 
 EVAL_SYS = (
@@ -136,7 +139,7 @@ def get_expected_function(subtask_description: str) -> str:
     return f"Perform the core function described by the subtask: {subtask_description.strip()}"
 
 
-def _load_cache(path: Path = CACHE_PATH) -> Dict[str, Dict[str, Any]]:
+def _load_cache(path: Path) -> Dict[str, Dict[str, Any]]:
     if not path.exists():
         return {}
     try:
@@ -146,7 +149,7 @@ def _load_cache(path: Path = CACHE_PATH) -> Dict[str, Dict[str, Any]]:
         return {}
 
 
-def _save_cache(cache: Dict[str, Dict[str, Any]], path: Path = CACHE_PATH) -> None:
+def _save_cache(cache: Dict[str, Dict[str, Any]], path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
 
@@ -258,12 +261,70 @@ def _parse_results(text: str, expected_ids: List[str]) -> Dict[str, Dict[str, An
     return out
 
 
+def _query_num_from_name(name: str) -> Optional[int]:
+    match = re.match(r"q0*(\d+)_", name)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _normalize_query_token(token: str) -> Optional[int]:
+    match = re.fullmatch(r"q?0*(\d+)", token.strip().lower())
+    return int(match.group(1)) if match else None
+
+
+def _parse_query_id_filters(tokens: Optional[List[str]]) -> Optional[Set[int]]:
+    if not tokens:
+        return None
+    selected: Set[int] = set()
+    for token in tokens:
+        token = token.strip().lower()
+        if not token:
+            continue
+        if "-" in token:
+            left, right = token.split("-", 1)
+            start = _normalize_query_token(left)
+            end = _normalize_query_token(right)
+            if start is None or end is None:
+                raise ValueError(f"Invalid query range: {token}")
+            lo, hi = sorted((start, end))
+            selected.update(range(lo, hi + 1))
+        else:
+            value = _normalize_query_token(token)
+            if value is None:
+                raise ValueError(f"Invalid query id: {token}")
+            selected.add(value)
+    return selected
+
+
+def _discover_query_dirs(runs_root: Path, query_nums: Optional[Set[int]]) -> List[Path]:
+    if not runs_root.exists():
+        raise FileNotFoundError(f"Runs root not found: {runs_root.resolve()}")
+
+    dirs = [p for p in runs_root.iterdir() if p.is_dir() and _query_num_from_name(p.name) is not None]
+    dirs.sort(key=lambda p: (_query_num_from_name(p.name) or 9999, p.name))
+
+    if query_nums is None:
+        return dirs
+    return [p for p in dirs if (_query_num_from_name(p.name) in query_nums)]
+
+
+def _make_output_dir(base: Path, provider: str, model: Optional[str]) -> Path:
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+    model_part = re.sub(r"[^A-Za-z0-9._-]+", "_", model or "default")
+    out = base / f"{provider}_{model_part}_{stamp}"
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
 def evaluate_query(
     *,
     query_dir: Path,
     query_id: Optional[str],
     provider: str,
     model: Optional[str] = None,
+    output_dir: Path,
+    cache_path: Path,
 ) -> Path:
     backend = make_backend(provider=provider, model=model)
     meta = _load_meta(query_dir)
@@ -273,7 +334,7 @@ def evaluate_query(
     subtasks = _load_subtasks(query_dir)
     selected_by_mode = _load_selected_files(query_dir)
     catalog = _merge_catalogs()
-    cache = _load_cache()
+    cache = _load_cache(cache_path)
 
     rows: List[Dict[str, Any]] = []
     total_cached = 0
@@ -283,7 +344,7 @@ def evaluate_query(
 
     batches = _build_subtask_batches(query_id, main_task, subtasks, selected_by_mode, catalog)
     batch_results: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
-    debug_dir = OUT_DIR / "debug_raw"
+    debug_dir = output_dir / "debug_raw"
 
     for batch in batches:
         sid = batch["subtask_id"]
@@ -345,7 +406,7 @@ def evaluate_query(
 
         batch_results[(query_id, sid)] = sub_results
 
-    _save_cache(cache)
+    _save_cache(cache, cache_path)
 
     for mode in MODE_DIRS:
         for item in selected_by_mode.get(mode, []):
@@ -395,14 +456,14 @@ def evaluate_query(
 
     rows.sort(
         key=lambda r: (
-            r["Mode"],
             int(str(r["Sub Task"])) if str(r["Sub Task"]).isdigit() else 9999,
+            MODE_ORDER.get(str(r["Mode"]), 999),
             int(r["Selected Rank"] or 9999),
         )
     )
 
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    out_xlsx = OUT_DIR / f"query_{query_id}_api_relevancy.xlsx"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    out_xlsx = output_dir / f"query_{query_id}_api_relevancy.xlsx"
     write_relevancy_excel(rows, out_xlsx)
 
     summary = {
@@ -417,8 +478,9 @@ def evaluate_query(
         "parsing_failures": parse_failures,
         "missing_catalog_entries": missing_catalog,
         "excel": str(out_xlsx),
+        "cache": str(cache_path),
     }
-    (OUT_DIR / f"query_{query_id}_api_relevancy_summary.json").write_text(
+    (output_dir / f"query_{query_id}_api_relevancy_summary.json").write_text(
         json.dumps(summary, indent=2),
         encoding="utf-8",
     )
@@ -426,15 +488,87 @@ def evaluate_query(
     return out_xlsx
 
 
+def evaluate_many(
+    *,
+    query_dirs: List[Path],
+    provider: str,
+    model: Optional[str],
+    output_dir: Path,
+) -> List[Path]:
+    cache_path = output_dir / "relevancy_cache.json"
+    excels: List[Path] = []
+    for query_dir in query_dirs:
+        qnum = _query_num_from_name(query_dir.name)
+        qid = f"q{qnum:02d}" if qnum is not None else query_dir.name
+        print(f"Evaluating {qid} from {query_dir} ...")
+        excels.append(
+            evaluate_query(
+                query_dir=query_dir,
+                query_id=qid,
+                provider=provider,
+                model=model,
+                output_dir=output_dir,
+                cache_path=cache_path,
+            )
+        )
+    overall = {
+        "provider": provider,
+        "model": model or "default_from_env",
+        "runs_root": str(query_dirs[0].parent) if query_dirs else "",
+        "query_count": len(query_dirs),
+        "output_dir": str(output_dir),
+        "excel_reports": [str(p) for p in excels],
+        "cache": str(cache_path),
+    }
+    (output_dir / "evaluation_run_summary.json").write_text(json.dumps(overall, indent=2), encoding="utf-8")
+    return excels
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate API relevancy for one query run directory")
-    parser.add_argument("--query-dir", required=True, help="Path to a query run directory")
-    parser.add_argument("--query-id", required=False, help="Optional query id override")
+    parser = argparse.ArgumentParser(description="Evaluate API relevancy for one or more query run directories")
+    parser.add_argument("--query-dir", help="Path to one query run directory")
+    parser.add_argument(
+        "--runs-root",
+        default=str(DEFAULT_RUNS_ROOT),
+        help="Root folder containing q01_..., q02_... query run directories",
+    )
+    parser.add_argument(
+        "--query-ids",
+        nargs="+",
+        help="Specific queries to evaluate, e.g. 9 or 1-5 9 11-15",
+    )
+    parser.add_argument("--query-id", required=False, help="Optional query id override for --query-dir mode")
+    parser.add_argument("--provider", help="LLM provider to use, e.g. mistral")
+    parser.add_argument("--model", help="Optional model name override, e.g. mistral-small-latest")
+    parser.add_argument("--output-dir", help="Folder to save the evaluation outputs")
     args = parser.parse_args()
 
-    provider = choose_provider_interactive()
-    out = evaluate_query(query_dir=Path(args.query_dir), query_id=args.query_id, provider=provider)
-    print(f"Saved Excel report to {out}")
+    provider = args.provider or choose_provider_interactive()
+    model = args.model
+    output_dir = Path(args.output_dir) if args.output_dir else _make_output_dir(DEFAULT_OUTPUT_ROOT, provider, model)
+
+    if args.query_dir:
+        query_dir = Path(args.query_dir)
+        cache_path = output_dir / "relevancy_cache.json"
+        out = evaluate_query(
+            query_dir=query_dir,
+            query_id=args.query_id,
+            provider=provider,
+            model=model,
+            output_dir=output_dir,
+            cache_path=cache_path,
+        )
+        print(f"Saved Excel report to {out}")
+        print(f"Saved cache to {cache_path}")
+        return
+
+    query_nums = _parse_query_id_filters(args.query_ids)
+    query_dirs = _discover_query_dirs(Path(args.runs_root), query_nums)
+    if not query_dirs:
+        raise SystemExit("No matching query directories found.")
+
+    excels = evaluate_many(query_dirs=query_dirs, provider=provider, model=model, output_dir=output_dir)
+    print(f"Saved {len(excels)} Excel report(s) under {output_dir}")
 
 
 if __name__ == "__main__":
