@@ -10,21 +10,22 @@ def build_llm_prompt(
     main_task: str,
     subtask_id: str,
     subtask_description: str,
-    expected_function: str,
     api_entries: List[Dict[str, Any]],
 ) -> str:
     compact_entries = []
     for a in api_entries:
-        compact_entries.append(
-            {
-                "api_id": a.get("api_id"),
-                "name": a.get("name"),
-                "category": a.get("category"),
-                "description": a.get("description"),
-                "method": a.get("method"),
-                "url": a.get("url"),
-            }
-        )
+        compact: Dict[str, Any] = {
+            "api_id": a.get("api_id"),
+            "name": a.get("name"),
+            "category": a.get("category"),
+            "description": a.get("description"),
+            "method": a.get("method"),
+            "url": a.get("url"),
+        }
+        extra = a.get("endpoint_details") or {}
+        if extra:
+            compact["endpoint_details"] = extra
+        compact_entries.append(compact)
 
     return (
         "You are evaluating whether APIs are functionally relevant to one subtask.\n"
@@ -34,12 +35,13 @@ def build_llm_prompt(
         "Use the same api_id string exactly as given.\n"
         "Do not change field names.\n"
         "Do not add markdown.\n"
-        "Do not add explanation outside JSON.\n\n"
+        "Do not add explanation outside JSON.\n"
+        "Judge only functional relevance to the subtask. Ignore QoS.\n"
+        "Use the API description and compact endpoint details when available.\n\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
-        f"Subtask Description: {subtask_description}\n"
-        f"Expected Function: {expected_function}\n\n"
+        f"Subtask Description: {subtask_description}\n\n"
         "Output format:\n"
         "{\n"
         '  "results": [\n'
