@@ -1,7 +1,1 @@
-{"id":"q08","title":"Price Tracker for eCommerce Products","goal":"Build a bot that tracks product prices across multiple eCommerce platforms and sends alerts when prices drop."}
-{"id":"q09","title":"Online Course Recommendation Assistant","goal":"Create an education bot that suggests courses, checks ratings, and reminds users about enrollment via email."}
 {"id":"q10","title":"Gym Finder with Booking","goal":"Build a service that lists gyms near a user’s location, compares pricing plans, and enables mobile booking."}
-{"id":"q11","title":"Loan Simulator with Email Report","goal":"Create a tool that pulls interest rates, simulates repayment plans, and sends loan summaries to users."}
-{"id":"q12","title":"Content Safety Filter for Web Links","goal":"Design a service that checks whether a given URL is malicious or contains adult content before it opens in-browser."}
-{"id":"q13","title":"Retail Promotions via Geo-Fencing","goal":"Build a mobile app that detects when a user enters a shopping area and sends active retail coupons via push or SMS."}
-{"id":"q15","title":"Delivery Status Tracker with Email Updates","goal":"Create a logistics tool that fetches parcel tracking data, predicts ETA, and emails the customer when status changes."}

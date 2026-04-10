@@ -19,12 +19,7 @@ DEFAULT_OUTPUT_ROOT = Path("results/relevancy_eval_runs")
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis"]
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
 CHUNK_SIZE = 3
-TOOLBENCH_TOOLS_ROOT = Path(
-    os.getenv(
-        "TOOLBENCH_TOOLS_ROOT",
-        "/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools",
-    )
-)
+TOOLBENCH_TOOLS_ROOT = Path(os.getenv("TOOLBENCH_TOOLS_ROOT", "/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools"))
 
 EVAL_SYS = (
     "You are a strict API relevance evaluator. "
@@ -127,16 +122,21 @@ def _save_cache(cache: Dict[str, Dict[str, Any]], path: Path) -> None:
     path.write_text(json.dumps(cache, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _compact_text(value: Any, max_len: int = 220) -> str:
-    text = str(value or "").strip()
-    text = re.sub(r"\s+", " ", text)
-    if len(text) <= max_len:
-        return text
-    return text[: max_len - 3].rstrip() + "..."
+def _tool_json_path(category: Optional[str], file_name: Optional[str]) -> Optional[Path]:
+    if not category or not file_name:
+        return None
+    return TOOLBENCH_TOOLS_ROOT / str(category) / str(file_name)
 
 
-def _compact_params(params: Any, limit: int = 4) -> List[Dict[str, str]]:
-    out: List[Dict[str, str]] = []
+def _truncate(s: Any, limit: int = 180) -> Any:
+    if s is None:
+        return None
+    text = str(s).strip()
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _compact_params(params: Any, limit: int = 4) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
     if not isinstance(params, list):
         return out
     for p in params[:limit]:
@@ -144,110 +144,91 @@ def _compact_params(params: Any, limit: int = 4) -> List[Dict[str, str]]:
             continue
         out.append(
             {
-                "name": str(p.get("name") or "").strip(),
-                "type": str(p.get("type") or "").strip(),
-                "description": _compact_text(p.get("description") or "", max_len=80),
+                "name": p.get("name"),
+                "type": p.get("type"),
+                "description": _truncate(p.get("description"), 100),
             }
         )
     return out
 
 
-def _compact_endpoint_details(endpoint: Dict[str, Any]) -> Dict[str, Any]:
-    details: Dict[str, Any] = {}
-    req = _compact_params(endpoint.get("required_parameters"), limit=4)
-    opt = _compact_params(endpoint.get("optional_parameters"), limit=4)
-    if req:
-        details["required_parameters"] = req
-    if opt:
-        details["optional_parameters"] = opt
+def _find_endpoint_detail(service: Dict[str, Any]) -> Dict[str, Any]:
+    tool_path = _tool_json_path(service.get("category"), service.get("_file"))
+    tool_json = _safe_read_json(tool_path) if tool_path else None
+    if not isinstance(tool_json, dict):
+        return {}
 
-    schema = endpoint.get("schema")
-    if isinstance(schema, dict):
-        props = schema.get("properties")
-        if isinstance(props, dict) and props:
-            details["response_fields"] = list(props.keys())[:8]
-        elif isinstance(schema.get("oneOf"), list):
-            names: List[str] = []
-            for item in schema.get("oneOf", [])[:2]:
-                if isinstance(item, dict):
-                    p = item.get("properties")
-                    if isinstance(p, dict):
-                        names.extend(list(p.keys())[:6])
-            if names:
-                details["response_fields"] = names[:8]
-    elif isinstance(schema, str) and schema.strip():
-        details["response_schema"] = _compact_text(schema, max_len=120)
-
-    body = endpoint.get("body")
-    if isinstance(body, dict) and body:
-        details["example_response_fields"] = list(body.keys())[:8]
-
-    return details
-
-
-def _find_matching_endpoint(tool_json: Dict[str, Any], service: Dict[str, Any]) -> Dict[str, Any]:
     api_list = tool_json.get("api_list")
     if not isinstance(api_list, list):
         return {}
 
-    target_name = str(service.get("name") or "").strip().lower()
-    target_method = str(service.get("method") or "").strip().lower()
-    target_url = str(service.get("url") or "").strip().lower()
+    name = service.get("name")
+    method = str(service.get("method") or "").upper()
+    url = service.get("url")
 
-    candidates = [ep for ep in api_list if isinstance(ep, dict)]
-    for ep in candidates:
-        if str(ep.get("name") or "").strip().lower() != target_name:
+    candidates = []
+    for ep in api_list:
+        if not isinstance(ep, dict):
             continue
-        if target_method and str(ep.get("method") or "").strip().lower() != target_method:
+        if name and ep.get("name") != name:
             continue
-        ep_url = str(ep.get("url") or "").strip().lower()
-        if target_url and ep_url and ep_url != target_url:
-            continue
-        return ep
+        candidates.append(ep)
 
-    for ep in candidates:
-        if str(ep.get("name") or "").strip().lower() == target_name:
-            return ep
+    if method:
+        method_matches = [ep for ep in candidates if str(ep.get("method") or "").upper() == method]
+        if method_matches:
+            candidates = method_matches
+    if url:
+        url_matches = [ep for ep in candidates if ep.get("url") == url]
+        if url_matches:
+            candidates = url_matches
 
-    return {}
+    endpoint = candidates[0] if candidates else None
+    if not isinstance(endpoint, dict):
+        return {
+            "tool_name": tool_json.get("tool_name") or tool_json.get("name") or tool_json.get("title"),
+            "tool_description": _truncate(tool_json.get("tool_description"), 220),
+        }
 
+    response_hint = None
+    body = endpoint.get("body")
+    if isinstance(body, dict):
+        response_hint = list(body.keys())[:6]
+    elif isinstance(endpoint.get("schema"), dict):
+        props = endpoint.get("schema", {}).get("properties")
+        if isinstance(props, dict):
+            response_hint = list(props.keys())[:6]
 
-def _load_tool_json_details(catalog_entry: Dict[str, Any], service: Dict[str, Any]) -> Dict[str, Any]:
-    category = str(catalog_entry.get("category") or service.get("category") or "").strip()
-    file_name = str(catalog_entry.get("_file") or service.get("_file") or "").strip()
-    if not category or not file_name:
-        return {}
-
-    tool_path = TOOLBENCH_TOOLS_ROOT / category / file_name
-    tool_json = _safe_read_json(tool_path)
-    if not isinstance(tool_json, dict):
-        return {}
-
-    endpoint = _find_matching_endpoint(tool_json, service)
-    if not endpoint:
-        return {}
-
-    return _compact_endpoint_details(endpoint)
+    detail: Dict[str, Any] = {
+        "tool_name": tool_json.get("tool_name") or tool_json.get("name") or tool_json.get("title"),
+        "tool_description": _truncate(tool_json.get("tool_description"), 220),
+        "endpoint_details": {
+            "required_parameters": _compact_params(endpoint.get("required_parameters"), 4),
+            "optional_parameters": _compact_params(endpoint.get("optional_parameters"), 4),
+        },
+    }
+    if response_hint:
+        detail["endpoint_details"]["response_fields"] = response_hint
+    return detail
 
 
 def _extract_api_info(item: Dict[str, Any], catalog: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     api_id = str(item.get("api_id", ""))
     service = item.get("service") or {}
     catalog_entry = catalog.get(api_id, {})
-
-    info = {
-        "api_id": api_id,
-        "name": service.get("name") or catalog_entry.get("name") or catalog_entry.get("title") or catalog_entry.get("operation"),
-        "category": service.get("category") or catalog_entry.get("category"),
-        "description": service.get("description") or catalog_entry.get("description") or catalog_entry.get("summary") or catalog_entry.get("desc"),
-        "method": service.get("method") or catalog_entry.get("method"),
-        "url": service.get("url") or catalog_entry.get("url") or catalog_entry.get("endpoint") or catalog_entry.get("path"),
-        "_file": service.get("_file") or catalog_entry.get("_file"),
-        "_tool": service.get("_tool") or catalog_entry.get("_tool"),
-        "qos": service.get("qos") if isinstance(service.get("qos"), dict) else catalog_entry.get("qos") if isinstance(catalog_entry.get("qos"), dict) else {},
-    }
-    info["endpoint_details"] = _load_tool_json_details(catalog_entry, info)
-    return info
+    merged = dict(catalog_entry)
+    merged.update({k: v for k, v in service.items() if v is not None})
+    if "qos" not in merged and isinstance(catalog_entry.get("qos"), dict):
+        merged["qos"] = catalog_entry.get("qos")
+    merged.setdefault("api_id", api_id)
+    detail = _find_endpoint_detail(merged)
+    if detail.get("tool_name") and not merged.get("tool_name"):
+        merged["tool_name"] = detail.get("tool_name")
+    if detail.get("tool_description") and not merged.get("tool_description"):
+        merged["tool_description"] = detail.get("tool_description")
+    if detail.get("endpoint_details"):
+        merged["endpoint_details"] = detail.get("endpoint_details")
+    return merged
 
 
 def _build_subtask_batches(
@@ -268,9 +249,21 @@ def _build_subtask_batches(
                 if str(row.get("subtask_id")) != sid:
                     continue
                 api_id = str(row.get("api_id", ""))
-                if not api_id or api_id in api_map:
+                if not api_id:
                     continue
-                api_map[api_id] = _extract_api_info(row, catalog)
+                if api_id not in api_map:
+                    merged = _extract_api_info(row, catalog)
+                    api_map[api_id] = {
+                        "api_id": api_id,
+                        "name": merged.get("name") or merged.get("title") or merged.get("operation"),
+                        "category": merged.get("category"),
+                        "tool_name": merged.get("tool_name"),
+                        "tool_description": merged.get("tool_description"),
+                        "description": merged.get("description") or merged.get("summary") or merged.get("desc"),
+                        "method": merged.get("method"),
+                        "url": merged.get("url") or merged.get("endpoint") or merged.get("path"),
+                        "endpoint_details": merged.get("endpoint_details") or {},
+                    }
 
         batches.append(
             {
@@ -445,29 +438,27 @@ def evaluate_query(
                     api_entries=chunk,
                 )
                 expected_ids = [a["api_id"] for a in chunk]
-                prompt_path = debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_prompt.txt"
-                prompt_path.write_text(prompt, encoding="utf-8")
+                (debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_prompt.txt").write_text(prompt, encoding="utf-8")
 
                 def _call() -> str:
                     return backend.chat_json(EVAL_SYS, prompt, temperature=0, force_json=True)
 
                 raw = call_with_backoff(_call, name=f"api_relevancy_eval_s{sid}_chunk{chunk_idx}")
-                response_path = debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_response.txt"
-                response_path.write_text(raw, encoding="utf-8")
                 parsed = _parse_results(raw, expected_ids)
                 llm_calls += 1
 
                 if len(parsed) != len(expected_ids):
                     retry_raw = call_with_backoff(_call, name=f"api_relevancy_eval_retry_s{sid}_chunk{chunk_idx}")
-                    llm_calls += 1
                     retry_parsed = _parse_results(retry_raw, expected_ids)
+                    llm_calls += 1
                     if len(retry_parsed) >= len(parsed):
                         raw = retry_raw
                         parsed = retry_parsed
-                        response_path.write_text(raw, encoding="utf-8")
 
-                parsed_path = debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_parsed.json"
-                parsed_path.write_text(json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8")
+                (debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_response.txt").write_text(raw, encoding="utf-8")
+                (debug_dir / f"{query_id}_s{sid}_chunk{chunk_idx}_parsed.json").write_text(
+                    json.dumps(parsed, indent=2, ensure_ascii=False), encoding="utf-8"
+                )
 
                 for api in chunk:
                     api_id = api["api_id"]
@@ -504,7 +495,15 @@ def evaluate_query(
                 )
                 rel = rel_info.get("relevant", 0)
                 comment = rel_info.get("comment", "")
-                qos = api_info.get("qos") or {}
+
+                service = item.get("service") or {}
+                catalog_entry = catalog.get(api_id, {})
+                if isinstance(service.get("qos"), dict):
+                    qos = service.get("qos") or {}
+                elif isinstance(catalog_entry.get("qos"), dict):
+                    qos = catalog_entry.get("qos") or {}
+                else:
+                    qos = {}
 
             rows.append(
                 {
@@ -539,7 +538,6 @@ def evaluate_query(
         "query_dir": str(query_dir),
         "provider": provider,
         "model": backend.name(),
-        "toolbench_tools_root": str(TOOLBENCH_TOOLS_ROOT),
         "total_rows": len(rows),
         "unique_apis_evaluated": len({(r["Sub Task"], r["Selected_API"]) for r in rows}),
         "cached_results": total_cached,
@@ -548,7 +546,6 @@ def evaluate_query(
         "missing_catalog_entries": missing_catalog,
         "excel": str(out_xlsx),
         "cache": str(cache_path),
-        "debug_dir": str(debug_dir),
     }
     (output_dir / f"query_{query_id}_api_relevancy_summary.json").write_text(
         json.dumps(summary, indent=2),
@@ -588,60 +585,44 @@ def evaluate_many(
         "query_count": len(query_dirs),
         "output_dir": str(output_dir),
         "excel_reports": [str(p) for p in excels],
-        "cache": str(cache_path),
-        "debug_dir": str(output_dir / "debug"),
     }
-    (output_dir / "evaluation_run_summary.json").write_text(json.dumps(overall, indent=2), encoding="utf-8")
+    (output_dir / "overall_summary.json").write_text(json.dumps(overall, indent=2), encoding="utf-8")
     return excels
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Evaluate API relevancy for one or more query run directories")
-    parser.add_argument("--query-dir", help="Path to one query run directory")
-    parser.add_argument(
-        "--runs-root",
-        default=str(DEFAULT_RUNS_ROOT),
-        help="Root folder containing q01_..., q02_... query run directories",
-    )
-    parser.add_argument(
-        "--query-ids",
-        nargs="+",
-        help="Specific queries to evaluate, e.g. 9 or 1-5 9 11-15",
-    )
-    parser.add_argument("--query-id", required=False, help="Optional query id override for --query-dir mode")
-    parser.add_argument("--provider", help="LLM provider to use, e.g. mistral")
-    parser.add_argument("--model", help="Optional model name override, e.g. mistral-small-latest")
-    parser.add_argument("--output-dir", help="Folder to save the evaluation outputs")
+    parser = argparse.ArgumentParser(description="Run API relevancy evaluation on existing MAOF run logs")
+    parser.add_argument("--provider", type=str, default=None, help="LLM provider (mistral, groq, azure_foundry, lmstudio)")
+    parser.add_argument("--model", type=str, default=None, help="Optional model override for selected provider")
+    parser.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT, help="Root directory containing qXX_* run folders")
+    parser.add_argument("--query-dir", type=Path, default=None, help="Evaluate exactly one query run directory")
+    parser.add_argument("--query-ids", nargs="*", default=None, help="Query ids or ranges, e.g. 9 or 1-5 9 11-15")
+    parser.add_argument("--output-root", type=Path, default=DEFAULT_OUTPUT_ROOT, help="Base directory for saving new evaluation results")
     args = parser.parse_args()
 
-    provider = args.provider or choose_provider_interactive()
-    model = args.model
-    output_dir = Path(args.output_dir) if args.output_dir else _make_output_dir(DEFAULT_OUTPUT_ROOT, provider, model)
+    provider = (args.provider or choose_provider_interactive()).strip().lower()
+    output_dir = _make_output_dir(args.output_root, provider, args.model)
 
-    if args.query_dir:
-        query_dir = Path(args.query_dir)
-        cache_path = output_dir / "relevancy_cache.json"
-        out = evaluate_query(
-            query_dir=query_dir,
-            query_id=args.query_id,
-            provider=provider,
-            model=model,
-            output_dir=output_dir,
-            cache_path=cache_path,
-        )
-        print(f"Saved Excel report to {out}")
-        print(f"Saved cache to {cache_path}")
-        print(f"Saved debug files under {output_dir / 'debug'}")
-        return
+    if args.query_dir is not None:
+        query_dirs = [args.query_dir]
+    else:
+        query_nums = _parse_query_id_filters(args.query_ids)
+        query_dirs = _discover_query_dirs(args.runs_root, query_nums)
 
-    query_nums = _parse_query_id_filters(args.query_ids)
-    query_dirs = _discover_query_dirs(Path(args.runs_root), query_nums)
     if not query_dirs:
-        raise SystemExit("No matching query directories found.")
+        raise RuntimeError("No query run directories found to evaluate")
 
-    excels = evaluate_many(query_dirs=query_dirs, provider=provider, model=model, output_dir=output_dir)
-    print(f"Saved {len(excels)} Excel report(s) under {output_dir}")
-    print(f"Saved debug files under {output_dir / 'debug'}")
+    excels = evaluate_many(
+        query_dirs=query_dirs,
+        provider=provider,
+        model=args.model,
+        output_dir=output_dir,
+    )
+
+    print("Generated Excel files:")
+    for path in excels:
+        print(f"- {path}")
+    print(f"Saved in: {output_dir}")
 
 
 if __name__ == "__main__":
