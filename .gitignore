@@ -66,3 +66,8 @@ data/index/*
 data/index/maof_v1/with_qos/config.json
 data/index/maof_v1/with_qos/faiss.index
 data/index/maof_v1/with_qos/meta.jsonl
+
+
+data/index/maof_v2/with_qos/config.json
+data/index/maof_v2/with_qos/faiss.index
+data/index/maof_v2/with_qos/meta.jsonl

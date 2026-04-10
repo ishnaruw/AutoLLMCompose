@@ -52,49 +52,34 @@ def _qos_hint_from_raw(raw: Dict[str, Any], *, enabled: bool) -> str:
 def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any], *, include_qos_hint: bool = False) -> str:
     """
     Build the embedding text from compressed API fields.
-    Keep it functional and compact. QoS is only a weak appended hint for with_qos builds.
+    Endpoint metadata stays primary; tool metadata is added as supporting domain context.
+    QoS is only a weak appended hint for with_qos builds.
     """
     parts: List[str] = []
 
-    api_id = comp.get("api_id") or comp.get("id") or comp.get("service_id")
-    if api_id:
-        parts.append(f"api_id: {api_id}")
-
     cat = comp.get("category")
     if cat:
-        parts.append(f"category: {cat}")
+        parts.append(f"Category: {cat}")
+
+    tool_name = comp.get("tool_name") or raw.get("tool_name")
+    if tool_name:
+        parts.append(f"Tool: {tool_name}")
+
+    tool_desc = comp.get("tool_description") or raw.get("tool_description")
+    if tool_desc:
+        parts.append(f"Tool Description: {tool_desc}")
 
     name = comp.get("name") or comp.get("operation") or comp.get("title")
     if name:
-        parts.append(f"name: {name}")
+        parts.append(f"Endpoint: {name}")
 
     summary = comp.get("summary") or comp.get("description") or comp.get("desc")
     if summary:
-        parts.append(f"summary: {summary}")
+        parts.append(f"Endpoint Description: {summary}")
 
-    method = comp.get("method")
-    path = comp.get("path") or comp.get("endpoint") or comp.get("url")
-    if method or path:
-        parts.append(f"endpoint: {(method or '').strip()} {(path or '').strip()}".strip())
-
-    tags = comp.get("tags")
-    if isinstance(tags, list) and tags:
-        parts.append("tags: " + ", ".join(str(t) for t in tags[:20]))
-
-    params = comp.get("params") or comp.get("parameters")
-    if isinstance(params, list) and params:
-        pbits = []
-        for p in params[:25]:
-            if not isinstance(p, dict):
-                continue
-            pn = p.get("name")
-            pd = p.get("description") or p.get("desc")
-            if pn and pd:
-                pbits.append(f"{pn} ({pd})")
-            elif pn:
-                pbits.append(str(pn))
-        if pbits:
-            parts.append("params: " + "; ".join(pbits))
+    method = comp.get("method") or raw.get("method")
+    if method:
+        parts.append(f"Method: {method}")
 
     qos_hint = _qos_hint_from_raw(raw, enabled=include_qos_hint)
     if qos_hint:
