@@ -12,7 +12,7 @@ class PipelineConfig:
 
     no_qos_index_dir: Path = Path("data/index/maof_v2/no_qos")
     with_qos_index_dir: Path = Path("data/index/maof_v2/with_qos")
-
+    
     rag_top_k: int = 40
     ranker_max_candidates: int = 25
     ranker_pool_n: int = 20

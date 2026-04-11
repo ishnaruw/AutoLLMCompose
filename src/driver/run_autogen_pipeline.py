@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from src.agents.decomposer import decompose_goal
+from src.agents.subtask_normalizer import normalize_subtasks
 from src.agents.planner import planner_call
 from src.agents.ranker import rank_subtask
 from src.agents.retriever import collect_candidates
@@ -18,7 +19,13 @@ from src.tools.fetch_services import fetch_services
 
 DECOMPOSER_SYS = (
     "You are a task decomposition agent. "
-    "You break a user goal into ordered subtasks. "
+    "You break a user goal into ordered, user-facing functional subtasks. "
+    "Return strict JSON as instructed by the prompt."
+)
+
+NORMALIZER_SYS = (
+    "You are a subtask normalization agent. "
+    "You rewrite or remove subtasks so they are concise, API-callable, and retrieval-oriented. "
     "Return strict JSON as instructed by the prompt."
 )
 
@@ -369,11 +376,20 @@ def run_autogen_once(
     llm_call = _build_llm_call(backend)
     out_dir = _run_dir(model_tag, query_id=query_id)
 
-    subtasks = decompose_goal(
+    raw_subtasks = decompose_goal(
         llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p),
         user_goal=user_goal,
     )
-    _write_json(out_dir / "0_decomposer.json", subtasks)
+    normalized_subtasks = normalize_subtasks(
+        llm_call=lambda p: llm_call("subtask_normalizer", NORMALIZER_SYS, p),
+        user_goal=user_goal,
+        original_subtasks=raw_subtasks,
+    )
+    _write_json(out_dir / "0_decomposer_raw.json", raw_subtasks)
+    _write_json(out_dir / "0_subtask_normalizer.json", normalized_subtasks)
+    _write_json(out_dir / "0_decomposer.json", normalized_subtasks)
+
+    subtasks = normalized_subtasks
 
     no_qos_result = _run_mode(
         mode_name="no_qos",
@@ -467,6 +483,8 @@ def run_autogen_once(
             "user_goal": user_goal,
             "model_tag": backend.name(),
             "num_subtasks": len(subtasks),
+            "num_raw_subtasks": len(raw_subtasks),
+            "num_normalized_subtasks": len(normalized_subtasks),
             "evaluation_triggered": True,
             "qos_ranker_pool_shared": True,
             "modes": MODE_ORDER,
