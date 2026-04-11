@@ -201,6 +201,31 @@ def _build_ranked_pool_for_subtask(
     return pool
 
 
+def _build_selector_candidates_for_subtask(
+    *,
+    ranked_pool: List[Dict[str, Any]],
+    retrieved: List[Dict[str, Any]],
+    id_to_service: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    rank_map = {str(r.get("api_id")): r for r in ranked_pool if isinstance(r, dict) and r.get("api_id")}
+    out: List[Dict[str, Any]] = []
+    seen = set()
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        if not api_id or api_id in seen:
+            continue
+        seen.add(api_id)
+        ranked = rank_map.get(api_id, {})
+        out.append({
+            "api_id": api_id,
+            "rag_score": r.get("rag_score", 0.0),
+            "rank": ranked.get("rank"),
+            "reason": ranked.get("reason", "") or "",
+            "service": id_to_service.get(api_id, {}),
+        })
+    return out
+
+
 def _add_selected_scores(selected: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out: List[Dict[str, Any]] = []
     n = len(selected)
@@ -277,13 +302,31 @@ def _run_mode(
             retrieved=retrieved_by_subtask.get(sub_id, []),
             id_to_service=id_to_service,
         )
-        selected, trace = select_top_apis_for_subtask(
-            subtask_id=sub_id,
+        selector_candidates = _build_selector_candidates_for_subtask(
             ranked_pool=ranked_pool,
+            retrieved=retrieved_by_subtask.get(sub_id, []),
+            id_to_service=id_to_service,
+        )
+        if mode_name == "no_qos":
+            selector_prompt_path = "prompts/selector_no_qos.md"
+        elif mode_name == "qos_topsis":
+            selector_prompt_path = "prompts/selector_topsis.md"
+        else:
+            selector_prompt_path = "prompts/selector_qos.md"
+
+        selected, trace = select_top_apis_for_subtask(
+            llm_call=lambda p: llm_call("selector", RANKER_SYS, p),
+            user_query=user_goal,
+            subtask=sub,
+            selector_candidates=selector_candidates,
             mode_override=selector_mode,
             top_n=CONFIG.selector_top_n,
             topsis_top_k=CONFIG.topsis_top_k,
             min_qos_candidates=CONFIG.topsis_min_qos_candidates,
+            prompt_path=selector_prompt_path,
+            debug_raw_path=str(mode_dir / f"3_selector_raw_s{sub_id}.txt"),
+            debug_prompt_path=str(mode_dir / f"3_selector_prompt_s{sub_id}.txt"),
+            debug_parsed_path=str(mode_dir / f"3_selector_parsed_s{sub_id}.json"),
         )
         selected = _add_selected_scores(selected)
         selected_all.extend(selected)
@@ -291,6 +334,7 @@ def _run_mode(
 
         _write_json(mode_dir / f"1_retriever_s{sub_id}.json", retrieved_by_subtask.get(sub_id, []))
         _write_json(mode_dir / f"2_ranker_pool_s{sub_id}.json", ranked_pool)
+        _write_json(mode_dir / f"2_selector_candidates_s{sub_id}.json", selector_candidates)
         _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
         _write_json(mode_dir / f"3_selected_trace_s{sub_id}.json", trace)
 

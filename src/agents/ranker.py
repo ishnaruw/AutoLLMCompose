@@ -21,12 +21,18 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(comp, dict):
         comp = {}
 
+    service = c.get("service") or {}
+    if not isinstance(service, dict):
+        service = {}
+
     # Common functional fields
-    name = comp.get("name") or comp.get("operation") or comp.get("title")
-    summary = comp.get("summary") or comp.get("description") or comp.get("desc")
-    method = comp.get("method")
-    path = comp.get("path") or comp.get("endpoint") or comp.get("url")
-    category = comp.get("category") or c.get("category")
+    name = comp.get("name") or service.get("name") or comp.get("operation") or comp.get("title")
+    summary = comp.get("summary") or comp.get("description") or comp.get("desc") or service.get("description")
+    method = comp.get("method") or service.get("method")
+    path = comp.get("path") or comp.get("endpoint") or comp.get("url") or service.get("url")
+    category = comp.get("category") or service.get("category") or c.get("category")
+    tool_name = comp.get("tool_name") or service.get("tool_name") or service.get("_tool")
+    tool_description = comp.get("tool_description") or service.get("tool_description")
 
     # Params can explode prompt size; keep only names.
     params = comp.get("params") or comp.get("parameters")
@@ -43,6 +49,7 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
 
     # QoS fields: include only if present (and compact).
     qos: Dict[str, Any] = {}
+    service_qos = service.get("qos") if isinstance(service.get("qos"), dict) else {}
     for k in [
         "availability",
         "reliability",
@@ -57,11 +64,17 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
             qos[k] = comp.get(k)
         elif k in c:
             qos[k] = c.get(k)
+        elif k in service:
+            qos[k] = service.get(k)
+        elif k in service_qos:
+            qos[k] = service_qos.get(k)
 
     slim: Dict[str, Any] = {
         "api_id": c.get("api_id"),
         "rag_score": c.get("rag_score"),
         "category": category,
+        "tool_name": _truncate(tool_name, 120),
+        "tool_description": _truncate(tool_description, 240),
         "name": _truncate(name, 120),
         "summary": _truncate(summary, 240),
         "method": _truncate(method, 16),
