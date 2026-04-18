@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from src.agents.decomposer import decompose_goal
-from src.agents.subtask_normalizer import normalize_subtasks
 from src.agents.planner import planner_call
 from src.agents.ranker import rank_subtask
 from src.agents.retriever import collect_candidates
@@ -18,21 +17,22 @@ from src.llm.backends import make_backend
 from src.tools.fetch_services import fetch_services
 
 DECOMPOSER_SYS = (
-    "You are a task decomposition agent. "
-    "You break a user goal into ordered, user-facing functional subtasks. "
-    "Return strict JSON as instructed by the prompt."
-)
-
-NORMALIZER_SYS = (
-    "You are a subtask normalization agent. "
-    "You rewrite or remove subtasks so they are concise, API-callable, and retrieval-oriented. "
-    "Return strict JSON as instructed by the prompt."
+    "You are a decomposition agent for API discovery. "
+    "Your job is to split a user request into 2 to 5 ordered API-retrieval subtasks when the request contains multiple distinct capabilities. "
+    "Do not collapse multiple functions into one subtask. "
+    "Return strict JSON only."
 )
 
 RANKER_SYS = (
     "You are a ranking agent. Given the original user query, a single subtask, and "
     "a list of candidate APIs from a catalog, rank the candidates best-to-worst for that subtask. "
     "Follow the prompt strictly and return valid JSON."
+)
+
+SELECTOR_SYS = (
+    "You are a selector agent. Given the original user query, a single subtask, and "
+    "a list of candidate APIs, choose the final APIs that should be used for that subtask. "
+    "Follow the selector prompt strictly and return valid JSON."
 )
 
 PLANNER_SYS = (
@@ -95,10 +95,15 @@ def _safe_name(text: str) -> str:
     return safe or "unknown"
 
 
-def _run_dir(model_tag: str, query_id: str | None = None) -> Path:
+def _run_dir(model_tag: str, query_id: str | None = None, run_tag: str | None = None) -> Path:
     run_id = time.strftime("%Y%m%dT%H%M%S")
     run_name = f"{_safe_name(query_id)}_{run_id}" if CONFIG.prefix_run_dir_with_query_id and query_id else run_id
-    out = Path("results/logs") / model_tag.replace(":", "_") / run_name
+
+    base_dir = Path("results/logs")
+    if run_tag:
+        base_dir = base_dir / _safe_name(run_tag)
+
+    out = base_dir / model_tag.replace(":", "_") / run_name
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -322,7 +327,7 @@ def _run_mode(
             selector_prompt_path = "prompts/selector_qos.md"
 
         selected, trace = select_top_apis_for_subtask(
-            llm_call=lambda p: llm_call("selector", RANKER_SYS, p),
+            llm_call=lambda p: llm_call("selector", SELECTOR_SYS, p),
             user_query=user_goal,
             subtask=sub,
             selector_candidates=selector_candidates,
@@ -370,23 +375,24 @@ def run_autogen_once(
     model: str | None = None,
     query_id: str | None = None,
     query_title: str | None = None,
+    run_tag: str | None = None,
 ) -> Tuple[Path, Path | None]:
     backend = make_backend(provider=provider, model=model)
     model_tag = backend.name()
     llm_call = _build_llm_call(backend)
-    out_dir = _run_dir(model_tag, query_id=query_id)
+    out_dir = _run_dir(model_tag, query_id=query_id, run_tag=run_tag)
 
     raw_subtasks = decompose_goal(
         llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p),
         user_goal=user_goal,
     )
-    normalized_subtasks = normalize_subtasks(
-        llm_call=lambda p: llm_call("subtask_normalizer", NORMALIZER_SYS, p),
-        user_goal=user_goal,
-        original_subtasks=raw_subtasks,
-    )
+    normalized_subtasks = raw_subtasks
     _write_json(out_dir / "0_decomposer_raw.json", raw_subtasks)
-    _write_json(out_dir / "0_subtask_normalizer.json", normalized_subtasks)
+    _write_json(out_dir / "0_subtask_normalizer.json", {
+        "disabled": True,
+        "reason": "Primary decomposer now produces retrieval-oriented subtasks directly.",
+        "subtasks": normalized_subtasks,
+    })
     _write_json(out_dir / "0_decomposer.json", normalized_subtasks)
 
     subtasks = normalized_subtasks
@@ -498,13 +504,26 @@ def run_autogen_once(
 
     eval_out: Path | None = None
     try:
+        eval_dir = out_dir / "relevancy_eval"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        eval_cache = eval_dir / "relevancy_cache.json"
+
         eval_out = evaluate_query(
             query_dir=out_dir,
             query_id=query_id,
+            output_dir=eval_dir,
+            cache_path=eval_cache,
             provider=provider or "azure",
             model=model,
         )
-        _write_json(out_dir / "evaluation_result.json", {"excel": str(eval_out)})
+        _write_json(
+            out_dir / "evaluation_result.json",
+            {
+                "excel": str(eval_out),
+                "output_dir": str(eval_dir),
+                "cache_path": str(eval_cache),
+            },
+        )
     except Exception as e:
         (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
 
@@ -537,4 +556,5 @@ if __name__ == "__main__":
             model=None,
             query_id=qid,
             query_title=title,
+            run_tag="run4",
         )

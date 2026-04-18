@@ -84,15 +84,34 @@ def _selected_files_for_mode(mode_dir: Path) -> List[Path]:
     return preferred if preferred else files
 
 
+def _subtask_id_from_selected_filename(path: Path) -> Optional[str]:
+    name = path.name
+    m = re.search(r"_s(\d+)\.json$", name)
+    if m:
+        return m.group(1)
+    m = re.search(r"selected(?:_trace)?_(\d+)\.json$", name)
+    if m:
+        return m.group(1)
+    return None
+
+
 def _load_selected_files(query_dir: Path) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = {}
     for mode in MODE_DIRS:
         mode_dir = query_dir / mode
         rows: List[Dict[str, Any]] = []
         for path in _selected_files_for_mode(mode_dir):
+            sid_from_file = _subtask_id_from_selected_filename(path)
             data = _safe_read_json(path) or []
             if isinstance(data, list):
-                rows.extend(x for x in data if isinstance(x, dict))
+                for x in data:
+                    if not isinstance(x, dict):
+                        continue
+                    row = dict(x)
+                    if sid_from_file is not None and row.get("subtask_id") in (None, "", "None"):
+                        row["subtask_id"] = sid_from_file
+                    row["_selected_file"] = path.name
+                    rows.append(row)
         out[mode] = rows
     return out
 
@@ -411,6 +430,17 @@ def evaluate_query(
     batches = _build_subtask_batches(query_id, main_task, subtasks, selected_by_mode, catalog)
     batch_results: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
     debug_dir = output_dir / "debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+
+    for mode, rows_mode in selected_by_mode.items():
+        (debug_dir / f"selected_loaded_{mode}.json").write_text(
+            json.dumps(rows_mode, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    (debug_dir / "subtask_batches.json").write_text(
+        json.dumps(batches, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
     for batch in batches:
         sid = batch["subtask_id"]
@@ -428,7 +458,6 @@ def evaluate_query(
                 uncached.append(api)
 
         if uncached:
-            debug_dir.mkdir(parents=True, exist_ok=True)
             for chunk_idx, chunk in enumerate(_chunk_list(uncached, CHUNK_SIZE), start=1):
                 prompt = build_llm_prompt(
                     query_id=query_id,
@@ -477,7 +506,8 @@ def evaluate_query(
 
     for mode in MODE_DIRS:
         for item in selected_by_mode.get(mode, []):
-            sid = str(item.get("subtask_id"))
+            sid_val = item.get("subtask_id")
+            sid = str(sid_val) if sid_val is not None else ""
             sub = next((s for s in subtasks if str(s.get("id")) == sid), {})
             purpose = sub.get("description", "")
             api_id = str(item.get("api_id", ""))
@@ -530,6 +560,10 @@ def evaluate_query(
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    (debug_dir / "final_rows_preview.json").write_text(
+        json.dumps(rows, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
     out_xlsx = output_dir / f"query_{query_id}_api_relevancy.xlsx"
     write_relevancy_excel(rows, out_xlsx)
 
