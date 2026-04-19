@@ -1,4 +1,3 @@
-# src/tools/fetch_services.py
 from pathlib import Path
 import json
 from typing import Optional, List, Dict, Any
@@ -40,6 +39,18 @@ def fetch_services(
         items = [r for r in iter_jsonl(path) if r.get("category") == category]
 
     return items[offset : offset + limit]
+
+
+def load_catalog_map(with_qos: bool) -> Dict[str, Dict[str, Any]]:
+    path = _catalog_path(with_qos)
+    if not path.exists():
+        raise FileNotFoundError(f"Catalog not found: {path.resolve()}")
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in iter_jsonl(path):
+        api_id = str(row.get("api_id", "")).strip()
+        if api_id:
+            out[api_id] = row
+    return out
 
 
 def compress_service(s: Dict[str, Any]) -> Dict[str, Any]:

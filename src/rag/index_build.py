@@ -24,36 +24,10 @@ def _now_iso() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
-def _qos_hint_from_raw(raw: Dict[str, Any], *, enabled: bool) -> str:
+def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any]) -> str:
     """
-    Add a weak QoS hint only for the with_qos index.
-    Semantic match must still dominate retrieval.
-    """
-    if not enabled:
-        return ""
-
-    vals: List[str] = []
-    for key in ("rt_ms", "tp_rps", "availability"):
-        val = raw.get(key)
-        if val is None:
-            continue
-        vals.append(f"{key}={val}")
-
-    if not vals:
-        return ""
-
-    return (
-        "qos_hint: semantic match first; qos is secondary. "
-        "Prefer lower rt_ms, higher tp_rps, and higher availability. "
-        + "qos_values: " + ", ".join(vals)
-    )
-
-
-def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any], *, include_qos_hint: bool = False) -> str:
-    """
-    Build the embedding text from compressed API fields.
-    Endpoint metadata stays primary; tool metadata is added as supporting domain context.
-    QoS is only a weak appended hint for with_qos builds.
+    Build embedding text using only semantic API metadata.
+    QoS is intentionally excluded so all retrieval stays mode-agnostic.
     """
     parts: List[str] = []
 
@@ -81,10 +55,6 @@ def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any], *, include_qos
     if method:
         parts.append(f"Method: {method}")
 
-    qos_hint = _qos_hint_from_raw(raw, enabled=include_qos_hint)
-    if qos_hint:
-        parts.append(qos_hint)
-
     return "\n".join(parts).strip()
 
 
@@ -93,7 +63,6 @@ class BuildConfig:
     index_dir: str
     embed_model: str
     normalize: bool
-    with_qos: bool
     fetch_limit: int
 
 
@@ -122,11 +91,10 @@ def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Build FAISS index for MAOF API catalog")
-    p.add_argument("--index_dir", type=str, default="data/index/maof_v1/with_qos")
+    p = argparse.ArgumentParser(description="Build shared FAISS index for MAOF API catalog")
+    p.add_argument("--index_dir", type=str, default="data/index/maof_v3/shared_no_qos")
     p.add_argument("--embed_model", type=str, default="sentence-transformers/all-MiniLM-L6-v2")
     p.add_argument("--no_normalize", action="store_true")
-    p.add_argument("--with_qos", action="store_true")
     p.add_argument("--fetch_limit", type=int, default=500)
     p.add_argument("--batch_size", type=int, default=64)
     args = p.parse_args()
@@ -135,7 +103,6 @@ def main() -> None:
         index_dir=args.index_dir,
         embed_model=args.embed_model,
         normalize=not args.no_normalize,
-        with_qos=bool(args.with_qos),
         fetch_limit=int(args.fetch_limit),
     )
 
@@ -152,12 +119,12 @@ def main() -> None:
     offset = 0
     total = 0
     while True:
-        batch = fetch_services(category=None, offset=offset, limit=cfg.fetch_limit, with_qos=cfg.with_qos)
+        batch = fetch_services(category=None, offset=offset, limit=cfg.fetch_limit, with_qos=False)
         if not batch:
             break
         for raw in batch:
             comp = compress_service(raw)
-            txt = default_embed_text(comp, raw, include_qos_hint=cfg.with_qos)
+            txt = default_embed_text(comp, raw)
             api_id = comp.get("api_id") or raw.get("api_id") or raw.get("id")
             meta_rows.append(
                 {
@@ -189,6 +156,8 @@ def main() -> None:
         "dims": int(d),
         "count": int(index.ntotal),
         "created_at": _now_iso(),
+        "with_qos": False,
+        "retrieval_mode": "shared_semantic_only",
     }
     (index_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     print(f"[index_build] done. count={config['count']} dims={config['dims']} dir={index_dir}")

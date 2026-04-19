@@ -11,7 +11,8 @@ COLUMNS = [
     "Query_ID",
     "Mode",
     "Sub Task",
-    "Selected Rank",
+    "Retrieved Rank",
+    "Mode Rank",
     "Subtask_Purpose",
     "Selected_API",
     "API Relevancy (0/1)",
@@ -58,44 +59,43 @@ def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> P
     for subtask_id in subtasks:
         for mode in MODE_ORDER:
             group = grouped.get((subtask_id, mode), [])
-            group.sort(key=lambda r: _rank_sort_key(r.get("Selected Rank")))
+            group.sort(key=lambda r: _rank_sort_key(r.get("Mode Rank")))
             if not group:
                 continue
 
             for row in group:
-                ws.append(
-                    [
-                        row.get("Query_ID"),
-                        row.get("Mode"),
-                        row.get("Sub Task"),
-                        row.get("Selected Rank"),
-                        row.get("Subtask_Purpose"),
-                        row.get("Selected_API"),
-                        row.get("API Relevancy (0/1)"),
-                        row.get("QoS_RT"),
-                        row.get("QoS_TP"),
-                        row.get("QoS Availability"),
-                        row.get("Comments"),
-                    ]
-                )
+                ws.append([
+                    row.get("Query_ID"),
+                    row.get("Mode"),
+                    row.get("Sub Task"),
+                    row.get("Retrieved Rank"),
+                    row.get("Mode Rank"),
+                    row.get("Subtask_Purpose"),
+                    row.get("Selected_API"),
+                    row.get("API Relevancy (0/1)"),
+                    row.get("QoS_RT"),
+                    row.get("QoS_TP"),
+                    row.get("QoS Availability"),
+                    row.get("Comments"),
+                ])
 
             ones = sum(1 for r in group if int(r.get("API Relevancy (0/1)") or 0) == 1)
-            precision = round(ones / 10.0, 4)
-            ws.append(
-                [
-                    group[0].get("Query_ID"),
-                    mode,
-                    subtask_id,
-                    "",
-                    group[0].get("Subtask_Purpose"),
-                    "Precision",
-                    precision,
-                    "",
-                    "",
-                    "",
-                    f"Precision = {ones}/10",
-                ]
-            )
+            total = len(group)
+            precision = round(ones / float(total), 4) if total else 0.0
+            ws.append([
+                group[0].get("Query_ID"),
+                mode,
+                subtask_id,
+                "",
+                "",
+                group[0].get("Subtask_Purpose"),
+                "Precision",
+                precision,
+                "",
+                "",
+                "",
+                f"Precision = {ones}/{total}",
+            ])
             for c in range(1, len(COLUMNS) + 1):
                 ws.cell(row=ws.max_row, column=c).font = Font(bold=True)
 

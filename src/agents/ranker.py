@@ -1,4 +1,3 @@
-# src/agents/ranker.py
 from __future__ import annotations
 
 import json
@@ -13,10 +12,6 @@ def _truncate(s: Any, n: int) -> str:
 
 
 def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
-    """Reduce a candidate to a compact representation to avoid context overflow.
-
-    The RAG index metadata can be large. For ranking we only need a few fields.
-    """
     comp = c.get("compressed") or {}
     if not isinstance(comp, dict):
         comp = {}
@@ -25,7 +20,6 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(service, dict):
         service = {}
 
-    # Common functional fields
     name = comp.get("name") or service.get("name") or comp.get("operation") or comp.get("title")
     summary = comp.get("summary") or comp.get("description") or comp.get("desc") or service.get("description")
     method = comp.get("method") or service.get("method")
@@ -34,7 +28,6 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     tool_name = comp.get("tool_name") or service.get("tool_name") or service.get("_tool")
     tool_description = comp.get("tool_description") or service.get("tool_description")
 
-    # Params can explode prompt size; keep only names.
     params = comp.get("params") or comp.get("parameters")
     param_names: List[str] = []
     if isinstance(params, list):
@@ -44,22 +37,11 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
             elif isinstance(p, str):
                 param_names.append(p)
     elif isinstance(params, dict):
-        # sometimes parameters is a dict keyed by name
         param_names = [str(k) for k in list(params.keys())[:30]]
 
-    # QoS fields: include only if present (and compact).
     qos: Dict[str, Any] = {}
     service_qos = service.get("qos") if isinstance(service.get("qos"), dict) else {}
-    for k in [
-        "availability",
-        "reliability",
-        "throughput",
-        "tp_rps",
-        "rt_ms",
-        "response_time_ms",
-        "latency_ms",
-        "p95_latency_ms",
-    ]:
+    for k in ["availability", "tp_rps", "rt_ms"]:
         if k in comp:
             qos[k] = comp.get(k)
         elif k in c:
@@ -88,7 +70,6 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _coerce_json(s: str) -> str:
-    """Return a valid JSON string or {} if we cannot parse."""
     s = (s or "").strip()
     if not s:
         return "{}"
@@ -110,45 +91,19 @@ def rank_subtask(
     prompt_path: str = "prompts/ranker.md",
     debug_raw_path: str | None = None,
 ) -> List[Dict[str, Any]]:
-    """
-    Rank candidates for ONE subtask.
-
-    Input candidates should already include any relevant catalog fields, including:
-      - api_id
-      - rag_score (weak hint)
-      - service / compressed fields
-      - qos fields if present
-
-    Prompt (prompts/ranker.md) must return strict JSON:
-      {
-        "ranked": [
-          {"api_id": "...", "reason": "..."},
-          ...
-        ]
-      }
-
-    Returns the ranked list in order (best first).
-    """
     with open(prompt_path, "r", encoding="utf-8") as f:
         template = f.read()
 
-    # --- Context safety ---
-    # RAG retrieval can return large "compressed" payloads. Sending all topK
-    # (e.g., 60) candidates verbatim can exceed local model context windows.
-    # We:
-    #   1) take the top N by rag_score
-    #   2) slim each candidate down to only essential fields
     from src.config import CONFIG
 
-    MAX_RANK_CANDIDATES = CONFIG.ranker_max_candidates
-    # Ranker outputs a stable pool size for the Selector.
-    RANKER_POOL_N = CONFIG.ranker_pool_n
+    max_rank_candidates = CONFIG.ranker_max_candidates
+    ranker_pool_n = CONFIG.ranker_pool_n
     cand_sorted = sorted(
         (c for c in candidates if isinstance(c, dict) and c.get("api_id")),
         key=lambda x: float(x.get("rag_score") or 0.0),
         reverse=True,
     )
-    cand_trimmed = cand_sorted[:MAX_RANK_CANDIDATES]
+    cand_trimmed = cand_sorted[:max_rank_candidates]
     cand_slim = [_slim_candidate(c) for c in cand_trimmed]
 
     prompt = (
@@ -169,42 +124,51 @@ def rank_subtask(
 
     ranked_raw = data.get("ranked", [])
     ranked: List[Dict[str, Any]] = []
+    seen_ids = set()
     if isinstance(ranked_raw, list):
-        for r in ranked_raw:
+        for rank_idx, r in enumerate(ranked_raw, start=1):
             if not isinstance(r, dict):
                 continue
-            api_id = r.get("api_id")
-            if not api_id:
+            api_id = str(r.get("api_id", "")).strip()
+            if not api_id or api_id in seen_ids:
                 continue
             ranked.append(
                 {
                     "api_id": api_id,
                     "reason": r.get("reason", "") or "",
+                    "mode_rank": rank_idx,
                 }
             )
+            seen_ids.add(api_id)
 
-    # If model failed, fall back to rag_score ordering (descending)
     if not ranked:
         ranked = [
-            {"api_id": c.get("api_id"), "reason": "Fallback: rag_score ordering."}
-            for c in cand_trimmed
+            {
+                "api_id": c.get("api_id"),
+                "reason": "Fallback: rag_score ordering.",
+                "mode_rank": idx,
+            }
+            for idx, c in enumerate(cand_trimmed, start=1)
             if c.get("api_id")
         ]
+        seen_ids = {str(r.get("api_id")) for r in ranked if r.get("api_id")}
 
-    # Enforce a stable pool size: append missing IDs (rag_score order) if the
-    # model returned too few items.
-    ranked_ids = {str(r.get("api_id")) for r in ranked if r.get("api_id")}
-    if len(ranked) < RANKER_POOL_N:
-        for c in cand_trimmed:
-            cid = c.get("api_id")
-            if not cid:
-                continue
-            cid_s = str(cid)
-            if cid_s in ranked_ids:
-                continue
-            ranked.append({"api_id": cid, "reason": "Appended to fill pool size."})
-            ranked_ids.add(cid_s)
-            if len(ranked) >= RANKER_POOL_N:
-                break
+    for c in cand_trimmed:
+        cid = str(c.get("api_id", "")).strip()
+        if not cid or cid in seen_ids:
+            continue
+        ranked.append(
+            {
+                "api_id": cid,
+                "reason": "Appended to preserve full candidate set.",
+                "mode_rank": len(ranked) + 1,
+            }
+        )
+        seen_ids.add(cid)
+        if len(ranked) >= ranker_pool_n:
+            break
 
-    return ranked[:RANKER_POOL_N]
+    ranked = ranked[:ranker_pool_n]
+    for idx, row in enumerate(ranked, start=1):
+        row["mode_rank"] = idx
+    return ranked
