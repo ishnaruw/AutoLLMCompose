@@ -84,8 +84,6 @@ def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> P
                 "",
                 "",
                 "",
-                "",
-                group[0].get("Subtask_Purpose"),
                 "Precision",
                 precision,
                 "",

@@ -12,7 +12,7 @@ from src.agents.qos_scorer_llm import score_qos_llm
 from src.agents.retriever import collect_candidates
 from src.config import CONFIG
 from src.core.retry import call_with_backoff
-from src.eval.api_relevancy_eval import evaluate_query
+from src.eval.api_relevancy_eval import evaluate_query, evaluate_retrieval_relevancy
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.backends import make_backend
 from src.tools.fetch_services import fetch_services
@@ -58,10 +58,17 @@ def load_queries(path: Path = CONFIG.queries_path) -> List[Dict[str, Any]]:
         raise FileNotFoundError(f"Queries file not found: {path.resolve()}")
     queries: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
+        for line_no, line in enumerate(f, start=1):
+            line = line.strip().lstrip("\ufeff")
             if line:
-                queries.append(json.loads(line))
+                try:
+                    queries.append(json.loads(line))
+                except json.JSONDecodeError as exc:
+                    preview = line[:200]
+                    raise ValueError(
+                        f"Invalid JSON in queries file {path} at line {line_no}: {exc.msg}. "
+                        f"Line content starts with: {preview}"
+                    ) from exc
     return queries
 
 
@@ -144,7 +151,7 @@ def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_
         for idx, item in enumerate(retrieved, start=1):
             item["retrieved_rank"] = idx
         retrieved_by_subtask[sub_id] = retrieved
-        _write_json(out_dir / "shared" / f"1_retriever_s{sub_id}.json", retrieved)
+        _write_json(out_dir / f"1_retriever_s{sub_id}.json", retrieved)
         for item in retrieved:
             api_id = str(item.get("api_id", ""))
             if api_id and api_id not in seen:
@@ -209,64 +216,39 @@ def _deterministic_topsis_ranking(retrieved: List[Dict[str, Any]], topsis_meta: 
     return [{"api_id": api_id, "reason": "Deterministic QoS ordering."} for _, api_id, _ in enriched]
 
 
-def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, relevancy_map: Dict[tuple[str, str], Dict[str, Any]], out_dir: Path) -> List[Dict[str, Any]]:
-    """Deterministic hybrid ranking: relevant APIs first (by TOPSIS rank), then non-relevant (also by TOPSIS rank)."""
+def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, relevancy_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
     relevant_enriched = []
     non_relevant_enriched = []
-    
-    debug_lines = []
-    debug_lines.append(f"=== HYBRID RANKING DEBUG for sub_id={sub_id} ===")
-    debug_lines.append(f"relevancy_map has {len(relevancy_map)} total entries")
-    debug_lines.append(f"Sample keys from relevancy_map: {list(relevancy_map.keys())[:3]}")
-    debug_lines.append(f"Retrieved has {len(retrieved)} APIs")
-    debug_lines.append(f"TOPSIS meta has {len(topsis_meta)} entries")
-    
+
     for r in retrieved:
         api_id = str(r.get("api_id", ""))
         m = topsis_meta.get(api_id, {})
         topsis_rank = int(m.get("topsis_rank") or 10**9)
         topsis_score = m.get("topsis_score")
-        
-        # Check if API is marked as relevant in the cache
-        key = (sub_id, api_id)
-        rel_entry = relevancy_map.get(key, {})
-        is_relevant = int(rel_entry.get("relevant", 0)) == 1
-        
-        if len(debug_lines) < 15:  # Only capture first few for brevity
-            debug_lines.append(f"  {api_id}: key={key}, relevant={is_relevant}, topsis_rank={topsis_rank}, in_map={key in relevancy_map}")
-        
+        rel_entry = relevancy_map.get((sub_id, api_id), {})
+        is_relevant = int(rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0)) or 0) == 1
+
         if is_relevant:
-            relevant_enriched.append((topsis_rank, api_id, topsis_score, "Relevant"))
+            relevant_enriched.append((topsis_rank, api_id, topsis_score))
         else:
-            non_relevant_enriched.append((topsis_rank, api_id, topsis_score, "Non-relevant"))
-    
-    debug_lines.append(f"Filtered: {len(relevant_enriched)} relevant, {len(non_relevant_enriched)} non-relevant")
-    
-    # Sort both lists by TOPSIS rank
+            non_relevant_enriched.append((topsis_rank, api_id, topsis_score))
+
     relevant_enriched.sort(key=lambda x: x[0])
     non_relevant_enriched.sort(key=lambda x: x[0])
-    
-    # Combine: relevant first, then non-relevant
     combined = relevant_enriched + non_relevant_enriched
-    
-    debug_lines.append(f"Final order (first 10): {[f'{api_id[:20]}' for _, api_id, _, _ in combined[:10]]}")
-    if relevant_enriched:
-        debug_lines.append(f"Relevant order: {[f'{api_id[:20]}' for _, api_id, _, _ in relevant_enriched[:5]]}")
-    
-    debug_output = "\n".join(debug_lines)
-    print(debug_output)
-    
-    # Write to debug file
-    debug_file = out_dir / "hybrid_debug.log"
-    with open(debug_file, "a") as f:
-        f.write(debug_output + "\n")
-    
-    result = [
-        {"api_id": api_id, "reason": f"Deterministic hybrid: {rel_status} ranked by QoS (TOPSIS rank {rank})."} 
-        for rank, api_id, _, rel_status in combined
-    ]
-    
-    return result
+
+    ranked: List[Dict[str, Any]] = []
+    for topsis_rank, api_id, _ in combined:
+        rel_entry = relevancy_map.get((sub_id, api_id), {})
+        is_relevant = int(rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0)) or 0) == 1
+        rel_label = "Relevant" if is_relevant else "Non-relevant"
+        ranked.append(
+            {
+                "api_id": api_id,
+                "reason": f"Deterministic hybrid: {rel_label} API ordered by TOPSIS rank {topsis_rank}.",
+            }
+        )
+    return ranked
 
 
 def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], extras: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
@@ -294,8 +276,18 @@ def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]
     data = json.loads(rows_path.read_text(encoding="utf-8"))
     out = {}
     for row in data:
-        key = (str(row.get("Sub Task")), str(row.get("Selected_API")))
-        out[key] = row
+        sub_id = str(row.get("Sub Task", row.get("subtask_id", "")))
+        api_id = str(row.get("Selected_API", row.get("api_id", "")))
+        if not sub_id or not api_id:
+            continue
+        relevant = row.get("API Relevancy (0/1)", row.get("relevant", 0))
+        comment = row.get("Comments", row.get("comment", ""))
+        out[(sub_id, api_id)] = {
+            "API Relevancy (0/1)": relevant,
+            "Comments": comment,
+            "relevant": relevant,
+            "comment": comment,
+        }
     return out
 
 
@@ -331,46 +323,36 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     backend = make_backend(provider=provider, model=model)
     model_tag = backend.name()
     llm_call = _build_llm_call(backend)
-    out_dir = _run_dir(model_tag, query_id=query_id, run_tag=run_tag)
+    effective_run_tag = CONFIG.run_tag if run_tag is None else run_tag
+    out_dir = _run_dir(model_tag, query_id=query_id, run_tag=effective_run_tag)
 
     raw_subtasks = decompose_goal(llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p), user_goal=user_goal)
     subtasks = raw_subtasks
-    _write_json(out_dir / "0_decomposer_raw.json", raw_subtasks)
+    _write_json(out_dir / "debug" / "0_decomposer_raw.json", raw_subtasks)
     _write_json(out_dir / "0_decomposer.json", subtasks)
 
     retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
 
     ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
-
     relevancy_map: Dict[tuple[str, str], Dict[str, Any]] = {}
-    debug_file = out_dir / "hybrid_debug.log"
+    retrieval_relevancy_rows_path: Path | None = None
+    eval_out: Path | None = None
+    relevancy_rows_path: Path | None = None
     try:
-        # Try to load relevancy evaluation cache from standard location
-        relevancy_cache_path = Path("results/relevancy_eval/relevancy_cache.json")
-        if relevancy_cache_path.exists():
-            relevancy_data = json.loads(relevancy_cache_path.read_text(encoding="utf-8"))
-            # Cache format: {"query_subtask_api_id": {"relevant": 0/1, ...}, ...}
-            # Convert to map: {(subtask_id, api_id): {...}, ...}
-            # IMPORTANT: Only load entries for THIS query_id to avoid cross-query contamination
-            if isinstance(relevancy_data, dict):
-                for cache_key, cache_val in relevancy_data.items():
-                    # Parse key format: "query_subtask_api_id" (e.g., "q01_1_api_id_name")
-                    parts = cache_key.split("_", 2)  # Split into [query_id, subtask_id, api_id...]
-                    if len(parts) >= 3:
-                        cache_query_id = parts[0]  # e.g., "q01"
-                        sub_id = parts[1]           # e.g., "1"
-                        api_id = "_".join(parts[2:])  # Rejoin api_id parts in case it has underscores
-                        # ONLY include entries for the current query
-                        if cache_query_id == query_id:
-                            relevancy_map[(sub_id, api_id)] = cache_val
-                with open(debug_file, "w") as f:
-                    f.write(f"[RELEVANCY LOAD] Query: {query_id}\n")
-                    f.write(f"[RELEVANCY LOAD] Loaded {len(relevancy_map)} entries from cache for this query\n")
-                    f.write(f"[RELEVANCY LOAD] Sample keys: {list(relevancy_map.keys())[:10]}\n")
+        eval_dir = out_dir / "relevancy_eval"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        eval_cache = eval_dir / "relevancy_cache.json"
+        retrieval_relevancy_rows_path = evaluate_retrieval_relevancy(
+            query_dir=out_dir,
+            query_id=query_id,
+            output_dir=eval_dir,
+            cache_path=eval_cache,
+            provider=provider or "azure",
+            model=model,
+        )
+        relevancy_map = _load_relevancy_map(retrieval_relevancy_rows_path)
     except Exception as e:
-        with open(debug_file, "w") as f:
-            f.write(f"[RELEVANCY LOAD] Error: {e}\n")
-        pass
+        (out_dir / "retrieval_relevancy_error.txt").write_text(str(e), encoding="utf-8")
 
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
@@ -406,57 +388,37 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         topsis_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
         ranked_full_by_mode["qos_topsis"][sub_id] = _write_ranked(out_dir / "qos_topsis", sub_id, topsis_ranked, retrieved, with_qos_services, topsis_meta)
 
-        # Provisional hybrid order before fresh relevancy is available.
-        # This will be rebuilt deterministically after per-run relevancy evaluation completes.
-        hybrid_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
+        hybrid_ranked = _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map)
         ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
 
     run_config = CONFIG.as_dict()
     run_config.update({"provider": provider, "model": backend.name(), "query_id": query_id, "query_title": query_title, "modes": MODE_ORDER})
     _write_json(out_dir / "run_config.json", run_config)
 
-    eval_out: Path | None = None
-    relevancy_rows_path: Path | None = None
     try:
         eval_dir = out_dir / "relevancy_eval"
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "relevancy_cache.json"
         eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
         relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
-        _write_json(out_dir / "evaluation_result.json", {"excel": str(eval_out), "rows_json": str(relevancy_rows_path), "output_dir": str(eval_dir), "cache_path": str(eval_cache)})
+        _write_json(
+            out_dir / "evaluation_result.json",
+            {
+                "excel": str(eval_out),
+                "rows_json": str(relevancy_rows_path),
+                "retrieval_relevancy_rows_json": str(retrieval_relevancy_rows_path) if retrieval_relevancy_rows_path else None,
+                "output_dir": str(eval_dir),
+                "cache_path": str(eval_cache),
+            },
+        )
     except Exception as e:
         (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
 
     summary_selected = {}
-    if relevancy_rows_path and relevancy_rows_path.exists():
-        relevancy_map = _load_relevancy_map(relevancy_rows_path)
-
-        # Rebuild hybrid ranking now that fresh per-run relevancy labels are available.
-        with open(debug_file, "a", encoding="utf-8") as f:
-            f.write(f"[HYBRID] Rebuilding deterministic hybrid ranking using {len(relevancy_map)} fresh relevancy rows.\n")
-
-        for sub in subtasks:
-            sub_id = str(sub.get("id", "unknown"))
-            retrieved = retrieved_by_subtask[sub_id]
-            topsis_meta = _compute_topsis_metadata(retrieved, with_qos_services)
-            hybrid_ranked = _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map, out_dir)
-            ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
-
-        # Regenerate evaluation outputs so Excel/rows reflect corrected hybrid mode ranks.
-        try:
-            eval_dir = out_dir / "relevancy_eval"
-            eval_cache = eval_dir / "relevancy_cache.json"
-            eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
-            relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
-            relevancy_map = _load_relevancy_map(relevancy_rows_path)
-            _write_json(out_dir / "evaluation_result.json", {"excel": str(eval_out), "rows_json": str(relevancy_rows_path), "output_dir": str(eval_dir), "cache_path": str(eval_cache), "hybrid_rebuilt": True})
-        except Exception as e:
-            (out_dir / "evaluation_rerun_error.txt").write_text(str(e), encoding="utf-8")
-
-        for mode in MODE_ORDER:
-            planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
-            result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], relevancy_map, llm_call, user_goal, out_dir, planner_prompt)
-            summary_selected[f"{mode}_selected"] = len(result["selected"])
+    for mode in MODE_ORDER:
+        planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
+        result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], relevancy_map, llm_call, user_goal, out_dir, planner_prompt)
+        summary_selected[f"{mode}_selected"] = len(result["selected"])
 
     _write_json(out_dir / "meta.json", {"query_id": query_id, "query_title": query_title, "user_goal": user_goal, "model_tag": backend.name(), "num_subtasks": len(subtasks), "evaluation_triggered": True, "modes": MODE_ORDER, "summary": summary_selected})
 
@@ -478,4 +440,4 @@ if __name__ == "__main__":
         print(f"Running query {i}/{len(queries)} | {qid} | {title}")
         print(f"User goal: {goal}")
         print("=" * 80)
-        run_autogen_once(user_goal=goal, provider=provider, model=None, query_id=qid, query_title=title, run_tag="run_tests")
+        run_autogen_once(user_goal=goal, provider=provider, model=None, query_id=qid, query_title=title)

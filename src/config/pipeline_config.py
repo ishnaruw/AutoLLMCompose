@@ -9,6 +9,7 @@ from typing import Dict, Any
 class PipelineConfig:
     queries_path: Path = Path("data/queries/one_user_query.jsonl")
     prefix_run_dir_with_query_id: bool = True
+    run_tag: str | None = "run_APR_19_26"
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
 

@@ -70,6 +70,19 @@ def _load_ranked_files(query_dir: Path) -> Dict[str, List[Dict[str, Any]]]:
     return out
 
 
+def _load_shared_candidates(query_dir: Path) -> Dict[str, List[Dict[str, Any]]]:
+    out: Dict[str, List[Dict[str, Any]]] = {}
+    for path in sorted(query_dir.glob("1_retriever_s*.json")):
+        m = re.search(r"1_retriever_s(\d+)\.json$", path.name)
+        sid = m.group(1) if m else None
+        if sid is None:
+            continue
+        data = _safe_read_json(path) or []
+        if isinstance(data, list):
+            out[sid] = data
+    return out
+
+
 def _load_subtasks(query_dir: Path) -> List[Dict[str, Any]]:
     data = _safe_read_json(query_dir / "0_decomposer.json") or []
     return data if isinstance(data, list) else []
@@ -201,6 +214,35 @@ def _build_subtask_batches(query_id: str, main_task: str, subtasks: List[Dict[st
     return batches
 
 
+def _build_shared_retrieval_batches(query_id: str, main_task: str, subtasks: List[Dict[str, Any]], shared_candidates: Dict[str, List[Dict[str, Any]]], catalog: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    batches: List[Dict[str, Any]] = []
+    for sub in subtasks:
+        sid = str(sub.get("id"))
+        purpose = sub.get("description", "")
+        apis: List[Dict[str, Any]] = []
+        for row in shared_candidates.get(sid, []):
+            merged = _extract_api_info(row, catalog)
+            apis.append({
+                "api_id": str(row.get("api_id", "")),
+                "name": merged.get("name") or merged.get("title") or merged.get("operation"),
+                "category": merged.get("category"),
+                "tool_name": merged.get("tool_name"),
+                "tool_description": merged.get("tool_description"),
+                "description": merged.get("description") or merged.get("summary") or merged.get("desc"),
+                "method": merged.get("method"),
+                "url": merged.get("url") or merged.get("endpoint") or merged.get("path"),
+                "endpoint_details": merged.get("endpoint_details") or {},
+            })
+        batches.append({
+            "query_id": query_id,
+            "main_task": main_task,
+            "subtask_id": sid,
+            "subtask_description": purpose,
+            "apis": apis,
+        })
+    return batches
+
+
 def _chunk_list(items: List[Dict[str, Any]], size: int) -> Iterable[List[Dict[str, Any]]]:
     for i in range(0, len(items), size):
         yield items[i : i + size]
@@ -246,20 +288,10 @@ def _parse_results(text: str, expected_ids: List[str]) -> Dict[str, Dict[str, An
     return out
 
 
-def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
+def _evaluate_batches(*, query_id: str, batches: List[Dict[str, Any]], provider: str, model: Optional[str], cache_path: Path) -> Dict[Tuple[str, str], Dict[str, Dict[str, Any]]]:
     backend = make_backend(provider=provider, model=model)
-    meta = _load_meta(query_dir)
-    main_task = str(meta.get("user_goal") or "")
-    query_id = query_id or str(meta.get("query_id") or query_dir.name)
-    subtasks = _load_subtasks(query_dir)
-    ranked_by_mode = _load_ranked_files(query_dir)
-    catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
     cache = _load_cache(cache_path)
-    rows: List[Dict[str, Any]] = []
-    batches = _build_subtask_batches(query_id, main_task, subtasks, ranked_by_mode, catalog)
     batch_results: Dict[Tuple[str, str], Dict[str, Dict[str, Any]]] = {}
-    debug_dir = output_dir / "debug"
-    debug_dir.mkdir(parents=True, exist_ok=True)
 
     for batch in batches:
         sid = batch["subtask_id"]
@@ -272,12 +304,21 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 sub_results[api["api_id"]] = cache[key]
             else:
                 uncached.append(api)
+
         if uncached:
             for chunk_idx, chunk in enumerate(_chunk_list(uncached, CHUNK_SIZE), start=1):
-                prompt = build_llm_prompt(query_id=query_id, main_task=batch["main_task"], subtask_id=sid, subtask_description=batch["subtask_description"], api_entries=chunk)
+                prompt = build_llm_prompt(
+                    query_id=query_id,
+                    main_task=batch["main_task"],
+                    subtask_id=sid,
+                    subtask_description=batch["subtask_description"],
+                    api_entries=chunk,
+                )
                 expected_ids = [a["api_id"] for a in chunk]
+
                 def _call() -> str:
                     return backend.chat_json(EVAL_SYS, prompt, temperature=0, force_json=True)
+
                 raw = call_with_backoff(_call, name=f"api_relevancy_eval_s{sid}_chunk{chunk_idx}")
                 parsed = _parse_results(raw, expected_ids)
                 if len(parsed) != len(expected_ids):
@@ -285,15 +326,93 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                     retry_parsed = _parse_results(retry_raw, expected_ids)
                     if len(retry_parsed) >= len(parsed):
                         parsed = retry_parsed
+
                 for api in chunk:
                     api_id = api["api_id"]
                     key = f"{query_id}_{sid}_{api_id}"
                     val = parsed.get(api_id, {"relevant": 0, "comment": "Missing from LLM response"})
                     cache[key] = val
                     sub_results[api_id] = val
+
         batch_results[(query_id, sid)] = sub_results
 
     _save_cache(cache, cache_path)
+    return batch_results
+
+
+def evaluate_retrieval_relevancy(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
+    meta = _load_meta(query_dir)
+    main_task = str(meta.get("user_goal") or "")
+    query_id = query_id or str(meta.get("query_id") or query_dir.name)
+    subtasks = _load_subtasks(query_dir)
+    shared_candidates = _load_shared_candidates(query_dir)
+    catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
+    batches = _build_shared_retrieval_batches(query_id, main_task, subtasks, shared_candidates, catalog)
+    batch_results = _evaluate_batches(
+        query_id=query_id,
+        batches=batches,
+        provider=provider,
+        model=model,
+        cache_path=cache_path,
+    )
+
+    rows: List[Dict[str, Any]] = []
+    for sub in subtasks:
+        sid = str(sub.get("id"))
+        for item in shared_candidates.get(sid, []):
+            api_id = str(item.get("api_id", ""))
+            rel_info = batch_results.get((query_id, sid), {}).get(api_id, {"relevant": 0, "comment": "Missing from LLM response"})
+            rows.append({
+                "Query_ID": query_id,
+                "Sub Task": sid,
+                "Retrieved Rank": item.get("retrieved_rank"),
+                "Selected_API": api_id,
+                "API Relevancy (0/1)": rel_info.get("relevant", 0),
+                "Comments": rel_info.get("comment", ""),
+            })
+
+    rows.sort(
+        key=lambda r: (
+            int(str(r["Sub Task"])) if str(r["Sub Task"]).isdigit() else 9999,
+            int(r.get("Retrieved Rank") or 9999),
+        )
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    rows_path = output_dir / f"query_{query_id}_retrieval_relevancy_rows.json"
+    rows_path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    summary_path = output_dir / f"query_{query_id}_retrieval_relevancy_summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "query_id": query_id,
+                "rows_json": str(rows_path),
+                "cache": str(cache_path),
+                "total_rows": len(rows),
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return rows_path
+
+
+def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
+    meta = _load_meta(query_dir)
+    main_task = str(meta.get("user_goal") or "")
+    query_id = query_id or str(meta.get("query_id") or query_dir.name)
+    subtasks = _load_subtasks(query_dir)
+    ranked_by_mode = _load_ranked_files(query_dir)
+    catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
+    rows: List[Dict[str, Any]] = []
+    batches = _build_subtask_batches(query_id, main_task, subtasks, ranked_by_mode, catalog)
+    batch_results = _evaluate_batches(
+        query_id=query_id,
+        batches=batches,
+        provider=provider,
+        model=model,
+        cache_path=cache_path,
+    )
 
     for mode in MODE_DIRS:
         for item in ranked_by_mode.get(mode, []):
