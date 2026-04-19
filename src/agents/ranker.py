@@ -90,7 +90,7 @@ def rank_subtask(
     user_query: str,
     subtask: Dict[str, Any],
     candidates: List[Dict[str, Any]],
-    prompt_path: str = "prompts/ranker.md",
+    prompt_path: str,
     debug_raw_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     with open(prompt_path, "r", encoding="utf-8") as f:

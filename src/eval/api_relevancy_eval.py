@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_excel import write_relevancy_excel

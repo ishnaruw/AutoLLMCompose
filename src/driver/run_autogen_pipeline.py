@@ -147,7 +147,7 @@ def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_
     seen = set()
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        retrieved = collect_candidates(user_query=user_goal, subtask_goal=str(sub.get("description", "")), index_dir=str(CONFIG.shared_index_dir), top_k=CONFIG.rag_top_k)
+        retrieved = collect_candidates(subtask_goal=str(sub.get("description", "")), index_dir=str(CONFIG.shared_index_dir), top_k=CONFIG.rag_top_k)
         for idx, item in enumerate(retrieved, start=1):
             item["retrieved_rank"] = idx
         retrieved_by_subtask[sub_id] = retrieved

@@ -1,7 +1,7 @@
 # src/agents/decomposer.py
 import json
 import re
-from typing import Any, Callable, Dict, List
+from typing import Callable, Dict, List
 
 
 def _coerce_json(s: str) -> str:

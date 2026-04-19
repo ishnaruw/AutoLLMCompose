@@ -1,20 +1,16 @@
 # src/agents/retriever.py
 from __future__ import annotations
 
-import json
-from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from src.rag.retriever import FaissServiceRetriever
 
 
 def collect_candidates(
-    user_query: str,
     subtask_goal: str,
     *,
     index_dir: str,
     top_k: int = 60,
-    debug_dir: str | None = None,
 ) -> List[Dict[str, Any]]:
     """
     RAG-only retriever.
@@ -36,16 +32,6 @@ def collect_candidates(
                 "rag_score": c.rag_score,
                 "compressed": c.compressed,
             }
-        )
-
-    if debug_dir:
-        d = Path(debug_dir)
-        d.mkdir(parents=True, exist_ok=True)
-        (d / "retrieved.json").write_text(json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8")
-        # helpful context file
-        (d / "query_context.json").write_text(
-            json.dumps({"user_query": user_query, "subtask_goal": subtask_goal, "top_k": top_k}, indent=2, ensure_ascii=False),
-            encoding="utf-8",
         )
 
     return out
