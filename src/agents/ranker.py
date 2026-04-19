@@ -31,41 +31,43 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     params = comp.get("params") or comp.get("parameters")
     param_names: List[str] = []
     if isinstance(params, list):
-        for p in params[:30]:
+        for p in params[:20]:
             if isinstance(p, dict) and p.get("name"):
                 param_names.append(str(p.get("name")))
             elif isinstance(p, str):
                 param_names.append(p)
     elif isinstance(params, dict):
-        param_names = [str(k) for k in list(params.keys())[:30]]
+        param_names = [str(k) for k in list(params.keys())[:20]]
 
-    qos: Dict[str, Any] = {}
+    qos = c.get("qos") if isinstance(c.get("qos"), dict) else {}
     service_qos = service.get("qos") if isinstance(service.get("qos"), dict) else {}
-    for k in ["availability", "tp_rps", "rt_ms"]:
-        if k in comp:
-            qos[k] = comp.get(k)
-        elif k in c:
-            qos[k] = c.get(k)
-        elif k in service:
-            qos[k] = service.get(k)
-        elif k in service_qos:
-            qos[k] = service_qos.get(k)
 
     slim: Dict[str, Any] = {
         "api_id": c.get("api_id"),
+        "retrieved_rank": c.get("retrieved_rank"),
         "rag_score": c.get("rag_score"),
         "category": category,
         "tool_name": _truncate(tool_name, 120),
-        "tool_description": _truncate(tool_description, 240),
+        "tool_description": _truncate(tool_description, 220),
         "name": _truncate(name, 120),
-        "summary": _truncate(summary, 240),
+        "summary": _truncate(summary, 220),
         "method": _truncate(method, 16),
         "path": _truncate(path, 140),
     }
     if param_names:
         slim["param_names"] = param_names
-    if qos:
-        slim["qos"] = qos
+
+    for key in ["rt_ms", "tp_rps", "availability", "qos_score", "qos_rank", "topsis_score", "topsis_rank", "qos_llm_score", "qos_llm_rank"]:
+        val = c.get(key)
+        if val is None:
+            val = qos.get(key)
+        if val is None:
+            val = service.get(key)
+        if val is None:
+            val = service_qos.get(key)
+        if val is not None:
+            slim[key] = val
+
     return slim
 
 
@@ -100,8 +102,7 @@ def rank_subtask(
     ranker_pool_n = CONFIG.ranker_pool_n
     cand_sorted = sorted(
         (c for c in candidates if isinstance(c, dict) and c.get("api_id")),
-        key=lambda x: float(x.get("rag_score") or 0.0),
-        reverse=True,
+        key=lambda x: int(x.get("retrieved_rank") or 10**9),
     )
     cand_trimmed = cand_sorted[:max_rank_candidates]
     cand_slim = [_slim_candidate(c) for c in cand_trimmed]
@@ -124,51 +125,30 @@ def rank_subtask(
 
     ranked_raw = data.get("ranked", [])
     ranked: List[Dict[str, Any]] = []
-    seen_ids = set()
     if isinstance(ranked_raw, list):
-        for rank_idx, r in enumerate(ranked_raw, start=1):
+        for r in ranked_raw:
             if not isinstance(r, dict):
                 continue
-            api_id = str(r.get("api_id", "")).strip()
-            if not api_id or api_id in seen_ids:
+            api_id = r.get("api_id")
+            if not api_id:
                 continue
-            ranked.append(
-                {
-                    "api_id": api_id,
-                    "reason": r.get("reason", "") or "",
-                    "mode_rank": rank_idx,
-                }
-            )
-            seen_ids.add(api_id)
+            ranked.append({"api_id": str(api_id), "reason": (r.get("reason", "") or "")[:160]})
 
     if not ranked:
-        ranked = [
-            {
-                "api_id": c.get("api_id"),
-                "reason": "Fallback: rag_score ordering.",
-                "mode_rank": idx,
-            }
-            for idx, c in enumerate(cand_trimmed, start=1)
-            if c.get("api_id")
-        ]
-        seen_ids = {str(r.get("api_id")) for r in ranked if r.get("api_id")}
+        ranked = [{"api_id": str(c.get("api_id")), "reason": "Fallback: retrieved order."} for c in cand_trimmed if c.get("api_id")]
 
-    for c in cand_trimmed:
-        cid = str(c.get("api_id", "")).strip()
-        if not cid or cid in seen_ids:
-            continue
-        ranked.append(
-            {
-                "api_id": cid,
-                "reason": "Appended to preserve full candidate set.",
-                "mode_rank": len(ranked) + 1,
-            }
-        )
-        seen_ids.add(cid)
-        if len(ranked) >= ranker_pool_n:
-            break
+    ranked_ids = {str(r.get("api_id")) for r in ranked if r.get("api_id")}
+    if len(ranked) < ranker_pool_n:
+        for c in cand_trimmed:
+            cid = c.get("api_id")
+            if not cid:
+                continue
+            cid_s = str(cid)
+            if cid_s in ranked_ids:
+                continue
+            ranked.append({"api_id": cid_s, "reason": "Appended to complete ranking."})
+            ranked_ids.add(cid_s)
+            if len(ranked) >= ranker_pool_n:
+                break
 
-    ranked = ranked[:ranker_pool_n]
-    for idx, row in enumerate(ranked, start=1):
-        row["mode_rank"] = idx
-    return ranked
+    return ranked[:ranker_pool_n]

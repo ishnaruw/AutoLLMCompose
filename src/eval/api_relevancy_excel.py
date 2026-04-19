@@ -22,7 +22,7 @@ COLUMNS = [
     "Comments",
 ]
 
-MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis"]
+MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_INDEX = {name: idx for idx, name in enumerate(MODE_ORDER)}
 
 
@@ -41,11 +41,9 @@ def _rank_sort_key(value: Any) -> int:
 def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
     wb = Workbook()
     ws = wb.active
     ws.title = "Query"
-
     ws.append(COLUMNS)
     for c in range(1, len(COLUMNS) + 1):
         ws.cell(row=1, column=c).font = Font(bold=True)
@@ -55,14 +53,12 @@ def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> P
         grouped[(str(row.get("Sub Task")), str(row.get("Mode")))].append(row)
 
     subtasks = sorted({str(r.get("Sub Task")) for r in rows}, key=_subtask_sort_key)
-
     for subtask_id in subtasks:
         for mode in MODE_ORDER:
             group = grouped.get((subtask_id, mode), [])
             group.sort(key=lambda r: _rank_sort_key(r.get("Mode Rank")))
             if not group:
                 continue
-
             for row in group:
                 ws.append([
                     row.get("Query_ID"),
@@ -78,14 +74,15 @@ def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> P
                     row.get("QoS Availability"),
                     row.get("Comments"),
                 ])
-
-            ones = sum(1 for r in group if int(r.get("API Relevancy (0/1)") or 0) == 1)
+            relevant = sum(1 for r in group if int(r.get("API Relevancy (0/1)") or 0) == 1)
             total = len(group)
-            precision = round(ones / float(total), 4) if total else 0.0
+            precision = round(relevant / float(total or 1), 4)
             ws.append([
                 group[0].get("Query_ID"),
                 mode,
                 subtask_id,
+                "",
+                "",
                 "",
                 "",
                 group[0].get("Subtask_Purpose"),
@@ -94,12 +91,10 @@ def write_relevancy_excel(rows: List[Dict[str, Any]], out_path: str | Path) -> P
                 "",
                 "",
                 "",
-                f"Precision = {ones}/{total}",
+                f"Precision = {relevant}/{total}",
             ])
             for c in range(1, len(COLUMNS) + 1):
                 ws.cell(row=ws.max_row, column=c).font = Font(bold=True)
-
             ws.append([""] * len(COLUMNS))
-
     wb.save(out_path)
     return out_path

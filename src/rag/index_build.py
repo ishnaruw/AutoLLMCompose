@@ -25,36 +25,25 @@ def _now_iso() -> str:
 
 
 def default_embed_text(comp: Dict[str, Any], raw: Dict[str, Any]) -> str:
-    """
-    Build embedding text using only semantic API metadata.
-    QoS is intentionally excluded so all retrieval stays mode-agnostic.
-    """
     parts: List[str] = []
-
     cat = comp.get("category")
     if cat:
         parts.append(f"Category: {cat}")
-
     tool_name = comp.get("tool_name") or raw.get("tool_name")
     if tool_name:
         parts.append(f"Tool: {tool_name}")
-
     tool_desc = comp.get("tool_description") or raw.get("tool_description")
     if tool_desc:
         parts.append(f"Tool Description: {tool_desc}")
-
     name = comp.get("name") or comp.get("operation") or comp.get("title")
     if name:
         parts.append(f"Endpoint: {name}")
-
     summary = comp.get("summary") or comp.get("description") or comp.get("desc")
     if summary:
         parts.append(f"Endpoint Description: {summary}")
-
     method = comp.get("method") or raw.get("method")
     if method:
         parts.append(f"Method: {method}")
-
     return "\n".join(parts).strip()
 
 
@@ -91,7 +80,7 @@ def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Build shared FAISS index for MAOF API catalog")
+    p = argparse.ArgumentParser(description="Build shared semantic FAISS index for MAOF API catalog")
     p.add_argument("--index_dir", type=str, default="data/index/maof_v3/shared_no_qos")
     p.add_argument("--embed_model", type=str, default="sentence-transformers/all-MiniLM-L6-v2")
     p.add_argument("--no_normalize", action="store_true")
@@ -126,14 +115,7 @@ def main() -> None:
             comp = compress_service(raw)
             txt = default_embed_text(comp, raw)
             api_id = comp.get("api_id") or raw.get("api_id") or raw.get("id")
-            meta_rows.append(
-                {
-                    "api_id": api_id,
-                    "category": comp.get("category") or raw.get("category"),
-                    "compressed": comp,
-                    "embed_text": txt,
-                }
-            )
+            meta_rows.append({"api_id": api_id, "category": comp.get("category") or raw.get("category"), "compressed": comp, "embed_text": txt})
             texts.append(txt)
             total += 1
         offset += len(batch)
@@ -151,14 +133,7 @@ def main() -> None:
     faiss.write_index(index, str(index_dir / "faiss.index"))
     _save_jsonl(index_dir / "meta.jsonl", meta_rows)
 
-    config = {
-        **asdict(cfg),
-        "dims": int(d),
-        "count": int(index.ntotal),
-        "created_at": _now_iso(),
-        "with_qos": False,
-        "retrieval_mode": "shared_semantic_only",
-    }
+    config = {**asdict(cfg), "dims": int(d), "count": int(index.ntotal), "created_at": _now_iso()}
     (index_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
     print(f"[index_build] done. count={config['count']} dims={config['dims']} dir={index_dir}")
 

@@ -8,31 +8,52 @@ from typing import Any, Dict, List, Tuple
 from src.agents.decomposer import decompose_goal
 from src.agents.planner import planner_call
 from src.agents.ranker import rank_subtask
+from src.agents.qos_scorer_llm import score_qos_llm
 from src.agents.retriever import collect_candidates
-from src.agents.selector import select_ranked_relevant_apis
-from src.config import CONFIG, QUERIES_PATH
+from src.config import CONFIG
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_eval import evaluate_query
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.backends import make_backend
-from src.tools.fetch_services import load_catalog_map
+from src.tools.fetch_services import fetch_services
 
-DECOMPOSER_SYS = "You are a task decomposition agent. Return strict JSON only."
-RANKER_SYS = "You are an API ranking agent. Return strict JSON only."
-PLANNER_SYS = "You are an API workflow planner. Return strict JSON only."
+DECOMPOSER_SYS = (
+    "You are a decomposition agent for API discovery. "
+    "Your job is to split a user request into 2 to 5 ordered API-retrieval subtasks when the request contains multiple distinct capabilities. "
+    "Do not collapse multiple functions into one subtask. "
+    "Return strict JSON only."
+)
 
-MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis"]
+RANKER_SYS = (
+    "You are a ranking agent. Given the original user query, a single subtask, and "
+    "a list of candidate APIs from a catalog, rank the candidates best-to-worst for that subtask. "
+    "Follow the prompt strictly and return valid JSON."
+)
+
+QOS_SCORER_SYS = (
+    "You are a QoS scoring agent. Given only api ids and QoS metrics, produce a relative QoS-only ranking and score. "
+    "Return strict JSON only."
+)
+
+PLANNER_SYS = (
+    "You are an orchestration planner that composes a logical API workflow "
+    "using only the selected APIs provided. Preserve the ordered subtasks and return valid JSON."
+)
+
+MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 
 PROVIDER_POLICY = {
-    "mistral": {"sleep_after_query": 0.0},
-    "groq": {"sleep_after_query": 0.0},
-    "azure_foundry": {"sleep_after_query": 0.0},
+    "mistral": {"sleep_after_query": 0.5},
+    "groq": {"sleep_after_query": 0.8},
+    "gemini": {"sleep_after_query": 0.4},
+    "azure_foundry": {"sleep_after_query": 0.2},
+    "azure": {"sleep_after_query": 0.2},
     "lmstudio": {"sleep_after_query": 0.0},
-    "_default": {"sleep_after_query": 0.0},
+    "_default": {"sleep_after_query": 0.4},
 }
 
 
-def load_queries(path: Path = QUERIES_PATH) -> List[Dict[str, Any]]:
+def load_queries(path: Path = CONFIG.queries_path) -> List[Dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"Queries file not found: {path.resolve()}")
     queries: List[Dict[str, Any]] = []
@@ -51,11 +72,9 @@ def choose_provider_interactive() -> str:
         ("azure_foundry", "Azure (DeepSeek via Foundry endpoint)"),
         ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)"),
     ]
-
     print("\nSelect model provider:")
     for i, (_, label) in enumerate(options, start=1):
         print(f"  {i}) {label}")
-
     while True:
         choice = input("Enter choice number: ").strip()
         if choice.isdigit() and 1 <= int(choice) <= len(options):
@@ -76,7 +95,7 @@ def _safe_name(text: str) -> str:
 
 def _run_dir(model_tag: str, query_id: str | None = None, run_tag: str | None = None) -> Path:
     run_id = time.strftime("%Y%m%dT%H%M%S")
-    run_name = f"{_safe_name(query_id)}_{run_id}" if CONFIG.prefix_run_dir_with_query_id and query_id else run_id
+    run_name = f"{_safe_name(query_id)}_{run_id}" if query_id else run_id
     base_dir = Path("results/logs")
     if run_tag:
         base_dir = base_dir / _safe_name(run_tag)
@@ -85,23 +104,28 @@ def _run_dir(model_tag: str, query_id: str | None = None, run_tag: str | None = 
     return out
 
 
-def _get_policy(provider: str | None) -> Dict[str, Any]:
-    return PROVIDER_POLICY.get(provider or "_default", PROVIDER_POLICY["_default"])
-
-
-def _throttle_after_query(provider: str | None) -> None:
-    delay = float((_get_policy(provider) or {}).get("sleep_after_query", 0.0) or 0.0)
-    if delay > 0:
-        time.sleep(delay)
+def _fetch_catalog_subset(api_ids: List[str], with_qos: bool) -> Dict[str, Dict[str, Any]]:
+    wanted = set(str(x) for x in api_ids if x)
+    found: Dict[str, Dict[str, Any]] = {}
+    offset = 0
+    while True:
+        batch = fetch_services(category=None, offset=offset, limit=500, with_qos=with_qos)
+        if not batch:
+            break
+        for item in batch:
+            api_id = str(item.get("api_id", ""))
+            if api_id in wanted:
+                found[api_id] = item
+        offset += len(batch)
+        if len(found) >= len(wanted):
+            break
+    return found
 
 
 def _build_llm_call(backend):
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
         temp = 0.2 if role_name == "planner" else 0.0
-        return call_with_backoff(
-            lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True),
-            name=role_name,
-        )
+        return call_with_backoff(lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True), name=role_name)
     return llm_call
 
 
@@ -110,325 +134,335 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _normalize_service_with_qos(base_service: Dict[str, Any], with_qos_service: Dict[str, Any] | None) -> Dict[str, Any]:
-    row = dict(base_service or {})
-    if isinstance(with_qos_service, dict):
-        qos = with_qos_service.get("qos") if isinstance(with_qos_service.get("qos"), dict) else None
-        if qos:
-            row["qos"] = qos
-        else:
-            qos_fields = {k: with_qos_service.get(k) for k in ["rt_ms", "tp_rps", "availability"] if with_qos_service.get(k) is not None}
-            if qos_fields:
-                row["qos"] = qos_fields
-        for key in ["rt_ms", "tp_rps", "availability"]:
-            if key in with_qos_service and with_qos_service.get(key) is not None:
-                row[key] = with_qos_service.get(key)
-    return row
-
-
-def _prepare_shared_candidates(
-    *,
-    user_goal: str,
-    subtasks: List[Dict[str, Any]],
-    index_dir: Path,
-    no_qos_catalog: Dict[str, Dict[str, Any]],
-    with_qos_catalog: Dict[str, Dict[str, Any]],
-) -> tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
-    shared_retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
-    shared_id_to_service_no_qos: Dict[str, Dict[str, Any]] = {}
-    shared_id_to_service_with_qos: Dict[str, Dict[str, Any]] = {}
-
+def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_dir: Path) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
+    pick_ids: List[str] = []
+    seen = set()
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        retrieved = collect_candidates(
-            user_query=user_goal,
-            subtask_goal=str(sub.get("description", "")),
-            index_dir=str(index_dir),
-            top_k=CONFIG.rag_top_k,
-        )
-        retrieved = retrieved[: CONFIG.rag_top_k]
+        retrieved = collect_candidates(user_query=user_goal, subtask_goal=str(sub.get("description", "")), index_dir=str(CONFIG.shared_index_dir), top_k=CONFIG.rag_top_k)
         for idx, item in enumerate(retrieved, start=1):
-            api_id = str(item.get("api_id", "")).strip()
             item["retrieved_rank"] = idx
-            if not api_id:
-                continue
-            no_qos_service = no_qos_catalog.get(api_id, {})
-            with_qos_service = with_qos_catalog.get(api_id, {})
-            shared_id_to_service_no_qos[api_id] = dict(no_qos_service)
-            shared_id_to_service_with_qos[api_id] = _normalize_service_with_qos(no_qos_service, with_qos_service)
-        shared_retrieved_by_subtask[sub_id] = retrieved
-    return shared_retrieved_by_subtask, shared_id_to_service_no_qos, shared_id_to_service_with_qos
-
-
-def _rank_subtasks_llm(
-    *,
-    llm_call,
-    user_goal: str,
-    subtasks: List[Dict[str, Any]],
-    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]],
-    id_to_service: Dict[str, Dict[str, Any]],
-    ranker_prompt_path: str,
-    mode_dir: Path,
-) -> Dict[str, List[Dict[str, Any]]]:
-    ranked_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
-    for sub in subtasks:
-        sub_id = str(sub.get("id", "unknown"))
-        candidates_for_ranker: List[Dict[str, Any]] = []
-        for r in retrieved_by_subtask.get(sub_id, []):
-            api_id = str(r.get("api_id", "")).strip()
-            if not api_id:
-                continue
-            candidates_for_ranker.append(
-                {
-                    "api_id": api_id,
-                    "rag_score": r.get("rag_score", 0.0),
-                    "retrieved_rank": r.get("retrieved_rank"),
-                    "compressed": r.get("compressed", {}),
-                    "service": id_to_service.get(api_id, {}),
-                }
-            )
-        ranked = rank_subtask(
-            llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
-            user_query=user_goal,
-            subtask=sub,
-            candidates=candidates_for_ranker,
-            prompt_path=ranker_prompt_path,
-            debug_raw_path=str(mode_dir / f"2_ranker_raw_s{sub_id}.txt"),
-        )
-        for item in ranked:
-            api_id = str(item.get("api_id", "")).strip()
-            retrieved = next((x for x in retrieved_by_subtask.get(sub_id, []) if str(x.get("api_id", "")).strip() == api_id), {})
-            item["retrieved_rank"] = retrieved.get("retrieved_rank")
-            item["rag_score"] = retrieved.get("rag_score", 0.0)
-            item["service"] = id_to_service.get(api_id, {})
-        ranked_by_subtask[sub_id] = ranked
-        _write_json(mode_dir / f"2_ranked_s{sub_id}.json", ranked)
-    return ranked_by_subtask
-
-
-def _rank_subtasks_topsis(
-    *,
-    subtasks: List[Dict[str, Any]],
-    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]],
-    id_to_service_with_qos: Dict[str, Dict[str, Any]],
-    mode_dir: Path,
-) -> Dict[str, List[Dict[str, Any]]]:
-    weights = list(CONFIG.qos_metric_weights)
-    ranked_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
-    for sub in subtasks:
-        sub_id = str(sub.get("id", "unknown"))
-        retrieved = retrieved_by_subtask.get(sub_id, [])
-        valid_rows: List[Dict[str, Any]] = []
-        valid_matrix: List[List[float]] = []
-        missing_rows: List[Dict[str, Any]] = []
+        retrieved_by_subtask[sub_id] = retrieved
+        _write_json(out_dir / "shared" / f"1_retriever_s{sub_id}.json", retrieved)
         for item in retrieved:
-            api_id = str(item.get("api_id", "")).strip()
-            service = id_to_service_with_qos.get(api_id, {})
-            qos_source = service.get("qos") if isinstance(service.get("qos"), dict) else service
-            qos_vals = _extract_qos(qos_source if isinstance(qos_source, dict) else {})
-            row = {
-                "api_id": api_id,
-                "reason": "TOPSIS QoS ranking.",
-                "retrieved_rank": item.get("retrieved_rank"),
-                "rag_score": item.get("rag_score", 0.0),
-                "service": service,
-            }
-            if qos_vals is None:
-                row["reason"] = "TOPSIS QoS ranking: missing QoS, placed at bottom."
-                missing_rows.append(row)
-            else:
-                valid_rows.append(row)
-                valid_matrix.append(qos_vals)
-
-        ranked: List[Dict[str, Any]] = []
-        if valid_rows:
-            import numpy as np
-            X = np.asarray(valid_matrix, dtype=float)
-            scores, ranking_idx = _run_topsis_pydecision(X, weights)
-            for order_idx, row_idx in enumerate(ranking_idx, start=1):
-                row = dict(valid_rows[row_idx])
-                row["mode_rank"] = order_idx
-                row["reason"] = "TOPSIS QoS ranking with equal metric weights."
-                ranked.append(row)
-        for miss in missing_rows:
-            miss = dict(miss)
-            miss["mode_rank"] = len(ranked) + 1
-            ranked.append(miss)
-        ranked_by_subtask[sub_id] = ranked
-        _write_json(mode_dir / f"2_ranked_s{sub_id}.json", ranked)
-    return ranked_by_subtask
+            api_id = str(item.get("api_id", ""))
+            if api_id and api_id not in seen:
+                seen.add(api_id)
+                pick_ids.append(api_id)
+    return retrieved_by_subtask, _fetch_catalog_subset(pick_ids, with_qos=False), _fetch_catalog_subset(pick_ids, with_qos=True)
 
 
-def _run_deterministic_selector(
-    *,
-    subtasks: List[Dict[str, Any]],
-    ranked_by_subtask: Dict[str, List[Dict[str, Any]]],
-    relevancy_by_subtask: Dict[str, Dict[str, Dict[str, Any]]],
-    mode_dir: Path,
-) -> List[Dict[str, Any]]:
-    selected_all: List[Dict[str, Any]] = []
+def _candidate_rows(retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], *, enrich: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        row = {
+            "api_id": api_id,
+            "rag_score": r.get("rag_score", 0.0),
+            "retrieved_rank": r.get("retrieved_rank"),
+            "compressed": r.get("compressed", {}),
+            "service": id_to_service.get(api_id, {}),
+        }
+        if enrich and api_id in enrich:
+            row.update(enrich[api_id])
+        rows.append(row)
+    return rows
+
+
+def _compute_topsis_metadata(retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    rows = []
+    api_ids = []
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        svc = id_to_service.get(api_id, {})
+        qos = (svc.get("qos") or {}) if isinstance(svc.get("qos"), dict) else {}
+        vec = _extract_qos(qos)
+        if vec is not None:
+            rows.append(vec)
+            api_ids.append(api_id)
+    out: Dict[str, Dict[str, Any]] = {}
+    if rows:
+        import numpy as np
+        scores, ranking = _run_topsis_pydecision(np.asarray(rows, dtype=float), [1.0, 1.0, 1.0])
+        for idx, api_id in enumerate(api_ids):
+            out[api_id] = {"topsis_score": float(scores[idx])}
+        for rank, row_idx in enumerate(ranking, start=1):
+            out[api_ids[row_idx]]["topsis_rank"] = rank
+    # Missing QoS at bottom with valid rank
+    next_rank = len(api_ids) + 1
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        if api_id not in out:
+            out[api_id] = {"topsis_score": None, "topsis_rank": next_rank}
+            next_rank += 1
+    return out
+
+
+def _deterministic_topsis_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    enriched = []
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        m = topsis_meta.get(api_id, {})
+        enriched.append((int(m.get("topsis_rank") or 10**9), api_id, m.get("topsis_score")))
+    enriched.sort(key=lambda x: x[0])
+    return [{"api_id": api_id, "reason": "Deterministic QoS ordering."} for _, api_id, _ in enriched]
+
+
+def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, relevancy_map: Dict[tuple[str, str], Dict[str, Any]], out_dir: Path) -> List[Dict[str, Any]]:
+    """Deterministic hybrid ranking: relevant APIs first (by TOPSIS rank), then non-relevant (also by TOPSIS rank)."""
+    relevant_enriched = []
+    non_relevant_enriched = []
+    
+    debug_lines = []
+    debug_lines.append(f"=== HYBRID RANKING DEBUG for sub_id={sub_id} ===")
+    debug_lines.append(f"relevancy_map has {len(relevancy_map)} total entries")
+    debug_lines.append(f"Sample keys from relevancy_map: {list(relevancy_map.keys())[:3]}")
+    debug_lines.append(f"Retrieved has {len(retrieved)} APIs")
+    debug_lines.append(f"TOPSIS meta has {len(topsis_meta)} entries")
+    
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        m = topsis_meta.get(api_id, {})
+        topsis_rank = int(m.get("topsis_rank") or 10**9)
+        topsis_score = m.get("topsis_score")
+        
+        # Check if API is marked as relevant in the cache
+        key = (sub_id, api_id)
+        rel_entry = relevancy_map.get(key, {})
+        is_relevant = int(rel_entry.get("relevant", 0)) == 1
+        
+        if len(debug_lines) < 15:  # Only capture first few for brevity
+            debug_lines.append(f"  {api_id}: key={key}, relevant={is_relevant}, topsis_rank={topsis_rank}, in_map={key in relevancy_map}")
+        
+        if is_relevant:
+            relevant_enriched.append((topsis_rank, api_id, topsis_score, "Relevant"))
+        else:
+            non_relevant_enriched.append((topsis_rank, api_id, topsis_score, "Non-relevant"))
+    
+    debug_lines.append(f"Filtered: {len(relevant_enriched)} relevant, {len(non_relevant_enriched)} non-relevant")
+    
+    # Sort both lists by TOPSIS rank
+    relevant_enriched.sort(key=lambda x: x[0])
+    non_relevant_enriched.sort(key=lambda x: x[0])
+    
+    # Combine: relevant first, then non-relevant
+    combined = relevant_enriched + non_relevant_enriched
+    
+    debug_lines.append(f"Final order (first 10): {[f'{api_id[:20]}' for _, api_id, _, _ in combined[:10]]}")
+    if relevant_enriched:
+        debug_lines.append(f"Relevant order: {[f'{api_id[:20]}' for _, api_id, _, _ in relevant_enriched[:5]]}")
+    
+    debug_output = "\n".join(debug_lines)
+    print(debug_output)
+    
+    # Write to debug file
+    debug_file = out_dir / "hybrid_debug.log"
+    with open(debug_file, "a") as f:
+        f.write(debug_output + "\n")
+    
+    result = [
+        {"api_id": api_id, "reason": f"Deterministic hybrid: {rel_status} ranked by QoS (TOPSIS rank {rank})."} 
+        for rank, api_id, _, rel_status in combined
+    ]
+    
+    return result
+
+
+def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], extras: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+    rag_map = {str(r.get("api_id")): r for r in retrieved}
+    full = []
+    for idx, item in enumerate(ranked, start=1):
+        api_id = str(item.get("api_id", ""))
+        base = rag_map.get(api_id, {})
+        row = {
+            "api_id": api_id,
+            "mode_rank": idx,
+            "retrieved_rank": base.get("retrieved_rank"),
+            "rag_score": base.get("rag_score"),
+            "reason": item.get("reason", ""),
+            "service": id_to_service.get(api_id, {}),
+        }
+        if extras and api_id in extras:
+            row.update(extras[api_id])
+        full.append(row)
+    _write_json(mode_dir / f"2_ranked_s{sub_id}.json", full)
+    return full
+
+
+def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]]:
+    data = json.loads(rows_path.read_text(encoding="utf-8"))
+    out = {}
+    for row in data:
+        key = (str(row.get("Sub Task")), str(row.get("Selected_API")))
+        out[key] = row
+    return out
+
+
+def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], relevancy_map: Dict[tuple[str, str], Dict[str, Any]], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
+    mode_dir = out_dir / mode_name
+    selected_all = []
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        selected, trace = select_ranked_relevant_apis(
-            ranked_candidates=ranked_by_subtask.get(sub_id, []),
-            relevancy_map=relevancy_by_subtask.get(sub_id, {}),
-            fallback_top_n=CONFIG.selector_fallback_top_n,
-        )
-        for idx, item in enumerate(selected, start=1):
-            item["selected_rank"] = idx
-            item["subtask_id"] = sub_id
+        ranked_rows = ranked_full.get(sub_id, [])
+        relevant = [r for r in ranked_rows if int(relevancy_map.get((sub_id, str(r.get("api_id"))), {}).get("API Relevancy (0/1)") or 0) == 1]
+        fallback_used = False
+        if not relevant:
+            relevant = ranked_rows[: CONFIG.selector_top_n]
+            fallback_used = True
+        selected = []
+        for idx, r in enumerate(relevant, start=1):
+            row = dict(r)
+            row["selected_rank"] = idx
+            row["score"] = (len(relevant) - idx + 1) / float(len(relevant) or 1)
+            row["subtask_id"] = sub_id
+            row["selector_reason"] = "Deterministic selection from shared relevancy and mode rank."
+            row["fallback_used"] = fallback_used
+            selected.append(row)
         selected_all.extend(selected)
         _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
-        _write_json(mode_dir / f"3_selected_trace_s{sub_id}.json", trace)
-    return selected_all
+        _write_json(mode_dir / f"3_selected_trace_s{sub_id}.json", {"fallback_used": fallback_used, "selected_count": len(selected)})
+    planner = planner_call(llm_call=lambda p: llm_call("planner", PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
+    _write_json(mode_dir / "4_planner.json", planner)
+    return {"selected": selected_all, "planner": planner}
 
 
-def _run_planner(*, llm_call, user_goal: str, subtasks: List[Dict[str, Any]], selected_all: List[Dict[str, Any]], prompt_path: str) -> Dict[str, Any]:
-    return planner_call(
-        llm_call=lambda p: llm_call("planner", PLANNER_SYS, p),
-        user_goal=user_goal,
-        ranked_top=selected_all,
-        subtasks=subtasks,
-        prompt_path=prompt_path,
-    )
-
-
-def run_autogen_once(
-    user_goal: str,
-    provider: str | None = None,
-    model: str | None = None,
-    query_id: str | None = None,
-    query_title: str | None = None,
-    run_tag: str | None = None,
-) -> Tuple[Path, Path | None]:
+def run_autogen_once(user_goal: str, provider: str | None = None, model: str | None = None, query_id: str | None = None, query_title: str | None = None, run_tag: str | None = None) -> Tuple[Path, Path | None]:
     backend = make_backend(provider=provider, model=model)
     model_tag = backend.name()
     llm_call = _build_llm_call(backend)
     out_dir = _run_dir(model_tag, query_id=query_id, run_tag=run_tag)
 
-    raw_subtasks = decompose_goal(
-        llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p),
-        user_goal=user_goal,
-    )
+    raw_subtasks = decompose_goal(llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p), user_goal=user_goal)
     subtasks = raw_subtasks
     _write_json(out_dir / "0_decomposer_raw.json", raw_subtasks)
-    _write_json(out_dir / "0_subtask_normalizer.json", {"disabled": True, "subtasks": subtasks})
     _write_json(out_dir / "0_decomposer.json", subtasks)
 
-    no_qos_catalog = load_catalog_map(with_qos=False)
-    with_qos_catalog = load_catalog_map(with_qos=True)
+    retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
 
-    shared_dir = out_dir / "shared"
-    shared_dir.mkdir(parents=True, exist_ok=True)
-    shared_retrieved_by_subtask, id_to_service_no_qos, id_to_service_with_qos = _prepare_shared_candidates(
-        user_goal=user_goal,
-        subtasks=subtasks,
-        index_dir=CONFIG.shared_index_dir,
-        no_qos_catalog=no_qos_catalog,
-        with_qos_catalog=with_qos_catalog,
-    )
+    ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
+
+    relevancy_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+    debug_file = out_dir / "hybrid_debug.log"
+    try:
+        # Try to load relevancy evaluation cache from standard location
+        relevancy_cache_path = Path("results/relevancy_eval/relevancy_cache.json")
+        if relevancy_cache_path.exists():
+            relevancy_data = json.loads(relevancy_cache_path.read_text(encoding="utf-8"))
+            # Cache format: {"query_subtask_api_id": {"relevant": 0/1, ...}, ...}
+            # Convert to map: {(subtask_id, api_id): {...}, ...}
+            # IMPORTANT: Only load entries for THIS query_id to avoid cross-query contamination
+            if isinstance(relevancy_data, dict):
+                for cache_key, cache_val in relevancy_data.items():
+                    # Parse key format: "query_subtask_api_id" (e.g., "q01_1_api_id_name")
+                    parts = cache_key.split("_", 2)  # Split into [query_id, subtask_id, api_id...]
+                    if len(parts) >= 3:
+                        cache_query_id = parts[0]  # e.g., "q01"
+                        sub_id = parts[1]           # e.g., "1"
+                        api_id = "_".join(parts[2:])  # Rejoin api_id parts in case it has underscores
+                        # ONLY include entries for the current query
+                        if cache_query_id == query_id:
+                            relevancy_map[(sub_id, api_id)] = cache_val
+                with open(debug_file, "w") as f:
+                    f.write(f"[RELEVANCY LOAD] Query: {query_id}\n")
+                    f.write(f"[RELEVANCY LOAD] Loaded {len(relevancy_map)} entries from cache for this query\n")
+                    f.write(f"[RELEVANCY LOAD] Sample keys: {list(relevancy_map.keys())[:10]}\n")
+    except Exception as e:
+        with open(debug_file, "w") as f:
+            f.write(f"[RELEVANCY LOAD] Error: {e}\n")
+        pass
+
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        _write_json(shared_dir / f"1_retriever_s{sub_id}.json", shared_retrieved_by_subtask.get(sub_id, []))
+        retrieved = retrieved_by_subtask[sub_id]
 
-    no_qos_dir = out_dir / "no_qos"
-    qos_pure_dir = out_dir / "qos_pure_llm"
-    qos_topsis_dir = out_dir / "qos_topsis"
-    for d in [no_qos_dir, qos_pure_dir, qos_topsis_dir]:
-        d.mkdir(parents=True, exist_ok=True)
+        no_qos_candidates = _candidate_rows(retrieved, no_qos_services)
+        no_qos_ranked = rank_subtask(llm_call=lambda p: llm_call("ranker", RANKER_SYS, p), user_query=user_goal, subtask=sub, candidates=no_qos_candidates, prompt_path="prompts/ranker_no_qos.md", debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"))
+        ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(out_dir / "no_qos", sub_id, no_qos_ranked, retrieved, no_qos_services)
 
-    no_qos_ranked = _rank_subtasks_llm(
-        llm_call=llm_call,
-        user_goal=user_goal,
-        subtasks=subtasks,
-        retrieved_by_subtask=shared_retrieved_by_subtask,
-        id_to_service=id_to_service_no_qos,
-        ranker_prompt_path="prompts/ranker_no_qos.md",
-        mode_dir=no_qos_dir,
-    )
-    qos_pure_ranked = _rank_subtasks_llm(
-        llm_call=llm_call,
-        user_goal=user_goal,
-        subtasks=subtasks,
-        retrieved_by_subtask=shared_retrieved_by_subtask,
-        id_to_service=id_to_service_with_qos,
-        ranker_prompt_path="prompts/ranker.md",
-        mode_dir=qos_pure_dir,
-    )
-    qos_topsis_ranked = _rank_subtasks_topsis(
-        subtasks=subtasks,
-        retrieved_by_subtask=shared_retrieved_by_subtask,
-        id_to_service_with_qos=id_to_service_with_qos,
-        mode_dir=qos_topsis_dir,
-    )
-
-    eval_out: Path | None = None
-    relevancy_by_subtask: Dict[str, Dict[str, Dict[str, Any]]] = {}
-    try:
-        eval_dir = out_dir / "relevancy_eval"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        eval_cache = eval_dir / "relevancy_cache.json"
-        eval_out, relevancy_by_subtask = evaluate_query(
-            query_dir=out_dir,
-            query_id=query_id,
-            output_dir=eval_dir,
-            cache_path=eval_cache,
-            provider=provider or "azure_foundry",
-            model=model,
+        pure_qos_candidates = []
+        for r in retrieved:
+            api_id = str(r.get("api_id", ""))
+            svc = with_qos_services.get(api_id, {})
+            qos = (svc.get("qos") or {}) if isinstance(svc.get("qos"), dict) else {}
+            pure_qos_candidates.append({
+                "api_id": api_id,
+                "rt_ms": qos.get("rt_ms"),
+                "tp_rps": qos.get("tp_rps"),
+                "availability": qos.get("availability"),
+            })
+        pure_qos_meta = score_qos_llm(
+            llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
+            candidates=pure_qos_candidates,
+            prompt_path="prompts/qos_score_llm.md",
+            debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
         )
-        _write_json(
-            out_dir / "evaluation_result.json",
-            {
-                "excel": str(eval_out),
-                "output_dir": str(eval_dir),
-                "cache_path": str(eval_cache),
-            },
-        )
-    except Exception as e:
-        (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
+        pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
+        pure_ranked = rank_subtask(llm_call=lambda p: llm_call("ranker", RANKER_SYS, p), user_query=user_goal, subtask=sub, candidates=pure_candidates, prompt_path="prompts/ranker_qos_pure_llm.md", debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"))
+        ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(out_dir / "qos_pure_llm", sub_id, pure_ranked, retrieved, with_qos_services, pure_qos_meta)
+        _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
 
-    no_qos_selected = _run_deterministic_selector(
-        subtasks=subtasks,
-        ranked_by_subtask=no_qos_ranked,
-        relevancy_by_subtask=relevancy_by_subtask,
-        mode_dir=no_qos_dir,
-    )
-    qos_pure_selected = _run_deterministic_selector(
-        subtasks=subtasks,
-        ranked_by_subtask=qos_pure_ranked,
-        relevancy_by_subtask=relevancy_by_subtask,
-        mode_dir=qos_pure_dir,
-    )
-    qos_topsis_selected = _run_deterministic_selector(
-        subtasks=subtasks,
-        ranked_by_subtask=qos_topsis_ranked,
-        relevancy_by_subtask=relevancy_by_subtask,
-        mode_dir=qos_topsis_dir,
-    )
+        topsis_meta = _compute_topsis_metadata(retrieved, with_qos_services)
+        topsis_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
+        ranked_full_by_mode["qos_topsis"][sub_id] = _write_ranked(out_dir / "qos_topsis", sub_id, topsis_ranked, retrieved, with_qos_services, topsis_meta)
 
-    _write_json(no_qos_dir / "4_planner.json", _run_planner(llm_call=llm_call, user_goal=user_goal, subtasks=subtasks, selected_all=no_qos_selected, prompt_path="prompts/planner_no_qos.md"))
-    _write_json(qos_pure_dir / "4_planner.json", _run_planner(llm_call=llm_call, user_goal=user_goal, subtasks=subtasks, selected_all=qos_pure_selected, prompt_path="prompts/planner.md"))
-    _write_json(qos_topsis_dir / "4_planner.json", _run_planner(llm_call=llm_call, user_goal=user_goal, subtasks=subtasks, selected_all=qos_topsis_selected, prompt_path="prompts/planner.md"))
+        # Provisional hybrid order before fresh relevancy is available.
+        # This will be rebuilt deterministically after per-run relevancy evaluation completes.
+        hybrid_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
+        ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
 
     run_config = CONFIG.as_dict()
     run_config.update({"provider": provider, "model": backend.name(), "query_id": query_id, "query_title": query_title, "modes": MODE_ORDER})
     _write_json(out_dir / "run_config.json", run_config)
-    _write_json(out_dir / "meta.json", {
-        "query_id": query_id,
-        "query_title": query_title,
-        "user_goal": user_goal,
-        "model_tag": backend.name(),
-        "num_subtasks": len(subtasks),
-        "shared_retrieval": True,
-        "shared_rag_top_k": CONFIG.rag_top_k,
-        "evaluation_triggered": True,
-        "modes": MODE_ORDER,
-    })
+
+    eval_out: Path | None = None
+    relevancy_rows_path: Path | None = None
+    try:
+        eval_dir = out_dir / "relevancy_eval"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        eval_cache = eval_dir / "relevancy_cache.json"
+        eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
+        relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
+        _write_json(out_dir / "evaluation_result.json", {"excel": str(eval_out), "rows_json": str(relevancy_rows_path), "output_dir": str(eval_dir), "cache_path": str(eval_cache)})
+    except Exception as e:
+        (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
+
+    summary_selected = {}
+    if relevancy_rows_path and relevancy_rows_path.exists():
+        relevancy_map = _load_relevancy_map(relevancy_rows_path)
+
+        # Rebuild hybrid ranking now that fresh per-run relevancy labels are available.
+        with open(debug_file, "a", encoding="utf-8") as f:
+            f.write(f"[HYBRID] Rebuilding deterministic hybrid ranking using {len(relevancy_map)} fresh relevancy rows.\n")
+
+        for sub in subtasks:
+            sub_id = str(sub.get("id", "unknown"))
+            retrieved = retrieved_by_subtask[sub_id]
+            topsis_meta = _compute_topsis_metadata(retrieved, with_qos_services)
+            hybrid_ranked = _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map, out_dir)
+            ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
+
+        # Regenerate evaluation outputs so Excel/rows reflect corrected hybrid mode ranks.
+        try:
+            eval_dir = out_dir / "relevancy_eval"
+            eval_cache = eval_dir / "relevancy_cache.json"
+            eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
+            relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
+            relevancy_map = _load_relevancy_map(relevancy_rows_path)
+            _write_json(out_dir / "evaluation_result.json", {"excel": str(eval_out), "rows_json": str(relevancy_rows_path), "output_dir": str(eval_dir), "cache_path": str(eval_cache), "hybrid_rebuilt": True})
+        except Exception as e:
+            (out_dir / "evaluation_rerun_error.txt").write_text(str(e), encoding="utf-8")
+
+        for mode in MODE_ORDER:
+            planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
+            result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], relevancy_map, llm_call, user_goal, out_dir, planner_prompt)
+            summary_selected[f"{mode}_selected"] = len(result["selected"])
+
+    _write_json(out_dir / "meta.json", {"query_id": query_id, "query_title": query_title, "user_goal": user_goal, "model_tag": backend.name(), "num_subtasks": len(subtasks), "evaluation_triggered": True, "modes": MODE_ORDER, "summary": summary_selected})
 
     print(f"Saved run to {out_dir}")
     if eval_out is not None:
         print(f"Saved evaluation to {eval_out}")
-    _throttle_after_query(provider)
     return out_dir, eval_out
 
 
@@ -444,4 +478,4 @@ if __name__ == "__main__":
         print(f"Running query {i}/{len(queries)} | {qid} | {title}")
         print(f"User goal: {goal}")
         print("=" * 80)
-        run_autogen_once(user_goal=goal, provider=provider, model=None, query_id=qid, query_title=title, run_tag="run_5")
+        run_autogen_once(user_goal=goal, provider=provider, model=None, query_id=qid, query_title=title, run_tag="run_tests")

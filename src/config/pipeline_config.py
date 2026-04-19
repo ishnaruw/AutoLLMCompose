@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict, Any
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    queries_path: Path = Path("data/queries/user_queries.jsonl")
+    queries_path: Path = Path("data/queries/one_user_query.jsonl")
     prefix_run_dir_with_query_id: bool = True
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
@@ -15,8 +15,7 @@ class PipelineConfig:
     rag_top_k: int = 40
     ranker_max_candidates: int = 40
     ranker_pool_n: int = 40
-    selector_fallback_top_n: int = 5
-    qos_metric_weights: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    selector_top_n: int = 5
 
     def as_dict(self) -> Dict[str, Any]:
         data = asdict(self)
