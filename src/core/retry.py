@@ -1,5 +1,15 @@
+import re
 import random
 import time
+
+
+_RETRY_AFTER_RE = re.compile(
+    r"try again in\s*"
+    r"(?:(?P<hours>\d+(?:\.\d+)?)h)?"
+    r"(?:(?P<minutes>\d+(?:\.\d+)?)m)?"
+    r"(?:(?P<seconds>\d+(?:\.\d+)?)s)?",
+    re.IGNORECASE,
+)
 
 
 def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
@@ -44,6 +54,22 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
     return False, ""
 
 
+def _extract_retry_after_seconds(exc: Exception) -> float | None:
+    """
+    Parse provider hints like "Please try again in 14m24.864s".
+    Returns None when no concrete wait time is present.
+    """
+    match = _RETRY_AFTER_RE.search(str(exc))
+    if not match:
+        return None
+
+    hours = float(match.group("hours") or 0.0)
+    minutes = float(match.group("minutes") or 0.0)
+    seconds = float(match.group("seconds") or 0.0)
+    total = (hours * 3600.0) + (minutes * 60.0) + seconds
+    return total if total > 0 else None
+
+
 def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
     """
     Retry wrapper with exponential backoff + jitter.
@@ -66,9 +92,15 @@ def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
                 print(f"[{name}] giving up after {attempt + 1} attempts: {e}")
                 raise
 
-            sleep_s = min(cap, base * (2 ** attempt)) + random.uniform(0, 0.75)
+            retry_after_s = _extract_retry_after_seconds(e)
+            if retry_after_s is not None:
+                sleep_s = retry_after_s + random.uniform(0, 0.75)
+                detail = f"provider requested {retry_after_s:.1f}s"
+            else:
+                sleep_s = min(cap, base * (2 ** attempt)) + random.uniform(0, 0.75)
+                detail = f"exponential backoff up to {cap:.1f}s"
             print(
                 f"[{name}] retryable error ({reason}), sleeping {sleep_s:.1f}s "
-                f"(attempt {attempt + 1}/{max_retries})"
+                f"(attempt {attempt + 1}/{max_retries}; {detail})"
             )
             time.sleep(sleep_s)

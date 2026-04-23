@@ -82,7 +82,7 @@ pip install -r requirements.txt
 
 ### 2. Configure environment variables
 
-MAOF currently supports **Azure OpenAI** deployments (default: `gpt-4o-dspy`).
+MAOF currently supports **Azure OpenAI**, **Mistral**, and **Azure AI Foundry** backends.
 
 Create a `.env` file in the root with:
 
@@ -91,6 +91,21 @@ AZURE_OPENAI_API_KEY=your_azure_api_key
 AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
 AZURE_OPENAI_API_VERSION=2024-05-01-preview
 AZURE_OPENAI_DEPLOYMENT=gpt-4o-dspy
+
+MISTRAL_API_KEY=your_mistral_api_key
+MISTRAL_MODEL=mistral-small-latest
+
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=llama-3.3-70b-versatile
+
+TOGETHER_API_KEY=your_together_api_key
+TOGETHER_BASE_URL=https://api.together.xyz/v1
+TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
+
+AZURE_FOUNDRY_API_KEY=your_foundry_api_key
+AZURE_FOUNDRY_ENDPOINT=https://your-resource.services.ai.azure.com
+AZURE_FOUNDRY_API_VERSION=2024-05-01-preview
+AZURE_FOUNDRY_MODEL=DeepSeek-R1-0528
 ```
 
 Alternatively, export them directly:
@@ -98,6 +113,10 @@ Alternatively, export them directly:
 ```bash
 export AZURE_OPENAI_API_KEY=...
 export AZURE_OPENAI_ENDPOINT=...
+export GROQ_API_KEY=...
+export TOGETHER_API_KEY=...
+export AZURE_FOUNDRY_API_KEY=...
+export AZURE_FOUNDRY_ENDPOINT=...
 ```
 
 ---
@@ -228,4 +247,3 @@ See [LICENSE](LICENSE) for details.
 
 **Researcher:** Ishwarya Narayana Subramanian (University of Washington Tacoma)  
 Contact: ishnaruw@uw.edu
-

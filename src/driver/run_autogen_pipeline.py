@@ -13,7 +13,11 @@ from src.agents.retriever import collect_candidates
 from src.config import CONFIG
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_eval import evaluate_query, evaluate_retrieval_relevancy
+from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
+from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
+from src.eval.mode_anomaly_report import write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
+from src.llm.autogen_runner import run_autogen_agent
 from src.llm.backends import make_backend
 from src.tools.fetch_services import fetch_services
 
@@ -45,6 +49,7 @@ MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 PROVIDER_POLICY = {
     "mistral": {"sleep_after_query": 0.5},
     "groq": {"sleep_after_query": 0.8},
+    "together": {"sleep_after_query": 0.5},
     "gemini": {"sleep_after_query": 0.4},
     "azure_foundry": {"sleep_after_query": 0.2},
     "azure": {"sleep_after_query": 0.2},
@@ -76,6 +81,7 @@ def choose_provider_interactive() -> str:
     options = [
         ("mistral", "Mistral"),
         ("groq", "Groq"),
+        ("together", "Together AI"),
         ("azure_foundry", "Azure (DeepSeek via Foundry endpoint)"),
         ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)"),
     ]
@@ -132,6 +138,18 @@ def _fetch_catalog_subset(api_ids: List[str], with_qos: bool) -> Dict[str, Dict[
 def _build_llm_call(backend):
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
         temp = 0.2 if role_name == "planner" else 0.0
+        if CONFIG.use_autogen_agents:
+            return call_with_backoff(
+                lambda: run_autogen_agent(
+                    backend=backend,
+                    role_name=role_name,
+                    system_message=system_msg,
+                    prompt=prompt,
+                    temperature=temp,
+                    force_json=True,
+                ),
+                name=role_name,
+            )
         return call_with_backoff(lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True), name=role_name)
     return llm_call
 
@@ -139,6 +157,15 @@ def _build_llm_call(backend):
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _to_run_relative(path: Path | None, run_dir: Path) -> str | None:
+    if path is None:
+        return None
+    try:
+        return str(path.resolve().relative_to(run_dir.resolve()))
+    except Exception:
+        return str(path)
 
 
 def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_dir: Path) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
@@ -291,29 +318,55 @@ def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]
     return out
 
 
-def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], relevancy_map: Dict[tuple[str, str], Dict[str, Any]], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
+def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
+    data = json.loads(rows_path.read_text(encoding="utf-8"))
+    relevant_api_ids_by_subtask: Dict[str, set[str]] = {}
+    for row in data:
+        sub_id = str(row.get("Sub Task", row.get("subtask_id", "")))
+        api_id = str(row.get("Selected_API", row.get("api_id", "")))
+        relevant = row.get("API Relevancy (0/1)", row.get("relevant", 0))
+        if not sub_id or not api_id or int(relevant or 0) != 1:
+            continue
+        relevant_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
+    return {sub_id: len(api_ids) for sub_id, api_ids in relevant_api_ids_by_subtask.items()}
+
+
+def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], planner_top_n: Dict[str, int], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
     mode_dir = out_dir / mode_name
     selected_all = []
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         ranked_rows = ranked_full.get(sub_id, [])
-        relevant = [r for r in ranked_rows if int(relevancy_map.get((sub_id, str(r.get("api_id"))), {}).get("API Relevancy (0/1)") or 0) == 1]
-        fallback_used = False
-        if not relevant:
-            relevant = ranked_rows[: CONFIG.selector_top_n]
-            fallback_used = True
+        dynamic_top_n = int(planner_top_n.get(sub_id, 0) or 0)
+        fallback_used = dynamic_top_n <= 0
+        selected_limit = dynamic_top_n if dynamic_top_n > 0 else CONFIG.selector_top_n
+        selected_limit = min(selected_limit, len(ranked_rows))
+        selected_rows = ranked_rows[:selected_limit]
+        top_n_source = "final_api_relevancy" if dynamic_top_n > 0 else "selector_top_n_fallback"
         selected = []
-        for idx, r in enumerate(relevant, start=1):
+        for idx, r in enumerate(selected_rows, start=1):
             row = dict(r)
             row["selected_rank"] = idx
-            row["score"] = (len(relevant) - idx + 1) / float(len(relevant) or 1)
+            row["score"] = (len(selected_rows) - idx + 1) / float(len(selected_rows) or 1)
             row["subtask_id"] = sub_id
-            row["selector_reason"] = "Deterministic selection from shared relevancy and mode rank."
+            row["selector_reason"] = "Deterministic selection from mode rank using a shared per-subtask top-n cutoff."
+            row["planner_top_n"] = selected_limit
+            row["planner_top_n_source"] = top_n_source
             row["fallback_used"] = fallback_used
             selected.append(row)
         selected_all.extend(selected)
         _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
-        _write_json(mode_dir / f"3_selected_trace_s{sub_id}.json", {"fallback_used": fallback_used, "selected_count": len(selected)})
+        _write_json(
+            mode_dir / f"3_selected_trace_s{sub_id}.json",
+            {
+                "planner_top_n": selected_limit,
+                "planner_top_n_source": top_n_source,
+                "dynamic_top_n_from_relevancy": dynamic_top_n,
+                "fallback_used": fallback_used,
+                "available_ranked": len(ranked_rows),
+                "selected_count": len(selected),
+            },
+        )
     planner = planner_call(llm_call=lambda p: llm_call("planner", PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
     _write_json(mode_dir / "4_planner.json", planner)
     return {"selected": selected_all, "planner": planner}
@@ -331,17 +384,40 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     _write_json(out_dir / "debug" / "0_decomposer_raw.json", raw_subtasks)
     _write_json(out_dir / "0_decomposer.json", subtasks)
 
+    run_config = CONFIG.as_dict()
+    run_config.update({"provider": provider, "model": backend.name(), "query_id": query_id, "query_title": query_title, "modes": MODE_ORDER})
+    _write_json(out_dir / "run_config.json", run_config)
+    _write_json(
+        out_dir / "meta.json",
+        {
+            "query_id": query_id,
+            "query_title": query_title,
+            "user_goal": user_goal,
+            "model_tag": backend.name(),
+            "num_subtasks": len(subtasks),
+            "evaluation_triggered": False,
+            "modes": MODE_ORDER,
+        },
+    )
+
     retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
 
     ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
     relevancy_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+    planner_top_n: Dict[str, int] = {}
     retrieval_relevancy_rows_path: Path | None = None
     eval_out: Path | None = None
     relevancy_rows_path: Path | None = None
+    duplicate_audit_xlsx: Path | None = None
+    hallucination_audit_xlsx: Path | None = None
+    mode_anomaly_xlsx: Path | None = None
+    duplicate_audit_json: Path | None = None
+    hallucination_audit_json: Path | None = None
     try:
-        eval_dir = out_dir / "relevancy_eval"
+        eval_dir = out_dir / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "relevancy_cache.json"
+        print(f"[{query_id}] starting retrieval relevancy evaluation")
         retrieval_relevancy_rows_path = evaluate_retrieval_relevancy(
             query_dir=out_dir,
             query_id=query_id,
@@ -350,10 +426,12 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             provider=provider or "azure",
             model=model,
         )
+        print(f"[{query_id}] finished retrieval relevancy evaluation")
         relevancy_map = _load_relevancy_map(retrieval_relevancy_rows_path)
     except Exception as e:
         (out_dir / "retrieval_relevancy_error.txt").write_text(str(e), encoding="utf-8")
 
+    print(f"[{query_id}] starting ranking stages")
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         retrieved = retrieved_by_subtask[sub_id]
@@ -391,36 +469,68 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         hybrid_ranked = _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map)
         ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
 
-    run_config = CONFIG.as_dict()
-    run_config.update({"provider": provider, "model": backend.name(), "query_id": query_id, "query_title": query_title, "modes": MODE_ORDER})
-    _write_json(out_dir / "run_config.json", run_config)
-
     try:
-        eval_dir = out_dir / "relevancy_eval"
+        eval_dir = out_dir / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "relevancy_cache.json"
+        print(f"[{query_id}] building final api relevancy outputs from retrieval cache")
         eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
+        print(f"[{query_id}] finished building final api relevancy outputs")
         relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
+        if relevancy_rows_path.exists():
+            planner_top_n = _load_planner_top_n(relevancy_rows_path)
+
+        duplicate_audit = collect_duplicate_audit_for_run(out_dir)
+        duplicate_audit_json = eval_dir / f"query_{query_id}_duplicate_audit.json"
+        _write_json(duplicate_audit_json, duplicate_audit)
+
+        hallucination_audit = collect_hallucination_audit_for_run(out_dir, CONFIG.catalog_no_qos_path)
+        hallucination_audit_json = eval_dir / f"query_{query_id}_hallucination_audit.json"
+        _write_json(hallucination_audit_json, hallucination_audit)
+
+        mode_anomaly_xlsx = eval_dir / f"query_{query_id}_mode_anomalies.xlsx"
+        write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx)
+
         _write_json(
             out_dir / "evaluation_result.json",
             {
-                "excel": str(eval_out),
-                "rows_json": str(relevancy_rows_path),
-                "retrieval_relevancy_rows_json": str(retrieval_relevancy_rows_path) if retrieval_relevancy_rows_path else None,
-                "output_dir": str(eval_dir),
-                "cache_path": str(eval_cache),
+                "evaluation_dir": _to_run_relative(eval_dir, out_dir),
+                "api_relevancy_excel": _to_run_relative(eval_out, out_dir),
+                "api_relevancy_rows_json": _to_run_relative(relevancy_rows_path, out_dir),
+                "retrieval_relevancy_rows_json": _to_run_relative(retrieval_relevancy_rows_path, out_dir),
+                "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
+                "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
+                "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
+                "cache_path": _to_run_relative(eval_cache, out_dir),
             },
         )
     except Exception as e:
         (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
 
-    summary_selected = {}
-    for mode in MODE_ORDER:
-        planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
-        result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], relevancy_map, llm_call, user_goal, out_dir, planner_prompt)
-        summary_selected[f"{mode}_selected"] = len(result["selected"])
+    summary_selected = {"planner_enabled": CONFIG.planner_enabled}
+    if CONFIG.planner_enabled:
+        for mode in MODE_ORDER:
+            planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
+            result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
+            summary_selected[f"{mode}_selected"] = len(result["selected"])
+    else:
+        summary_selected["planner_skipped_reason"] = "planner disabled in pipeline_config"
 
-    _write_json(out_dir / "meta.json", {"query_id": query_id, "query_title": query_title, "user_goal": user_goal, "model_tag": backend.name(), "num_subtasks": len(subtasks), "evaluation_triggered": True, "modes": MODE_ORDER, "summary": summary_selected})
+    _write_json(
+        out_dir / "meta.json",
+        {
+            "query_id": query_id,
+            "query_title": query_title,
+            "user_goal": user_goal,
+            "model_tag": backend.name(),
+            "num_subtasks": len(subtasks),
+            "evaluation_triggered": True,
+            "evaluation_dir": "evaluation",
+            "planner_enabled": CONFIG.planner_enabled,
+            "modes": MODE_ORDER,
+            "summary": summary_selected,
+        },
+    )
 
     print(f"Saved run to {out_dir}")
     if eval_out is not None:

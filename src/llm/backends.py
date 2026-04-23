@@ -1,15 +1,37 @@
 # src/llm/backends.py
 
-import os
 import json
-from typing import Optional
+import os
+from pathlib import Path
+from typing import Any, Optional
+from urllib import error, parse, request
 
-# Load .env if present (safe to call even if python-dotenv not installed)
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+DEFAULT_AZURE_FOUNDRY_API_VERSION = "2024-05-01-preview"
+DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS = 300
+
+
+def _load_local_dotenv() -> None:
+    env_path = _REPO_ROOT / ".env"
+    if not env_path.exists():
+        return
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip("'").strip('"')
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# Load .env if present.
 try:
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(dotenv_path=_REPO_ROOT / ".env")
 except Exception:
-    pass
+    _load_local_dotenv()
 
 # Azure OpenAI
 try:
@@ -34,13 +56,6 @@ try:
     from google import genai
 except Exception:
     genai = None
-
-# Requests for Azure Foundry Model Inference endpoint
-try:
-    import requests
-except Exception:
-    requests = None
-
 
 def _extract_json_block(text: str) -> Optional[str]:
     """Robustly extract a top-level JSON object from a text response."""
@@ -71,6 +86,119 @@ def _extract_json_block(text: str) -> Optional[str]:
                     except Exception:
                         continue
     return None
+
+
+def _env_first(*names: str, default: Optional[str] = None) -> Optional[str]:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return default
+
+
+def _normalize_foundry_chat_url(raw_endpoint: str, api_version: str) -> str:
+    endpoint = (raw_endpoint or "").strip()
+    if not endpoint:
+        raise RuntimeError("Azure Foundry endpoint is empty")
+
+    parsed = parse.urlparse(endpoint)
+    if not parsed.scheme or not parsed.netloc:
+        raise RuntimeError("Azure Foundry endpoint must be a full HTTPS URL")
+
+    path = parsed.path.rstrip("/")
+    if path.endswith("/chat/completions"):
+        final_path = path
+    elif path.endswith("/models"):
+        final_path = f"{path}/chat/completions"
+    else:
+        final_path = f"{path}/models/chat/completions"
+
+    query = parse.parse_qs(parsed.query, keep_blank_values=True)
+    query.setdefault("api-version", [api_version])
+    final_query = parse.urlencode(query, doseq=True)
+    return parse.urlunparse((parsed.scheme, parsed.netloc, final_path, "", final_query, ""))
+
+
+def _build_foundry_payload(
+    model_name: str,
+    system_message: str,
+    user_prompt: str,
+    temperature: float,
+    max_tokens: Optional[int] = None,
+    force_json: bool = False,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model": model_name,
+        "messages": [
+            {"role": "system", "content": system_message},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = max_tokens
+    if force_json:
+        payload["response_format"] = {"type": "json_object"}
+    return payload
+
+
+def request_azure_foundry_chat(
+    *,
+    endpoint: str,
+    api_key: str,
+    api_version: str,
+    model_name: str,
+    system_message: str,
+    user_prompt: str,
+    temperature: float = 0.0,
+    max_tokens: Optional[int] = None,
+    force_json: bool = False,
+    timeout_seconds: int = DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS,
+) -> tuple[str, dict[str, Any]]:
+    url = _normalize_foundry_chat_url(endpoint, api_version)
+    payload = _build_foundry_payload(
+        model_name=model_name,
+        system_message=system_message,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        force_json=force_json,
+    )
+    req = request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "api-key": api_key,
+        },
+    )
+    try:
+        with request.urlopen(req, timeout=timeout_seconds) as resp:
+            raw = resp.read().decode("utf-8")
+    except error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Azure Foundry request failed with HTTP {exc.code}: {detail}") from exc
+    except error.URLError as exc:
+        raise RuntimeError(f"Azure Foundry request failed: {exc}") from exc
+
+    return url, json.loads(raw)
+
+
+_GROQ_MODEL_ALIASES = {
+    "llama-3.1-70b-versatile": "llama-3.3-70b-versatile",
+    "llama-3.1-70b-specdec": "llama-3.3-70b-specdec",
+    "llama3-70b-8192": "llama-3.3-70b-versatile",
+    "llama3-8b-8192": "llama-3.1-8b-instant",
+}
+
+
+def _resolve_groq_model_name(model_name: str) -> str:
+    name = (model_name or "").strip()
+    resolved = _GROQ_MODEL_ALIASES.get(name, name)
+    if resolved != name:
+        print(f"[groq] Model '{name}' is deprecated; using '{resolved}' instead.", flush=True)
+    return resolved
 
 
 class BaseBackend:
@@ -178,7 +306,8 @@ class GroqBackend(BaseBackend):
         if not api_key:
             raise RuntimeError("GROQ_API_KEY missing")
 
-        self.model_name = model or os.getenv("GROQ_MODEL", "llama-3.1-70b-versatile")
+        configured_model = model or os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        self.model_name = _resolve_groq_model_name(configured_model)
         self._client = OpenAI(
             api_key=api_key,
             base_url="https://api.groq.com/openai/v1",
@@ -195,6 +324,40 @@ class GroqBackend(BaseBackend):
             messages=messages,
             temperature=temperature,
         )
+        return r.choices[0].message.content or ""
+
+
+class TogetherBackend(BaseBackend):
+    provider = "together"
+
+    def __init__(self, model: Optional[str] = None):
+        if OpenAI is None:
+            raise RuntimeError("openai package is not installed")
+
+        api_key = os.getenv("TOGETHER_API_KEY")
+        if not api_key:
+            raise RuntimeError("TOGETHER_API_KEY missing")
+
+        base_url = os.getenv("TOGETHER_BASE_URL", "https://api.together.xyz/v1").rstrip("/")
+        self.model_name = model or os.getenv("TOGETHER_MODEL", "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo")
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+        messages = [
+            {"role": "system", "content": system_message + " Always return a single JSON object."},
+            {"role": "user", "content": user_prompt},
+        ]
+        kwargs = dict(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+        )
+        if force_json:
+            kwargs["response_format"] = {"type": "json_object"}
+        r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""
 
 
@@ -233,44 +396,47 @@ class AzureFoundryBackend(BaseBackend):
     provider = "azure_foundry"
 
     def __init__(self, model: Optional[str] = None):
-        if requests is None:
-            raise RuntimeError("requests package is not installed")
-
-        api_key = os.getenv("AZURE_FOUNDARY_API_KEY")
-        endpoint = os.getenv("AZURE_FOUNDARY_ENDPOINT")
-        api_version = os.getenv("AZURE_FOUNDARY_API_VERSION", "2024-05-01-preview")
-        model_name = model or os.getenv("AZURE_FOUNDARY_MODEL", "deepseek-r1")
+        api_key = _env_first("AZURE_FOUNDRY_API_KEY", "AZURE_FOUNDARY_API_KEY")
+        endpoint = _env_first("AZURE_FOUNDRY_ENDPOINT", "AZURE_FOUNDARY_ENDPOINT")
+        api_version = _env_first(
+            "AZURE_FOUNDRY_API_VERSION",
+            "AZURE_FOUNDARY_API_VERSION",
+            default=DEFAULT_AZURE_FOUNDRY_API_VERSION,
+        )
+        timeout_raw = _env_first(
+            "AZURE_FOUNDRY_TIMEOUT_SECONDS",
+            "AZURE_FOUNDARY_TIMEOUT_SECONDS",
+            default=str(DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS),
+        )
+        model_name = model or _env_first("AZURE_FOUNDRY_MODEL", "AZURE_FOUNDARY_MODEL", default="DeepSeek-R1-0528")
 
         if not api_key or not endpoint:
-            raise RuntimeError("AZURE_FOUNDARY_API_KEY or AZURE_FOUNDARY_ENDPOINT missing")
+            raise RuntimeError(
+                "AZURE_FOUNDRY_API_KEY or AZURE_FOUNDRY_ENDPOINT missing "
+                "(legacy AZURE_FOUNDARY_* names are also supported)"
+            )
 
         self._api_key = api_key
-        self._endpoint = endpoint.rstrip("/")
+        self._url = _normalize_foundry_chat_url(endpoint, api_version)
         self._api_version = api_version
+        try:
+            self._timeout_seconds = max(1, int(str(timeout_raw).strip()))
+        except Exception:
+            self._timeout_seconds = DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS
         self.model_name = model_name
 
     def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
-        url = f"{self._endpoint}/models/chat/completions"
-        params = {"api-version": self._api_version}
-        headers = {
-            "Content-Type": "application/json",
-            "api-key": self._api_key,
-        }
-
-        payload = {
-            "model": self.model_name,
-            "messages": [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_prompt},
-            ],
-        }
-
-        if force_json:
-            payload["response_format"] = {"type": "json_object"}
-
-        r = requests.post(url, params=params, headers=headers, json=payload, timeout=60)
-        r.raise_for_status()
-        data = r.json()
+        _url, data = request_azure_foundry_chat(
+            endpoint=self._url,
+            api_key=self._api_key,
+            api_version=self._api_version,
+            model_name=self.model_name,
+            system_message=system_message,
+            user_prompt=user_prompt,
+            temperature=temperature,
+            force_json=force_json,
+            timeout_seconds=self._timeout_seconds,
+        )
         return data["choices"][0]["message"].get("content", "") or ""
 
 
@@ -283,6 +449,8 @@ def make_backend(provider: Optional[str] = None, model: Optional[str] = None) ->
         return MistralBackend(model=model)
     if provider == "groq":
         return GroqBackend(model=model)
+    if provider in ("together", "together_ai"):
+        return TogetherBackend(model=model)
     if provider in ("google", "gemini"):
         return GeminiBackend(model=model)
     if provider in ("azure_foundry", "foundry", "azure-deepseek", "deepseek"):
@@ -317,4 +485,3 @@ class LMStudioBackend(BaseBackend):
             temperature=temperature,
         )
         return r.choices[0].message.content or ""
-
