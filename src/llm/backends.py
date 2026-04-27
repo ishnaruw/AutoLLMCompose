@@ -6,9 +6,14 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib import error, parse, request
 
+from src.core.retry import call_with_backoff, classify_retryable_error
+from src.core.run_logging import log_line, record_model_switch, record_model_usage
+
 _REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_AZURE_FOUNDRY_API_VERSION = "2024-05-01-preview"
 DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS = 300
+GROQ_MULTI_MODEL_SENTINEL = "multi"
+MAX_GROQ_MULTI_MODELS = 5
 
 
 def _load_local_dotenv() -> None:
@@ -39,7 +44,7 @@ try:
 except Exception:
     AzureOpenAI = None
 
-# OpenAI client (used for Groq too)
+# OpenAI client (used for OpenAI-compatible providers)
 try:
     from openai import OpenAI
 except Exception:
@@ -208,14 +213,36 @@ class BaseBackend:
     def name(self) -> str:
         return f"{self.provider}:{self.model_name}"
 
+    def model_pool(self) -> list[str]:
+        return [self.model_name]
+
+    def active_model_name(self) -> str:
+        return self.model_name
+
+    def multi_model_mode(self) -> bool:
+        return False
+
+    def failover_events(self) -> list[dict[str, Any]]:
+        return []
+
     def chat_json(
         self,
         system_message: str,
         user_prompt: str,
         temperature: float = 0.0,
         force_json: bool = True,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> str:
-        text = self._chat_raw(system_message, user_prompt, temperature, force_json)
+        record_model_usage(provider=self.provider, model=self.active_model_name())
+        text = self._chat_raw(
+            system_message,
+            user_prompt,
+            temperature,
+            force_json,
+            max_tokens=max_tokens,
+            timeout_seconds=timeout_seconds,
+        )
         if not force_json:
             return text or ""
         block = _extract_json_block(text or "")
@@ -227,8 +254,142 @@ class BaseBackend:
         user_prompt: str,
         temperature: float,
         force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
     ) -> str:
         raise NotImplementedError()
+
+
+def _parse_model_list(raw: Optional[str]) -> list[str]:
+    if not raw:
+        return []
+    models: list[str] = []
+    for part in str(raw).split(","):
+        name = part.strip()
+        if name and name not in models:
+            models.append(name)
+    return models
+
+
+def groq_experiment_model_pool() -> list[str]:
+    configured = _parse_model_list(os.getenv("GROQ_MULTI_MODELS"))
+    if not configured:
+        configured = [os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")]
+
+    resolved: list[str] = []
+    for model_name in configured:
+        normalized = _resolve_groq_model_name(model_name)
+        if normalized and normalized not in resolved:
+            resolved.append(normalized)
+    return resolved[:MAX_GROQ_MULTI_MODELS]
+
+
+def use_groq_multi_model_mode(model: Optional[str]) -> bool:
+    explicit_model = str(model or "").strip()
+    if explicit_model.lower() == GROQ_MULTI_MODEL_SENTINEL:
+        return True
+    if explicit_model:
+        return False
+    raw = str(os.getenv("GROQ_MULTI_MODEL_MODE", "")).strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+class FailoverBackend(BaseBackend):
+    def __init__(self, *, provider: str, backends: list[BaseBackend], label: str = GROQ_MULTI_MODEL_SENTINEL):
+        if not backends:
+            raise RuntimeError("FailoverBackend requires at least one backend")
+        self.provider = provider
+        self._backends = backends
+        self._label = label
+        self._active_index = 0
+        self._switch_events: list[dict[str, Any]] = []
+
+    @property
+    def model_name(self) -> str:
+        return self.active_model_name()
+
+    def name(self) -> str:
+        return f"{self.provider}:{self._label}"
+
+    def model_pool(self) -> list[str]:
+        return [backend.model_name for backend in self._backends]
+
+    def active_model_name(self) -> str:
+        return self._backends[self._active_index].model_name
+
+    def multi_model_mode(self) -> bool:
+        return True
+
+    def failover_events(self) -> list[dict[str, Any]]:
+        return [dict(event) for event in self._switch_events]
+
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
+        raise NotImplementedError("FailoverBackend uses chat_json directly")
+
+    def chat_json(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float = 0.0,
+        force_json: bool = True,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
+        last_error: Exception | None = None
+        for _ in range(len(self._backends)):
+            backend = self._backends[self._active_index]
+            try:
+                return call_with_backoff(
+                    lambda: backend.chat_json(
+                        system_message=system_message,
+                        user_prompt=user_prompt,
+                        temperature=temperature,
+                        force_json=force_json,
+                        max_tokens=max_tokens,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                    max_retries=0,
+                    name=f"{self.provider}:{backend.model_name}",
+                )
+            except Exception as exc:
+                last_error = exc
+                should_retry, reason = classify_retryable_error(exc)
+                if reason != "rate_limit" or not should_retry or self._active_index >= len(self._backends) - 1:
+                    raise
+
+                old_model = backend.model_name
+                self._active_index += 1
+                new_model = self._backends[self._active_index].model_name
+                event = {
+                    "reason": reason,
+                    "from_model": old_model,
+                    "to_model": new_model,
+                    "error": str(exc),
+                }
+                self._switch_events.append(event)
+                record_model_switch(
+                    provider=self.provider,
+                    from_model=old_model,
+                    to_model=new_model,
+                    reason=reason,
+                    error=str(exc),
+                )
+                log_line(
+                    f"[llm_failover] provider={self.provider} switching model "
+                    f"{old_model} -> {new_model} after rate limit: {exc}"
+                )
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError("Failover backend exhausted without a concrete error")
 
 
 class AzureBackend(BaseBackend):
@@ -253,7 +414,15 @@ class AzureBackend(BaseBackend):
         )
         self.model_name = deployment
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
         kwargs = dict(
             model=self.model_name,  # deployment name
             temperature=temperature,
@@ -264,6 +433,10 @@ class AzureBackend(BaseBackend):
         )
         if force_json:
             kwargs["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
         r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""
 
@@ -282,7 +455,16 @@ class MistralBackend(BaseBackend):
         self.model_name = model or os.getenv("MISTRAL_MODEL", "mistral-large-latest")
         self._client = Mistral(api_key=api_key)
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
+        del max_tokens, timeout_seconds
         messages = [
             {"role": "system", "content": system_message + " Always return a single JSON object."},
             {"role": "user", "content": user_prompt},
@@ -313,17 +495,30 @@ class GroqBackend(BaseBackend):
             base_url="https://api.groq.com/openai/v1",
         )
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
         # Groq is OpenAI-compatible, but JSON enforcement can vary by model.
         messages = [
             {"role": "system", "content": system_message + " Always return a single JSON object."},
             {"role": "user", "content": user_prompt},
         ]
-        r = self._client.chat.completions.create(
+        kwargs = dict(
             model=self.model_name,
             messages=messages,
             temperature=temperature,
         )
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
+        r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""
 
 
@@ -345,7 +540,15 @@ class TogetherBackend(BaseBackend):
             base_url=base_url,
         )
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
         messages = [
             {"role": "system", "content": system_message + " Always return a single JSON object."},
             {"role": "user", "content": user_prompt},
@@ -357,6 +560,56 @@ class TogetherBackend(BaseBackend):
         )
         if force_json:
             kwargs["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
+        r = self._client.chat.completions.create(**kwargs)
+        return r.choices[0].message.content or ""
+
+
+class FireworksBackend(BaseBackend):
+    provider = "fireworks"
+
+    def __init__(self, model: Optional[str] = None):
+        if OpenAI is None:
+            raise RuntimeError("openai package is not installed")
+
+        api_key = os.getenv("FIREWORKS_API_KEY")
+        if not api_key:
+            raise RuntimeError("FIREWORKS_API_KEY missing")
+
+        base_url = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1").rstrip("/")
+        self.model_name = model or os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-v3p1-8b-instruct")
+        self._client = OpenAI(
+            api_key=api_key,
+            base_url=base_url,
+        )
+
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
+        messages = [
+            {"role": "system", "content": system_message + " Always return a single JSON object."},
+            {"role": "user", "content": user_prompt},
+        ]
+        kwargs = dict(
+            model=self.model_name,
+            messages=messages,
+            temperature=temperature,
+        )
+        if force_json:
+            kwargs["response_format"] = {"type": "json_object"}
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
         r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""
 
@@ -375,7 +628,16 @@ class GeminiBackend(BaseBackend):
         self.model_name = model or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
         self._client = genai.Client(api_key=api_key)
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
+        del temperature, force_json, max_tokens, timeout_seconds
         # Gemini SDK uses generate_content; we'll combine system + user text.
         # Keep it simple and rely on your JSON extraction.
         combined = f"SYSTEM:\n{system_message}\n\nUSER:\n{user_prompt}\n\nReturn a single JSON object only."
@@ -425,7 +687,15 @@ class AzureFoundryBackend(BaseBackend):
             self._timeout_seconds = DEFAULT_AZURE_FOUNDRY_TIMEOUT_SECONDS
         self.model_name = model_name
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
         _url, data = request_azure_foundry_chat(
             endpoint=self._url,
             api_key=self._api_key,
@@ -434,8 +704,9 @@ class AzureFoundryBackend(BaseBackend):
             system_message=system_message,
             user_prompt=user_prompt,
             temperature=temperature,
+            max_tokens=max_tokens,
             force_json=force_json,
-            timeout_seconds=self._timeout_seconds,
+            timeout_seconds=timeout_seconds or self._timeout_seconds,
         )
         return data["choices"][0]["message"].get("content", "") or ""
 
@@ -448,7 +719,14 @@ def make_backend(provider: Optional[str] = None, model: Optional[str] = None) ->
     if provider == "mistral":
         return MistralBackend(model=model)
     if provider == "groq":
+        if use_groq_multi_model_mode(model):
+            return FailoverBackend(
+                provider="groq",
+                backends=[GroqBackend(model=model_name) for model_name in groq_experiment_model_pool()],
+            )
         return GroqBackend(model=model)
+    if provider in ("fireworks", "fireworks_ai"):
+        return FireworksBackend(model=model)
     if provider in ("together", "together_ai"):
         return TogetherBackend(model=model)
     if provider in ("google", "gemini"):
@@ -474,14 +752,27 @@ class LMStudioBackend(BaseBackend):
         # LM Studio does not require a real key, but OpenAI client expects a string
         self._client = OpenAI(api_key=os.getenv("LMSTUDIO_API_KEY", "lmstudio"), base_url=base_url)
 
-    def _chat_raw(self, system_message: str, user_prompt: str, temperature: float, force_json: bool) -> str:
+    def _chat_raw(
+        self,
+        system_message: str,
+        user_prompt: str,
+        temperature: float,
+        force_json: bool,
+        max_tokens: Optional[int] = None,
+        timeout_seconds: Optional[float] = None,
+    ) -> str:
         messages = [
             {"role": "system", "content": system_message + " Return a single JSON object only."},
             {"role": "user", "content": user_prompt},
         ]
-        r = self._client.chat.completions.create(
+        kwargs = dict(
             model=self.model_name,
             messages=messages,
             temperature=temperature,
         )
+        if max_tokens is not None:
+            kwargs["max_tokens"] = max_tokens
+        if timeout_seconds is not None:
+            kwargs["timeout"] = timeout_seconds
+        r = self._client.chat.completions.create(**kwargs)
         return r.choices[0].message.content or ""

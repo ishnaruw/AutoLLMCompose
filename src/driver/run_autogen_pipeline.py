@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -11,6 +12,7 @@ from src.agents.ranker import rank_subtask
 from src.agents.qos_scorer_llm import score_qos_llm
 from src.agents.retriever import collect_candidates
 from src.config import CONFIG
+from src.core.run_logging import clear_run_log, configure_model_usage, configure_run_log, current_model_usage_path, log_line
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_eval import evaluate_query, evaluate_retrieval_relevancy
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
@@ -18,7 +20,7 @@ from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_ru
 from src.eval.mode_anomaly_report import write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.autogen_runner import run_autogen_agent
-from src.llm.backends import make_backend
+from src.llm.backends import GROQ_MULTI_MODEL_SENTINEL, groq_experiment_model_pool, make_backend
 from src.tools.fetch_services import fetch_services
 
 DECOMPOSER_SYS = (
@@ -81,7 +83,7 @@ def choose_provider_interactive() -> str:
     options = [
         ("mistral", "Mistral"),
         ("groq", "Groq"),
-        ("together", "Together AI"),
+        ("fireworks", "Fireworks AI"),
         ("azure_foundry", "Azure (DeepSeek via Foundry endpoint)"),
         ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)"),
     ]
@@ -95,6 +97,32 @@ def choose_provider_interactive() -> str:
             print(f"Selected: {options[int(choice) - 1][1]}\n")
             return provider
         print("Invalid choice. Try again.")
+
+
+def choose_groq_model_interactive() -> str:
+    models = groq_experiment_model_pool()
+    print("Select Groq model mode:")
+    print("  1) Multi-model failover (recommended)")
+    for idx, model_name in enumerate(models, start=2):
+        print(f"  {idx}) Single model: {model_name}")
+    while True:
+        choice = input("Enter choice number: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(models) + 1:
+            selected = int(choice)
+            if selected == 1:
+                print(f"Selected: Groq multi-model failover ({', '.join(models)})\n")
+                return GROQ_MULTI_MODEL_SENTINEL
+            model_name = models[selected - 2]
+            print(f"Selected: Groq single model {model_name}\n")
+            return model_name
+        print("Invalid choice. Try again.")
+
+
+def choose_provider_and_model_interactive() -> tuple[str, str | None]:
+    provider = choose_provider_interactive()
+    if provider == "groq":
+        return provider, choose_groq_model_interactive()
+    return provider, None
 
 
 def _safe_name(text: str) -> str:
@@ -136,10 +164,25 @@ def _fetch_catalog_subset(api_ids: List[str], with_qos: bool) -> Dict[str, Dict[
 
 
 def _build_llm_call(backend):
+    def _lmstudio_limits(role_name: str) -> Dict[str, Any]:
+        limits: Dict[str, Any] = {}
+        if getattr(backend, "provider", "") != "lmstudio":
+            return limits
+        limits["timeout_seconds"] = CONFIG.lmstudio_timeout_seconds
+        if role_name == "ranker":
+            limits["max_tokens"] = CONFIG.lmstudio_ranker_max_tokens
+        return limits
+
+    def _invoke(fn, *, name: str) -> str:
+        if getattr(backend, "multi_model_mode", lambda: False)():
+            return fn()
+        return call_with_backoff(fn, name=name)
+
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
         temp = 0.2 if role_name == "planner" else 0.0
+        limits = _lmstudio_limits(role_name)
         if CONFIG.use_autogen_agents:
-            return call_with_backoff(
+            return _invoke(
                 lambda: run_autogen_agent(
                     backend=backend,
                     role_name=role_name,
@@ -147,10 +190,22 @@ def _build_llm_call(backend):
                     prompt=prompt,
                     temperature=temp,
                     force_json=True,
+                    max_tokens=limits.get("max_tokens"),
+                    timeout_seconds=limits.get("timeout_seconds"),
                 ),
                 name=role_name,
             )
-        return call_with_backoff(lambda: backend.chat_json(system_msg, prompt, temperature=temp, force_json=True), name=role_name)
+        return _invoke(
+            lambda: backend.chat_json(
+                system_msg,
+                prompt,
+                temperature=temp,
+                force_json=True,
+                max_tokens=limits.get("max_tokens"),
+                timeout_seconds=limits.get("timeout_seconds"),
+            ),
+            name=role_name,
+        )
     return llm_call
 
 
@@ -166,6 +221,112 @@ def _to_run_relative(path: Path | None, run_dir: Path) -> str | None:
         return str(path.resolve().relative_to(run_dir.resolve()))
     except Exception:
         return str(path)
+
+
+def _now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+class _RunMetaTracker:
+    def __init__(self, meta_path: Path, payload: Dict[str, Any]) -> None:
+        self.meta_path = meta_path
+        self.payload = payload
+        self._active_stages: Dict[str, float] = {}
+        self._run_started_perf = time.perf_counter()
+
+    def persist(self) -> None:
+        _write_json(self.meta_path, self.payload)
+
+    def update(self, **kwargs: Any) -> None:
+        self.payload.update(kwargs)
+        self.persist()
+
+    def set_stage(self, key: str, data: Dict[str, Any]) -> None:
+        self.payload.setdefault("timing", {}).setdefault("stages", {})[key] = data
+        self.persist()
+
+    def start_stage(self, key: str, **extra: Any) -> None:
+        stage = self.payload.setdefault("timing", {}).setdefault("stages", {}).setdefault(key, {})
+        stage.update({"status": "running", "started_at": _now_iso()})
+        stage.update({k: v for k, v in extra.items() if v is not None})
+        self._active_stages[key] = time.perf_counter()
+        self.persist()
+
+    def finish_stage(self, key: str, *, status: str = "completed", **extra: Any) -> None:
+        stage = self.payload.setdefault("timing", {}).setdefault("stages", {}).setdefault(key, {})
+        started_perf = self._active_stages.pop(key, None)
+        stage["status"] = status
+        stage["ended_at"] = _now_iso()
+        if started_perf is not None:
+            stage["duration_seconds"] = round(time.perf_counter() - started_perf, 3)
+        stage.update({k: v for k, v in extra.items() if v is not None})
+        self.persist()
+
+    def record_invocation(
+        self,
+        key: str,
+        *,
+        started_at: str,
+        ended_at: str,
+        duration_seconds: float,
+        status: str = "completed",
+        **extra: Any,
+    ) -> None:
+        stage = self.payload.setdefault("timing", {}).setdefault("stages", {}).setdefault(
+            key,
+            {"invocations": 0, "duration_seconds": 0.0},
+        )
+        if not stage.get("started_at"):
+            stage["started_at"] = started_at
+        stage["ended_at"] = ended_at
+        stage["invocations"] = int(stage.get("invocations", 0)) + 1
+        stage["duration_seconds"] = round(float(stage.get("duration_seconds", 0.0)) + float(duration_seconds), 3)
+        if status == "failed":
+            stage["status"] = "failed"
+            stage["failed_invocations"] = int(stage.get("failed_invocations", 0)) + 1
+        elif stage.get("status") != "failed":
+            stage["status"] = "completed"
+        stage.update({k: v for k, v in extra.items() if v is not None})
+        self.persist()
+
+    def finish_run(self, *, status: str, error: str | None = None) -> None:
+        run_meta = self.payload.setdefault("timing", {}).setdefault("run", {})
+        run_meta["ended_at"] = _now_iso()
+        run_meta["duration_seconds"] = round(time.perf_counter() - self._run_started_perf, 3)
+        self.payload["status"] = status
+        if error:
+            self.payload["error"] = error
+        else:
+            self.payload.pop("error", None)
+        self.persist()
+
+
+def _timed_invocation(
+    tracker: _RunMetaTracker,
+    stage_key: str,
+    fn,
+    **extra: Any,
+):
+    started_at = _now_iso()
+    started_perf = time.perf_counter()
+    status = "completed"
+    try:
+        result = fn()
+        return result, round(time.perf_counter() - started_perf, 3)
+    except Exception:
+        status = "failed"
+        raise
+    finally:
+        ended_at = _now_iso()
+        duration_seconds = round(time.perf_counter() - started_perf, 3)
+        tracker.record_invocation(
+            stage_key,
+            started_at=started_at,
+            ended_at=ended_at,
+            duration_seconds=duration_seconds,
+            status=status,
+            **extra,
+        )
 
 
 def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_dir: Path) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
@@ -244,6 +405,7 @@ def _deterministic_topsis_ranking(retrieved: List[Dict[str, Any]], topsis_meta: 
 
 
 def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, relevancy_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Apply Functional Candidate Refinement for qos_hybrid only."""
     relevant_enriched = []
     non_relevant_enriched = []
 
@@ -253,26 +415,26 @@ def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: 
         topsis_rank = int(m.get("topsis_rank") or 10**9)
         topsis_score = m.get("topsis_score")
         rel_entry = relevancy_map.get((sub_id, api_id), {})
-        is_relevant = int(rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0)) or 0) == 1
+        is_relevant = int(rel_entry.get("Functional Match Label", rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0))) or 0) == 1
 
         if is_relevant:
             relevant_enriched.append((topsis_rank, api_id, topsis_score))
         else:
             non_relevant_enriched.append((topsis_rank, api_id, topsis_score))
 
-    relevant_enriched.sort(key=lambda x: x[0])
-    non_relevant_enriched.sort(key=lambda x: x[0])
+    relevant_enriched.sort(key=lambda x: (x[0], x[1]))
+    non_relevant_enriched.sort(key=lambda x: (x[0], x[1]))
     combined = relevant_enriched + non_relevant_enriched
 
     ranked: List[Dict[str, Any]] = []
     for topsis_rank, api_id, _ in combined:
         rel_entry = relevancy_map.get((sub_id, api_id), {})
-        is_relevant = int(rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0)) or 0) == 1
-        rel_label = "Relevant" if is_relevant else "Non-relevant"
+        is_relevant = int(rel_entry.get("Functional Match Label", rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0))) or 0) == 1
+        rel_label = "functional match" if is_relevant else "not a functional match"
         ranked.append(
             {
                 "api_id": api_id,
-                "reason": f"Deterministic hybrid: {rel_label} API ordered by TOPSIS rank {topsis_rank}.",
+                "reason": f"Functional Candidate Refinement: {rel_label}; ordered by TOPSIS rank {topsis_rank}.",
             }
         )
     return ranked
@@ -281,7 +443,15 @@ def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: 
 def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], extras: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     rag_map = {str(r.get("api_id")): r for r in retrieved}
     full = []
-    for idx, item in enumerate(ranked, start=1):
+    ranked_full = [item for item in ranked if str(item.get("api_id", "")) in rag_map]
+    ranked_ids = {str(item.get("api_id", "")) for item in ranked_full}
+    for r in retrieved:
+        api_id = str(r.get("api_id", ""))
+        if api_id and api_id not in ranked_ids:
+            ranked_full.append({"api_id": api_id, "reason": "Appended to preserve all shared retrieved candidates in reports."})
+            ranked_ids.add(api_id)
+
+    for idx, item in enumerate(ranked_full, start=1):
         api_id = str(item.get("api_id", ""))
         base = rag_map.get(api_id, {})
         row = {
@@ -307,9 +477,10 @@ def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]
         api_id = str(row.get("Selected_API", row.get("api_id", "")))
         if not sub_id or not api_id:
             continue
-        relevant = row.get("API Relevancy (0/1)", row.get("relevant", 0))
+        relevant = row.get("Functional Match Label", row.get("API Relevancy (0/1)", row.get("relevant", 0)))
         comment = row.get("Comments", row.get("comment", ""))
         out[(sub_id, api_id)] = {
+            "Functional Match Label": row.get("Functional Match Label", relevant),
             "API Relevancy (0/1)": relevant,
             "Comments": comment,
             "relevant": relevant,
@@ -324,7 +495,7 @@ def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
     for row in data:
         sub_id = str(row.get("Sub Task", row.get("subtask_id", "")))
         api_id = str(row.get("Selected_API", row.get("api_id", "")))
-        relevant = row.get("API Relevancy (0/1)", row.get("relevant", 0))
+        relevant = row.get("Functional Match Label", row.get("API Relevancy (0/1)", row.get("relevant", 0)))
         if not sub_id or not api_id or int(relevant or 0) != 1:
             continue
         relevant_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
@@ -342,7 +513,7 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         selected_limit = dynamic_top_n if dynamic_top_n > 0 else CONFIG.selector_top_n
         selected_limit = min(selected_limit, len(ranked_rows))
         selected_rows = ranked_rows[:selected_limit]
-        top_n_source = "final_api_relevancy" if dynamic_top_n > 0 else "selector_top_n_fallback"
+        top_n_source = "functional_candidate_refinement_k" if dynamic_top_n > 0 else "selector_top_n_fallback"
         selected = []
         for idx, r in enumerate(selected_rows, start=1):
             row = dict(r)
@@ -361,6 +532,7 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             {
                 "planner_top_n": selected_limit,
                 "planner_top_n_source": top_n_source,
+                "dynamic_top_n_from_functional_match": dynamic_top_n,
                 "dynamic_top_n_from_relevancy": dynamic_top_n,
                 "fallback_used": fallback_used,
                 "available_ranked": len(ranked_rows),
@@ -378,168 +550,310 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     llm_call = _build_llm_call(backend)
     effective_run_tag = CONFIG.run_tag if run_tag is None else run_tag
     out_dir = _run_dir(model_tag, query_id=query_id, run_tag=effective_run_tag)
-
-    raw_subtasks = decompose_goal(llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p), user_goal=user_goal)
-    subtasks = raw_subtasks
-    _write_json(out_dir / "debug" / "0_decomposer_raw.json", raw_subtasks)
-    _write_json(out_dir / "0_decomposer.json", subtasks)
-
-    run_config = CONFIG.as_dict()
-    run_config.update({"provider": provider, "model": backend.name(), "query_id": query_id, "query_title": query_title, "modes": MODE_ORDER})
-    _write_json(out_dir / "run_config.json", run_config)
-    _write_json(
+    run_label = query_id or out_dir.name
+    provider_label = provider or backend.name().split(":", 1)[0]
+    run_log_path = configure_run_log(out_dir / "run.log")
+    model_usage_path = configure_model_usage(
+        provider=provider_label,
+        model_tag=backend.name(),
+        multi_model_mode=backend.multi_model_mode(),
+        model_pool=backend.model_pool(),
+    )
+    meta_tracker = _RunMetaTracker(
         out_dir / "meta.json",
         {
             "query_id": query_id,
             "query_title": query_title,
             "user_goal": user_goal,
+            "provider": provider_label,
             "model_tag": backend.name(),
-            "num_subtasks": len(subtasks),
+            "active_model": backend.active_model_name(),
+            "multi_model_mode": backend.multi_model_mode(),
+            "model_pool": backend.model_pool(),
+            "model_switches": [],
+            "num_subtasks": 0,
             "evaluation_triggered": False,
+            "evaluation_dir": "evaluation",
+            "planner_enabled": CONFIG.planner_enabled,
             "modes": MODE_ORDER,
+            "log_file": _to_run_relative(run_log_path, out_dir) if run_log_path else None,
+            "model_usage_file": _to_run_relative(model_usage_path, out_dir) if model_usage_path else None,
+            "status": "running",
+            "timing": {
+                "run": {
+                    "started_at": _now_iso(),
+                },
+                "stages": {},
+            },
         },
     )
+    meta_tracker.persist()
+    if backend.multi_model_mode():
+        log_line(
+            f"[{run_label}] run started | provider={provider_label} | mode={backend.name()} "
+            f"| active_model={backend.active_model_name()} | pool={backend.model_pool()}"
+        )
+    else:
+        log_line(f"[{run_label}] run started | provider={provider_label} | model={backend.name()}")
 
-    retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
-
+    subtasks: List[Dict[str, Any]] = []
+    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
+    no_qos_services: Dict[str, Dict[str, Any]] = {}
+    with_qos_services: Dict[str, Dict[str, Any]] = {}
     ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
     relevancy_map: Dict[tuple[str, str], Dict[str, Any]] = {}
     planner_top_n: Dict[str, int] = {}
     retrieval_relevancy_rows_path: Path | None = None
     eval_out: Path | None = None
     relevancy_rows_path: Path | None = None
-    duplicate_audit_xlsx: Path | None = None
-    hallucination_audit_xlsx: Path | None = None
     mode_anomaly_xlsx: Path | None = None
     duplicate_audit_json: Path | None = None
     hallucination_audit_json: Path | None = None
-    try:
-        eval_dir = out_dir / "evaluation"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        eval_cache = eval_dir / "relevancy_cache.json"
-        print(f"[{query_id}] starting retrieval relevancy evaluation")
-        retrieval_relevancy_rows_path = evaluate_retrieval_relevancy(
-            query_dir=out_dir,
-            query_id=query_id,
-            output_dir=eval_dir,
-            cache_path=eval_cache,
-            provider=provider or "azure",
-            model=model,
-        )
-        print(f"[{query_id}] finished retrieval relevancy evaluation")
-        relevancy_map = _load_relevancy_map(retrieval_relevancy_rows_path)
-    except Exception as e:
-        (out_dir / "retrieval_relevancy_error.txt").write_text(str(e), encoding="utf-8")
-
-    print(f"[{query_id}] starting ranking stages")
-    for sub in subtasks:
-        sub_id = str(sub.get("id", "unknown"))
-        retrieved = retrieved_by_subtask[sub_id]
-
-        no_qos_candidates = _candidate_rows(retrieved, no_qos_services)
-        no_qos_ranked = rank_subtask(llm_call=lambda p: llm_call("ranker", RANKER_SYS, p), user_query=user_goal, subtask=sub, candidates=no_qos_candidates, prompt_path="prompts/ranker_no_qos.md", debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"))
-        ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(out_dir / "no_qos", sub_id, no_qos_ranked, retrieved, no_qos_services)
-
-        pure_qos_candidates = []
-        for r in retrieved:
-            api_id = str(r.get("api_id", ""))
-            svc = with_qos_services.get(api_id, {})
-            qos = (svc.get("qos") or {}) if isinstance(svc.get("qos"), dict) else {}
-            pure_qos_candidates.append({
-                "api_id": api_id,
-                "rt_ms": qos.get("rt_ms"),
-                "tp_rps": qos.get("tp_rps"),
-                "availability": qos.get("availability"),
-            })
-        pure_qos_meta = score_qos_llm(
-            llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
-            candidates=pure_qos_candidates,
-            prompt_path="prompts/qos_score_llm.md",
-            debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
-        )
-        pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
-        pure_ranked = rank_subtask(llm_call=lambda p: llm_call("ranker", RANKER_SYS, p), user_query=user_goal, subtask=sub, candidates=pure_candidates, prompt_path="prompts/ranker_qos_pure_llm.md", debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"))
-        ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(out_dir / "qos_pure_llm", sub_id, pure_ranked, retrieved, with_qos_services, pure_qos_meta)
-        _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
-
-        topsis_meta = _compute_topsis_metadata(retrieved, with_qos_services)
-        topsis_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
-        ranked_full_by_mode["qos_topsis"][sub_id] = _write_ranked(out_dir / "qos_topsis", sub_id, topsis_ranked, retrieved, with_qos_services, topsis_meta)
-
-        hybrid_ranked = _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map)
-        ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
-
-    try:
-        eval_dir = out_dir / "evaluation"
-        eval_dir.mkdir(parents=True, exist_ok=True)
-        eval_cache = eval_dir / "relevancy_cache.json"
-        print(f"[{query_id}] building final api relevancy outputs from retrieval cache")
-        eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
-        print(f"[{query_id}] finished building final api relevancy outputs")
-        relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
-        if relevancy_rows_path.exists():
-            planner_top_n = _load_planner_top_n(relevancy_rows_path)
-
-        duplicate_audit = collect_duplicate_audit_for_run(out_dir)
-        duplicate_audit_json = eval_dir / f"query_{query_id}_duplicate_audit.json"
-        _write_json(duplicate_audit_json, duplicate_audit)
-
-        hallucination_audit = collect_hallucination_audit_for_run(out_dir, CONFIG.catalog_no_qos_path)
-        hallucination_audit_json = eval_dir / f"query_{query_id}_hallucination_audit.json"
-        _write_json(hallucination_audit_json, hallucination_audit)
-
-        mode_anomaly_xlsx = eval_dir / f"query_{query_id}_mode_anomalies.xlsx"
-        write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx)
-
-        _write_json(
-            out_dir / "evaluation_result.json",
-            {
-                "evaluation_dir": _to_run_relative(eval_dir, out_dir),
-                "api_relevancy_excel": _to_run_relative(eval_out, out_dir),
-                "api_relevancy_rows_json": _to_run_relative(relevancy_rows_path, out_dir),
-                "retrieval_relevancy_rows_json": _to_run_relative(retrieval_relevancy_rows_path, out_dir),
-                "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
-                "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
-                "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
-                "cache_path": _to_run_relative(eval_cache, out_dir),
-            },
-        )
-    except Exception as e:
-        (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
-
     summary_selected = {"planner_enabled": CONFIG.planner_enabled}
-    if CONFIG.planner_enabled:
-        for mode in MODE_ORDER:
-            planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
-            result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
-            summary_selected[f"{mode}_selected"] = len(result["selected"])
-    else:
-        summary_selected["planner_skipped_reason"] = "planner disabled in pipeline_config"
+    run_status = "completed"
+    run_error: str | None = None
 
-    _write_json(
-        out_dir / "meta.json",
-        {
-            "query_id": query_id,
-            "query_title": query_title,
-            "user_goal": user_goal,
-            "model_tag": backend.name(),
-            "num_subtasks": len(subtasks),
-            "evaluation_triggered": True,
-            "evaluation_dir": "evaluation",
-            "planner_enabled": CONFIG.planner_enabled,
-            "modes": MODE_ORDER,
-            "summary": summary_selected,
-        },
-    )
+    try:
+        meta_tracker.start_stage("decomposer")
+        log_line(f"[{run_label}] starting decomposition")
+        try:
+            raw_subtasks = decompose_goal(llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p), user_goal=user_goal)
+            subtasks = raw_subtasks
+            _write_json(out_dir / "debug" / "0_decomposer_raw.json", raw_subtasks)
+            _write_json(out_dir / "0_decomposer.json", subtasks)
+            meta_tracker.update(num_subtasks=len(subtasks))
+            meta_tracker.finish_stage("decomposer", subtask_count=len(subtasks))
+            log_line(f"[{run_label}] finished decomposition ({len(subtasks)} subtasks)")
+        except Exception:
+            meta_tracker.finish_stage("decomposer", status="failed")
+            raise
 
-    print(f"Saved run to {out_dir}")
-    if eval_out is not None:
-        print(f"Saved evaluation to {eval_out}")
-    return out_dir, eval_out
+        run_config = CONFIG.as_dict()
+        run_config.update(
+            {
+                "provider": provider_label,
+                "model": backend.name(),
+                "active_model": backend.active_model_name(),
+                "multi_model_mode": backend.multi_model_mode(),
+                "model_pool": backend.model_pool(),
+                "query_id": query_id,
+                "query_title": query_title,
+                "modes": MODE_ORDER,
+                "model_usage_file": _to_run_relative(current_model_usage_path(), out_dir),
+            }
+        )
+        _write_json(out_dir / "run_config.json", run_config)
+
+        meta_tracker.start_stage("retrieval")
+        log_line(f"[{run_label}] starting shared retrieval")
+        try:
+            retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
+            total_retrieved = sum(len(items) for items in retrieved_by_subtask.values())
+            meta_tracker.finish_stage("retrieval", subtask_count=len(subtasks), retrieved_candidate_count=total_retrieved)
+            log_line(f"[{run_label}] finished shared retrieval ({total_retrieved} retrieved candidates)")
+        except Exception:
+            meta_tracker.finish_stage("retrieval", status="failed")
+            raise
+
+        eval_dir = out_dir / "evaluation"
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        eval_cache = eval_dir / "relevancy_cache.json"
+        meta_tracker.start_stage("retrieval_relevancy_evaluation")
+        log_line(f"[{run_label}] starting Functional Candidate Refinement labeling")
+        try:
+            retrieval_relevancy_rows_path = evaluate_retrieval_relevancy(
+                query_dir=out_dir,
+                query_id=query_id,
+                output_dir=eval_dir,
+                cache_path=eval_cache,
+                provider=provider or "azure",
+                model=model,
+            )
+            relevancy_map = _load_relevancy_map(retrieval_relevancy_rows_path)
+            meta_tracker.finish_stage(
+                "retrieval_relevancy_evaluation",
+                rows_json=_to_run_relative(retrieval_relevancy_rows_path, out_dir),
+            )
+            log_line(f"[{run_label}] finished Functional Candidate Refinement labeling")
+        except Exception as e:
+            (out_dir / "retrieval_relevancy_error.txt").write_text(str(e), encoding="utf-8")
+            meta_tracker.finish_stage(
+                "retrieval_relevancy_evaluation",
+                status="failed",
+                error_file="retrieval_relevancy_error.txt",
+            )
+            if run_status == "completed":
+                run_status = "completed_with_warnings"
+            log_line(f"[{run_label}] Functional Candidate Refinement labeling failed: {e}")
+
+        meta_tracker.start_stage("ranking")
+        log_line(f"[{run_label}] starting ranking stages")
+        try:
+            for sub in subtasks:
+                sub_id = str(sub.get("id", "unknown"))
+                retrieved = retrieved_by_subtask[sub_id]
+                log_line(f"[{run_label}] subtask={sub_id} starting ranking bundle")
+
+                no_qos_candidates = _candidate_rows(retrieved, no_qos_services)
+                no_qos_ranked, no_qos_duration = _timed_invocation(
+                    meta_tracker,
+                    "ranker_no_qos",
+                    lambda: rank_subtask(
+                        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                        user_query=user_goal,
+                        subtask=sub,
+                        candidates=no_qos_candidates,
+                        prompt_path="prompts/ranker_no_qos.md",
+                        debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                    ),
+                )
+                ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(out_dir / "no_qos", sub_id, no_qos_ranked, retrieved, no_qos_services)
+                log_line(f"[{run_label}] subtask={sub_id} finished no_qos ranking in {no_qos_duration:.2f}s")
+
+                pure_qos_candidates = []
+                for r in retrieved:
+                    api_id = str(r.get("api_id", ""))
+                    svc = with_qos_services.get(api_id, {})
+                    qos = (svc.get("qos") or {}) if isinstance(svc.get("qos"), dict) else {}
+                    pure_qos_candidates.append({
+                        "api_id": api_id,
+                        "rt_ms": qos.get("rt_ms"),
+                        "tp_rps": qos.get("tp_rps"),
+                        "availability": qos.get("availability"),
+                    })
+                pure_qos_meta, qos_duration = _timed_invocation(
+                    meta_tracker,
+                    "qos_scorer",
+                    lambda: score_qos_llm(
+                        llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
+                        candidates=pure_qos_candidates,
+                        prompt_path="prompts/qos_score_llm.md",
+                        debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
+                    ),
+                )
+                _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
+                log_line(f"[{run_label}] subtask={sub_id} finished qos scoring in {qos_duration:.2f}s")
+
+                pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
+                pure_ranked, pure_rank_duration = _timed_invocation(
+                    meta_tracker,
+                    "ranker_qos_pure_llm",
+                    lambda: rank_subtask(
+                        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                        user_query=user_goal,
+                        subtask=sub,
+                        candidates=pure_candidates,
+                        prompt_path="prompts/ranker_qos_pure_llm.md",
+                        debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                    ),
+                )
+                ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(out_dir / "qos_pure_llm", sub_id, pure_ranked, retrieved, with_qos_services, pure_qos_meta)
+                log_line(f"[{run_label}] subtask={sub_id} finished qos_pure_llm ranking in {pure_rank_duration:.2f}s")
+
+                topsis_meta, topsis_duration = _timed_invocation(
+                    meta_tracker,
+                    "qos_topsis",
+                    lambda: _compute_topsis_metadata(retrieved, with_qos_services),
+                )
+                topsis_ranked = _deterministic_topsis_ranking(retrieved, topsis_meta)
+                ranked_full_by_mode["qos_topsis"][sub_id] = _write_ranked(out_dir / "qos_topsis", sub_id, topsis_ranked, retrieved, with_qos_services, topsis_meta)
+                log_line(f"[{run_label}] subtask={sub_id} finished qos_topsis scoring in {topsis_duration:.2f}s")
+
+                hybrid_ranked, hybrid_duration = _timed_invocation(
+                    meta_tracker,
+                    "qos_hybrid",
+                    lambda: _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map),
+                )
+                ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
+                log_line(f"[{run_label}] subtask={sub_id} finished qos_hybrid ranking in {hybrid_duration:.2f}s")
+                log_line(f"[{run_label}] subtask={sub_id} finished ranking bundle")
+            meta_tracker.finish_stage("ranking", subtask_count=len(subtasks))
+            log_line(f"[{run_label}] finished ranking stages")
+        except Exception:
+            meta_tracker.finish_stage("ranking", status="failed")
+            raise
+
+        meta_tracker.update(evaluation_triggered=True)
+        meta_tracker.start_stage("evaluation_outputs")
+        log_line(f"[{run_label}] building final functional match report outputs from retrieval cache")
+        try:
+            eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
+            log_line(f"[{run_label}] finished building final functional match report outputs")
+            relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
+            if relevancy_rows_path.exists():
+                planner_top_n = _load_planner_top_n(relevancy_rows_path)
+
+            duplicate_audit = collect_duplicate_audit_for_run(out_dir)
+            duplicate_audit_json = eval_dir / f"query_{query_id}_duplicate_audit.json"
+            _write_json(duplicate_audit_json, duplicate_audit)
+
+            hallucination_audit = collect_hallucination_audit_for_run(out_dir, CONFIG.catalog_no_qos_path)
+            hallucination_audit_json = eval_dir / f"query_{query_id}_hallucination_audit.json"
+            _write_json(hallucination_audit_json, hallucination_audit)
+
+            mode_anomaly_xlsx = eval_dir / f"query_{query_id}_mode_anomalies.xlsx"
+            write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx)
+
+            _write_json(
+                out_dir / "evaluation_result.json",
+                {
+                    "evaluation_dir": _to_run_relative(eval_dir, out_dir),
+                    "api_relevancy_excel": _to_run_relative(eval_out, out_dir),
+                    "api_relevancy_rows_json": _to_run_relative(relevancy_rows_path, out_dir),
+                    "retrieval_relevancy_rows_json": _to_run_relative(retrieval_relevancy_rows_path, out_dir),
+                    "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
+                    "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
+                    "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
+                    "cache_path": _to_run_relative(eval_cache, out_dir),
+                },
+            )
+            meta_tracker.finish_stage("evaluation_outputs", status="completed")
+        except Exception as e:
+            (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
+            meta_tracker.finish_stage("evaluation_outputs", status="failed", error_file="evaluation_error.txt")
+            if run_status == "completed":
+                run_status = "completed_with_warnings"
+            log_line(f"[{run_label}] evaluation output generation failed: {e}")
+
+        if CONFIG.planner_enabled:
+            meta_tracker.start_stage("planner")
+            log_line(f"[{run_label}] starting planner")
+            try:
+                for mode in MODE_ORDER:
+                    planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
+                    result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
+                    summary_selected[f"{mode}_selected"] = len(result["selected"])
+                meta_tracker.finish_stage("planner", status="completed")
+                log_line(f"[{run_label}] finished planner")
+            except Exception:
+                meta_tracker.finish_stage("planner", status="failed")
+                raise
+        else:
+            summary_selected["planner_skipped_reason"] = "planner disabled in pipeline_config"
+            meta_tracker.set_stage("planner", {"status": "skipped", "reason": "planner disabled in pipeline_config"})
+
+        meta_tracker.update(summary=summary_selected)
+        log_line(f"Saved run to {out_dir}")
+        if eval_out is not None:
+            log_line(f"Saved evaluation to {eval_out}")
+        return out_dir, eval_out
+    except Exception as e:
+        run_status = "failed"
+        run_error = str(e)
+        log_line(f"[{run_label}] run failed: {e}")
+        raise
+    finally:
+        meta_tracker.update(
+            active_model=backend.active_model_name(),
+            model_pool=backend.model_pool(),
+            model_switches=backend.failover_events(),
+        )
+        meta_tracker.finish_run(status=run_status, error=run_error)
+        clear_run_log()
 
 
 if __name__ == "__main__":
-    provider = choose_provider_interactive()
+    provider, model = choose_provider_and_model_interactive()
     queries = load_queries()
     print(f"Loaded {len(queries)} queries from file.\n")
     for i, q in enumerate(queries, start=1):
@@ -550,4 +864,4 @@ if __name__ == "__main__":
         print(f"Running query {i}/{len(queries)} | {qid} | {title}")
         print(f"User goal: {goal}")
         print("=" * 80)
-        run_autogen_once(user_goal=goal, provider=provider, model=None, query_id=qid, query_title=title)
+        run_autogen_once(user_goal=goal, provider=provider, model=model, query_id=qid, query_title=title)

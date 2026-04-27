@@ -2,6 +2,8 @@ import re
 import random
 import time
 
+from src.core.run_logging import log_line
+
 
 _RETRY_AFTER_RE = re.compile(
     r"try again in\s*"
@@ -23,8 +25,12 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
         "rate_limit": [
             "429",
             "rate limit",
+            "rate_limit_exceeded",
             "rate_limited",
             "too many requests",
+            "tokens per minute",
+            "requests per minute",
+            "request too large for model",
         ],
         "backend_unavailable": [
             "503",
@@ -54,6 +60,10 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
     return False, ""
 
 
+def classify_retryable_error(exc: Exception) -> tuple[bool, str]:
+    return _is_retryable_error(exc)
+
+
 def _extract_retry_after_seconds(exc: Exception) -> float | None:
     """
     Parse provider hints like "Please try again in 14m24.864s".
@@ -68,6 +78,10 @@ def _extract_retry_after_seconds(exc: Exception) -> float | None:
     seconds = float(match.group("seconds") or 0.0)
     total = (hours * 3600.0) + (minutes * 60.0) + seconds
     return total if total > 0 else None
+
+
+def extract_retry_after_seconds(exc: Exception) -> float | None:
+    return _extract_retry_after_seconds(exc)
 
 
 def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
@@ -89,7 +103,7 @@ def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
                 raise
 
             if attempt >= max_retries:
-                print(f"[{name}] giving up after {attempt + 1} attempts: {e}")
+                log_line(f"[{name}] giving up after {attempt + 1} attempts: {e}")
                 raise
 
             retry_after_s = _extract_retry_after_seconds(e)
@@ -99,7 +113,7 @@ def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
             else:
                 sleep_s = min(cap, base * (2 ** attempt)) + random.uniform(0, 0.75)
                 detail = f"exponential backoff up to {cap:.1f}s"
-            print(
+            log_line(
                 f"[{name}] retryable error ({reason}), sleeping {sleep_s:.1f}s "
                 f"(attempt {attempt + 1}/{max_retries}; {detail})"
             )

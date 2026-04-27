@@ -9,6 +9,7 @@ from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.config import CONFIG
+from src.core.run_logging import log_line
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_excel import write_relevancy_excel
 from src.eval.api_relevancy_prompt import build_llm_prompt
@@ -19,7 +20,7 @@ CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_rep
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
 TOOLBENCH_TOOLS_ROOT = Path(os.getenv("TOOLBENCH_TOOLS_ROOT", "/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools"))
-EVAL_SYS = "You are a strict API relevance evaluator. Decide only whether an API is functionally relevant to a subtask. Return strict JSON only."
+EVAL_SYS = "You are a strict functional-match evaluator. Decide only whether an API is functionally suitable for a subtask. Return strict JSON only."
 
 
 def _chunk_size() -> int:
@@ -304,6 +305,32 @@ def _normalize_relevant(val: Any) -> Optional[int]:
     return None
 
 
+def _functional_match_value(info: Dict[str, Any]) -> int:
+    return int(info.get("Functional Match Label", info.get("API Relevancy (0/1)", info.get("relevant", 0))) or 0)
+
+
+def _planner_k_by_subtask(
+    *,
+    query_id: str,
+    subtasks: List[Dict[str, Any]],
+    shared_candidates: Dict[str, List[Dict[str, Any]]],
+    cache: Dict[str, Dict[str, Any]],
+) -> Dict[str, int]:
+    planner_k: Dict[str, int] = {}
+    for sub in subtasks:
+        sid = str(sub.get("id"))
+        matched_api_ids: set[str] = set()
+        for item in shared_candidates.get(sid, []):
+            api_id = str(item.get("api_id", ""))
+            if not api_id:
+                continue
+            rel_info = cache.get(f"{query_id}_{sid}_{api_id}", {})
+            if _functional_match_value(rel_info) == 1:
+                matched_api_ids.add(api_id)
+        planner_k[sid] = len(matched_api_ids)
+    return planner_k
+
+
 def _parse_results(text: str, expected_ids: List[str]) -> Dict[str, Dict[str, Any]]:
     try:
         data = json.loads(text)
@@ -347,13 +374,21 @@ def _evaluate_batches(
     total_api_items = sum(len(batch.get("apis", [])) for batch in batches)
     completed_api_items = 0
 
+    def _invoke(fn, *, name: str) -> str:
+        if getattr(backend, "multi_model_mode", lambda: False)():
+            return fn()
+        return call_with_backoff(fn, name=name)
+
     _save_progress(
         progress_path,
         {
             "stage": stage_name,
             "query_id": query_id,
             "provider": provider,
-            "model": model,
+            "model": backend.name(),
+            "active_model": backend.active_model_name(),
+            "multi_model_mode": backend.multi_model_mode(),
+            "model_pool": backend.model_pool(),
             "chunk_size": chunk_size,
             "status": "running",
             "completed_api_items": 0,
@@ -377,7 +412,7 @@ def _evaluate_batches(
         if uncached:
             total_chunks = math.ceil(len(uncached) / float(chunk_size))
             for chunk_idx, chunk in enumerate(_chunk_list(uncached, chunk_size), start=1):
-                print(
+                log_line(
                     f"[{stage_name}] query={query_id} subtask={sid} "
                     f"chunk={chunk_idx}/{total_chunks} completed={completed_api_items}/{total_api_items}"
                 )
@@ -391,6 +426,7 @@ def _evaluate_batches(
                 expected_ids = [a["api_id"] for a in chunk]
 
                 def _call() -> str:
+                    timeout_seconds = CONFIG.lmstudio_timeout_seconds if getattr(backend, "provider", "") == "lmstudio" else None
                     if CONFIG.use_autogen_agents:
                         return run_autogen_agent(
                             backend=backend,
@@ -399,13 +435,20 @@ def _evaluate_batches(
                             prompt=prompt,
                             temperature=0.0,
                             force_json=True,
+                            timeout_seconds=timeout_seconds,
                         )
-                    return backend.chat_json(EVAL_SYS, prompt, temperature=0, force_json=True)
+                    return backend.chat_json(
+                        EVAL_SYS,
+                        prompt,
+                        temperature=0,
+                        force_json=True,
+                        timeout_seconds=timeout_seconds,
+                    )
 
-                raw = call_with_backoff(_call, name=f"api_relevancy_eval_s{sid}_chunk{chunk_idx}")
+                raw = _invoke(_call, name=f"api_relevancy_eval_s{sid}_chunk{chunk_idx}")
                 parsed = _parse_results(raw, expected_ids)
                 if len(parsed) != len(expected_ids):
-                    retry_raw = call_with_backoff(_call, name=f"api_relevancy_eval_retry_s{sid}_chunk{chunk_idx}")
+                    retry_raw = _invoke(_call, name=f"api_relevancy_eval_retry_s{sid}_chunk{chunk_idx}")
                     retry_parsed = _parse_results(retry_raw, expected_ids)
                     if len(retry_parsed) >= len(parsed):
                         parsed = retry_parsed
@@ -425,7 +468,10 @@ def _evaluate_batches(
                         "stage": stage_name,
                         "query_id": query_id,
                         "provider": provider,
-                        "model": model,
+                        "model": backend.name(),
+                        "active_model": backend.active_model_name(),
+                        "multi_model_mode": backend.multi_model_mode(),
+                        "model_pool": backend.model_pool(),
                         "chunk_size": chunk_size,
                         "status": "running",
                         "current_subtask_id": sid,
@@ -446,7 +492,10 @@ def _evaluate_batches(
             "stage": stage_name,
             "query_id": query_id,
             "provider": provider,
-            "model": model,
+            "model": backend.name(),
+            "active_model": backend.active_model_name(),
+            "multi_model_mode": backend.multi_model_mode(),
+            "model_pool": backend.model_pool(),
             "chunk_size": chunk_size,
             "status": "completed",
             "completed_api_items": completed_api_items,
@@ -485,6 +534,7 @@ def evaluate_retrieval_relevancy(*, query_dir: Path, query_id: Optional[str], pr
                 "Sub Task": sid,
                 "Retrieved Rank": item.get("retrieved_rank"),
                 "Selected_API": api_id,
+                "Functional Match Label": rel_info.get("relevant", 0),
                 "API Relevancy (0/1)": rel_info.get("relevant", 0),
                 "Comments": rel_info.get("comment", ""),
             })
@@ -525,6 +575,12 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
     cache = _load_cache(cache_path)
     duplicate_flags = _build_duplicate_flag_map(ranked_by_mode)
     hallucination_flags = _build_hallucination_flag_map(ranked_by_mode, shared_candidates, set(catalog.keys()))
+    planner_k_by_subtask = _planner_k_by_subtask(
+        query_id=query_id,
+        subtasks=subtasks,
+        shared_candidates=shared_candidates,
+        cache=cache,
+    )
     rows: List[Dict[str, Any]] = []
     subtask_map = {str(sub.get("id")): str(sub.get("description", "")) for sub in subtasks}
 
@@ -537,6 +593,14 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 f"{query_id}_{sid}_{api_id}",
                 {"relevant": 0, "comment": "Missing from retrieval-stage relevancy cache"},
             )
+            functional_match = _functional_match_value(rel_info)
+            planner_k = int(planner_k_by_subtask.get(sid, 0) or 0)
+            planner_threshold = planner_k if planner_k > 0 else 5
+            mode_rank = item.get("mode_rank")
+            try:
+                selected_for_planner = int(mode_rank or 0) <= planner_threshold
+            except Exception:
+                selected_for_planner = False
             service = item.get("service") or {}
             catalog_entry = catalog.get(api_id, {})
             if isinstance(service.get("qos"), dict):
@@ -555,6 +619,10 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Selected_API": api_id,
                 "Is Hallucinated? (0/1)": hallucination_flags.get((mode, sid, api_id), 0),
                 "Is Duplicated? (0/1)": duplicate_flags.get((mode, sid, api_id), 0),
+                "Functional Match Label": functional_match,
+                "Used in Ranking": "Yes" if mode == "qos_hybrid" else "No",
+                "Selected for Planner": "Yes" if selected_for_planner else "No",
+                "Planner Selection K": planner_k,
                 "API Relevancy (0/1)": rel_info.get("relevant", 0),
                 "QoS_RT": qos.get("rt_ms"),
                 "QoS_TP": qos.get("tp_rps"),

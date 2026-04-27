@@ -8,7 +8,9 @@ from typing import Dict, Any
 @dataclass(frozen=True)
 class PipelineConfig:
     queries_path: Path = Path("data/queries/one_user_query.jsonl")
-    run_tag: str | None = "RUNS_APR_22_2026"
+    # run_tag: str | None = "RUNS_Groq_Multi"
+    run_tag: str | None = "RUNS_Fireworks_AI"
+
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
     catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl")
@@ -20,6 +22,9 @@ class PipelineConfig:
     selector_top_n: int = 5
     planner_enabled: bool = False
     use_autogen_agents: bool = True
+    lmstudio_timeout_seconds: int = 600
+    lmstudio_ranker_max_tokens: int = 2500
+    llm_debug_enabled: bool = True
 
     def as_dict(self) -> Dict[str, Any]:
         data = asdict(self)

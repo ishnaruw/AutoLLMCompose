@@ -29,7 +29,7 @@ def build_llm_prompt(
         compact_entries.append(entry)
 
     return (
-        "You are evaluating whether APIs are functionally relevant to one subtask in an API-selection experiment.\n"
+        "You are evaluating whether APIs are functionally suitable for one subtask in an API-selection experiment.\n"
         "Your job is to judge whether each API is a good functional match for the subtask, not whether it is loosely related by topic words.\n"
         "Return ONLY one JSON object.\n"
         "Do not omit any API.\n"
@@ -38,7 +38,7 @@ def build_llm_prompt(
         "Do not change field names.\n"
         "Do not add markdown.\n"
         "Do not add explanation outside JSON.\n"
-        "Judge only functional relevance to the subtask.\n"
+        "Judge only functional suitability for the subtask.\n"
         "Use both endpoint details and tool-level context when available.\n"
         "If the API belongs to the wrong domain or dataset, mark it not relevant even if some keywords overlap.\n"
         f"Query ID: {query_id}\n"
