@@ -22,10 +22,8 @@ def build_llm_prompt(
             "tool_description": a.get("tool_description"),
             "description": a.get("description"),
             "method": a.get("method"),
-            "url": a.get("url"),
+            "parameters": a.get("parameters", []),
         }
-        if a.get("endpoint_details"):
-            entry["endpoint_details"] = a.get("endpoint_details")
         compact_entries.append(entry)
 
     return (
@@ -39,12 +37,12 @@ def build_llm_prompt(
         "Do not add markdown.\n"
         "Do not add explanation outside JSON.\n"
         "Judge only functional suitability for the subtask.\n"
-        "Use both endpoint details and tool-level context when available.\n"
+        "Use endpoint name, description, method, compact parameter descriptions, and tool-level context when available.\n"
         "If the API belongs to the wrong domain or dataset, mark it not relevant even if some keywords overlap.\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
-        f"Subtask Description: {subtask_description}"
+        f"Subtask Description: {subtask_description}\n"
         "Output format: \n"
         "{\n"
         '  "results": [\n'
@@ -58,6 +56,7 @@ def build_llm_prompt(
         "- keep comments short\n"
         "- prioritize actual function and domain fit over keyword overlap\n"
         "- tool_description can reveal the true purpose of the API and should be used\n"
+        "- parameters contain only compact name/description pairs and should be used as functional evidence\n"
         "- subject lists, topic lists, scripture topics, generic education content, or unrelated datasets are not course suggestion APIs unless they explicitly support retrieving or recommending real courses\n\n"
         f"APIs:\n{json.dumps(compact_entries, ensure_ascii=False)}"
     )

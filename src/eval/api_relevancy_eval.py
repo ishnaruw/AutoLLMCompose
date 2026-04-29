@@ -2,13 +2,13 @@ from __future__ import annotations
 
 import json
 import math
-import os
 import re
 from pathlib import Path
 from collections import Counter
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.config import CONFIG
+from src.core.api_formatting import normalize_api_for_ranking
 from src.core.run_logging import log_line
 from src.core.retry import call_with_backoff
 from src.eval.api_relevancy_excel import write_relevancy_excel
@@ -19,7 +19,6 @@ from src.llm.backends import make_backend
 CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.jsonl")
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
-TOOLBENCH_TOOLS_ROOT = Path(os.getenv("TOOLBENCH_TOOLS_ROOT", "/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools"))
 EVAL_SYS = "You are a strict functional-match evaluator. Decide only whether an API is functionally suitable for a subtask. Return strict JSON only."
 
 
@@ -171,73 +170,6 @@ def _save_progress(path: Path, data: Dict[str, Any]) -> None:
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
-def _tool_json_path(category: Optional[str], file_name: Optional[str]) -> Optional[Path]:
-    if not category or not file_name:
-        return None
-    return TOOLBENCH_TOOLS_ROOT / str(category) / str(file_name)
-
-
-def _truncate(s: Any, limit: int = 180) -> Any:
-    if s is None:
-        return None
-    text = str(s).strip()
-    return text if len(text) <= limit else text[: limit - 3] + "..."
-
-
-def _compact_params(params: Any, limit: int = 4) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    if not isinstance(params, list):
-        return out
-    for p in params[:limit]:
-        if not isinstance(p, dict):
-            continue
-        out.append({"name": p.get("name"), "type": p.get("type"), "description": _truncate(p.get("description"), 100)})
-    return out
-
-
-def _find_endpoint_detail(service: Dict[str, Any]) -> Dict[str, Any]:
-    tool_path = _tool_json_path(service.get("category"), service.get("_file"))
-    tool_json = _safe_read_json(tool_path) if tool_path else None
-    if not isinstance(tool_json, dict):
-        return {}
-    api_list = tool_json.get("api_list")
-    if not isinstance(api_list, list):
-        return {}
-    name = service.get("name")
-    method = str(service.get("method") or "").upper()
-    url = service.get("url")
-    candidates = []
-    for ep in api_list:
-        if not isinstance(ep, dict):
-            continue
-        if name and ep.get("name") != name:
-            continue
-        candidates.append(ep)
-    if method:
-        method_matches = [ep for ep in candidates if str(ep.get("method") or "").upper() == method]
-        if method_matches:
-            candidates = method_matches
-    if url:
-        url_matches = [ep for ep in candidates if ep.get("url") == url]
-        if url_matches:
-            candidates = url_matches
-    endpoint = candidates[0] if candidates else None
-    if not isinstance(endpoint, dict):
-        return {"tool_name": tool_json.get("tool_name") or tool_json.get("name") or tool_json.get("title"), "tool_description": _truncate(tool_json.get("tool_description"), 220)}
-    response_hint = None
-    body = endpoint.get("body")
-    if isinstance(body, dict):
-        response_hint = list(body.keys())[:6]
-    elif isinstance(endpoint.get("schema"), dict):
-        props = endpoint.get("schema", {}).get("properties")
-        if isinstance(props, dict):
-            response_hint = list(props.keys())[:6]
-    detail: Dict[str, Any] = {"tool_name": tool_json.get("tool_name") or tool_json.get("name") or tool_json.get("title"), "tool_description": _truncate(tool_json.get("tool_description"), 220), "endpoint_details": {"required_parameters": _compact_params(endpoint.get("required_parameters"), 4), "optional_parameters": _compact_params(endpoint.get("optional_parameters"), 4)}}
-    if response_hint:
-        detail["endpoint_details"]["response_fields"] = response_hint
-    return detail
-
-
 def _extract_api_info(item: Dict[str, Any], catalog: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
     api_id = str(item.get("api_id", ""))
     service = item.get("service") or {}
@@ -247,13 +179,6 @@ def _extract_api_info(item: Dict[str, Any], catalog: Dict[str, Dict[str, Any]]) 
     if "qos" not in merged and isinstance(catalog_entry.get("qos"), dict):
         merged["qos"] = catalog_entry.get("qos")
     merged.setdefault("api_id", api_id)
-    detail = _find_endpoint_detail(merged)
-    if detail.get("tool_name") and not merged.get("tool_name"):
-        merged["tool_name"] = detail.get("tool_name")
-    if detail.get("tool_description") and not merged.get("tool_description"):
-        merged["tool_description"] = detail.get("tool_description")
-    if detail.get("endpoint_details"):
-        merged["endpoint_details"] = detail.get("endpoint_details")
     return merged
 
 
@@ -265,17 +190,7 @@ def _build_shared_retrieval_batches(query_id: str, main_task: str, subtasks: Lis
         apis: List[Dict[str, Any]] = []
         for row in shared_candidates.get(sid, []):
             merged = _extract_api_info(row, catalog)
-            apis.append({
-                "api_id": str(row.get("api_id", "")),
-                "name": merged.get("name") or merged.get("title") or merged.get("operation"),
-                "category": merged.get("category"),
-                "tool_name": merged.get("tool_name"),
-                "tool_description": merged.get("tool_description"),
-                "description": merged.get("description") or merged.get("summary") or merged.get("desc"),
-                "method": merged.get("method"),
-                "url": merged.get("url") or merged.get("endpoint") or merged.get("path"),
-                "endpoint_details": merged.get("endpoint_details") or {},
-            })
+            apis.append(normalize_api_for_ranking(merged, subtask_text=str(purpose), include_qos_rank=False))
         batches.append({
             "query_id": query_id,
             "main_task": main_task,

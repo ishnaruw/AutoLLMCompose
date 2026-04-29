@@ -745,6 +745,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         candidates=pure_candidates,
                         prompt_path="prompts/ranker_qos_pure_llm.md",
                         debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                        use_compact_api_evidence=True,
+                        include_qos_rank=True,
                     ),
                 )
                 ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(out_dir / "qos_pure_llm", sub_id, pure_ranked, retrieved, with_qos_services, pure_qos_meta)

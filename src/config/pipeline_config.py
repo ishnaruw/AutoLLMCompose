@@ -7,9 +7,9 @@ from typing import Dict, Any
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    queries_path: Path = Path("data/queries/one_user_query.jsonl")
+    queries_path: Path = Path("data/queries/all_user_query.jsonl")
     # run_tag: str | None = "RUNS_Groq_Multi"
-    run_tag: str | None = "RUNS_Fireworks_AI"
+    run_tag: str | None = "RUNS_APR_28"
 
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")

@@ -4,6 +4,8 @@ import json
 import re
 from typing import Any, Callable, Dict, List
 
+from src.core.api_formatting import normalize_api_for_ranking
+
 
 def _truncate(s: Any, n: int) -> str:
     s = "" if s is None else str(s)
@@ -92,6 +94,8 @@ def rank_subtask(
     candidates: List[Dict[str, Any]],
     prompt_path: str,
     debug_raw_path: str | None = None,
+    use_compact_api_evidence: bool = False,
+    include_qos_rank: bool = False,
 ) -> List[Dict[str, Any]]:
     with open(prompt_path, "r", encoding="utf-8") as f:
         template = f.read()
@@ -105,7 +109,14 @@ def rank_subtask(
         key=lambda x: int(x.get("retrieved_rank") or 10**9),
     )
     cand_trimmed = cand_sorted[:max_rank_candidates]
-    cand_slim = [_slim_candidate(c) for c in cand_trimmed]
+    if use_compact_api_evidence:
+        subtask_text = str(subtask.get("description") or subtask.get("summary") or subtask.get("task") or "")
+        cand_slim = [
+            normalize_api_for_ranking(c, subtask_text=subtask_text, include_qos_rank=include_qos_rank)
+            for c in cand_trimmed
+        ]
+    else:
+        cand_slim = [_slim_candidate(c) for c in cand_trimmed]
 
     prompt = (
         template
