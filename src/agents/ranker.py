@@ -7,13 +7,30 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from src.core.api_formatting import normalize_api_for_ranking
-from src.core.run_logging import log_line, log_warning_event
+from src.core.run_logging import log_line, log_ranking_anomaly_event
 
 
 class InvalidRankingOutput(RuntimeError):
     def __init__(self, metadata: Dict[str, Any]) -> None:
         self.metadata = metadata
         super().__init__(str(metadata.get("failure_reason") or "invalid_ranking_output"))
+
+FATAL_RANKING_REASONS = {"empty_response", "invalid_json", "parse_error", "timeout"}
+RECOVERABLE_RANKING_ANOMALIES = {
+    "duplicate_ranked_apis",
+    "unknown_api_ids",
+    "incomplete_ranked_api_list",
+    "missing_ranked_apis",
+}
+
+
+def _base_reason(reason: Any) -> str:
+    text = str(reason or "parse_error")
+    return text[:-len("_after_retries")] if text.endswith("_after_retries") else text
+
+
+def _is_recoverable_ranking_anomaly(issue: Dict[str, Any] | None) -> bool:
+    return _base_reason((issue or {}).get("reason")) in RECOVERABLE_RANKING_ANOMALIES
 
 
 def _truncate(s: Any, n: int) -> str:
@@ -234,18 +251,18 @@ def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[s
             malformed_items += 1
             continue
         returned_ids.append(api_id)
-        if api_id in expected_set:
-            parsed_item = {
-                "api_id": api_id,
-                "reason": (item.get("reason", "") or "")[:160],
-            }
-            if item.get("rank") is not None:
-                parsed_item["llm_reported_rank"] = item.get("rank")
-            if item.get("functional_reason") is not None:
-                parsed_item["functional_reason"] = str(item.get("functional_reason") or "")[:160]
-            if item.get("qos_reason") is not None:
-                parsed_item["qos_reason"] = str(item.get("qos_reason") or "")[:160]
-            ranked.append(parsed_item)
+        parsed_item = {
+            "api_id": api_id,
+            "reason": (item.get("reason", "") or "")[:160],
+            "is_unknown_api_id": api_id not in expected_set,
+        }
+        if item.get("rank") is not None:
+            parsed_item["llm_reported_rank"] = item.get("rank")
+        if item.get("functional_reason") is not None:
+            parsed_item["functional_reason"] = str(item.get("functional_reason") or "")[:160]
+        if item.get("qos_reason") is not None:
+            parsed_item["qos_reason"] = str(item.get("qos_reason") or "")[:160]
+        ranked.append(parsed_item)
 
     returned_counts = Counter(returned_ids)
     duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
@@ -313,6 +330,30 @@ def _failure_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str
         "exclude_from_ranking_eval": True,
         **issue,
     }
+
+
+def _ranking_anomaly_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str, Any]:
+    reason = str(issue.get("reason") or "ranking_anomaly")
+    anomaly_reason = reason if not after_retries else f"{reason}_after_retries"
+    return {
+        "ranking_anomaly": True,
+        "ranking_anomaly_stage": "llm_ranking",
+        "ranking_anomaly_reason": anomaly_reason,
+        "failure_flag": False,
+        "exclude_from_ranking_eval": False,
+        **issue,
+    }
+
+
+def _attach_ranking_anomaly(ranked: List[Dict[str, Any]], issue: Dict[str, Any], *, after_retries: bool) -> List[Dict[str, Any]]:
+    metadata = _ranking_anomaly_metadata(issue, after_retries=after_retries)
+    log_ranking_anomaly_event(metadata)
+    annotated: List[Dict[str, Any]] = []
+    for item in ranked:
+        row = dict(item)
+        row.update(metadata)
+        annotated.append(row)
+    return annotated
 
 
 def rank_subtask(
@@ -385,9 +426,18 @@ def rank_subtask(
             return ranked[:ranker_pool_n]
 
         last_issue = issue
-        log_line(
-            f"[ranker] invalid LLM ranking output ({issue.get('reason')}) "
-            f"attempt {attempt}/{attempts}; expected={issue.get('expected_api_count')} actual={issue.get('actual_api_count')}"
-        )
+        if _is_recoverable_ranking_anomaly(issue):
+            log_line(
+                f"[ranker] recoverable LLM ranking anomaly ({issue.get('reason')}) "
+                f"attempt {attempt}/{attempts}; expected={issue.get('expected_api_count')} actual={issue.get('actual_api_count')}"
+            )
+        else:
+            log_line(
+                f"[ranker] invalid LLM ranking output ({issue.get('reason')}) "
+                f"attempt {attempt}/{attempts}; expected={issue.get('expected_api_count')} actual={issue.get('actual_api_count')}"
+            )
+
+        if _is_recoverable_ranking_anomaly(issue) and attempt == attempts:
+            return _attach_ranking_anomaly(ranked[:ranker_pool_n], issue, after_retries=True)
 
     raise InvalidRankingOutput(_failure_metadata(last_issue, after_retries=True))

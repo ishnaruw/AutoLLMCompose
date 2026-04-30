@@ -25,7 +25,7 @@ from src.core.retry import call_with_backoff
 from src.eval.functional_match_eval import evaluate_query, evaluate_retrieval_functional_match
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
-from src.eval.mode_anomaly_report import write_mode_anomaly_excel
+from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.autogen_runner import run_autogen_agent
 from src.llm.backends import GROQ_MULTI_MODEL_SENTINEL, groq_experiment_model_pool, make_backend
@@ -554,7 +554,19 @@ def _write_ranked(
 ) -> List[Dict[str, Any]]:
     rag_map = {str(r.get("api_id")): r for r in retrieved}
     full = []
-    ranked_full = [item for item in ranked if str(item.get("api_id", "")) in rag_map]
+    ranked_full = [item for item in ranked if str(item.get("api_id", "")).strip()]
+    passthrough_keys = [
+        "ranking_anomaly",
+        "ranking_anomaly_reason",
+        "ranking_anomaly_stage",
+        "expected_api_count",
+        "actual_api_count",
+        "returned_api_count",
+        "duplicate_api_ids",
+        "missing_api_ids",
+        "unknown_api_ids",
+        "is_unknown_api_id",
+    ]
 
     for idx, item in enumerate(ranked_full, start=1):
         api_id = str(item.get("api_id", ""))
@@ -568,6 +580,9 @@ def _write_ranked(
             "reason": item.get("reason", ""),
             "service": id_to_service.get(api_id, {}),
         }
+        for key in passthrough_keys:
+            if key in item:
+                row[key] = item.get(key)
         if extras and api_id in extras:
             row.update(extras[api_id])
         full.append(row)
@@ -613,19 +628,17 @@ def _ranking_failure_record(
 
 
 def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
-    if record.get("error"):
-        return False
     stage = str(record.get("failure_stage") or "")
     reason = str(record.get("failure_reason") or "")
     if reason.endswith("_after_retries"):
         reason = reason[: -len("_after_retries")]
+    if record.get("error") and reason != "timeout":
+        return False
     expected_reasons = {
+        "empty_response",
         "parse_error",
         "invalid_json",
-        "duplicate_ranked_apis",
-        "unknown_api_ids",
-        "incomplete_ranked_api_list",
-        "missing_ranked_apis",
+        "timeout",
         "incomplete_qos_scores",
         "missing_api_scores",
     }
@@ -768,6 +781,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     eval_out: Path | None = None
     candidate_api_rankings_rows_path: Path | None = None
     mode_anomaly_xlsx: Path | None = None
+    ranking_anomaly_audit_json: Path | None = None
     duplicate_audit_json: Path | None = None
     hallucination_audit_json: Path | None = None
     summary_selected = {"planner_enabled": CONFIG.planner_enabled}
@@ -1022,8 +1036,12 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             hallucination_audit_json = eval_dir / f"query_{query_id}_hallucination_audit.json"
             _write_json(hallucination_audit_json, hallucination_audit)
 
+            ranking_anomaly_audit = collect_ranking_anomaly_audit_for_run(out_dir, query_id=query_id)
+            ranking_anomaly_audit_json = eval_dir / f"query_{query_id}_ranking_anomaly_audit.json"
+            _write_json(ranking_anomaly_audit_json, ranking_anomaly_audit)
+
             mode_anomaly_xlsx = eval_dir / f"query_{query_id}_mode_anomalies.xlsx"
-            write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx)
+            write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx, ranking_anomaly_audit)
 
             _write_json(
                 out_dir / "evaluation_result.json",
@@ -1034,6 +1052,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     "retrieval_functional_match_rows_json": _to_run_relative(retrieval_functional_match_rows_path, out_dir),
                     "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
                     "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
+                    "ranking_anomaly_audit_json": _to_run_relative(ranking_anomaly_audit_json, out_dir),
                     "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
                     "cache_path": _to_run_relative(eval_cache, out_dir),
                 },

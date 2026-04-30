@@ -12,7 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.eval.ranking_metrics import (  # noqa: E402
     DEFAULT_RBO_P,
     DEFAULT_INCLUSION_POLICY,
-    INCLUSION_POLICIES,
+    MODE_ORDER,
     cases_to_frame,
     evaluate_parent_runs,
 )
@@ -38,6 +38,7 @@ def _write_outputs(bundle, output_dir: Path) -> None:
         json.dumps(
             {
                 "inclusion_policy": bundle.inclusion_policy,
+                "selected_modes": bundle.selected_modes,
                 "included_cases": len(bundle.cases),
                 "invalid_mode_subtask_cases": len(bundle.invalid_cases),
                 "discovered_run_dirs": len(bundle.discovered_run_dirs),
@@ -74,14 +75,21 @@ def main() -> None:
     )
     parser.add_argument(
         "--inclusion-policy",
-        choices=INCLUSION_POLICIES,
         default=DEFAULT_INCLUSION_POLICY,
-        help="Evaluation inclusion policy. Default: pairwise_available.",
+        help="Internal/debug option. Final reporting uses strict selected-mode evaluation.",
+    )
+    parser.add_argument(
+        "--modes",
+        nargs="+",
+        default=MODE_ORDER,
+        choices=MODE_ORDER,
+        help="Modes to include. Default: all four modes.",
     )
     args = parser.parse_args()
 
-    bundle = evaluate_parent_runs(args.parent_runs_dir, p=args.rbo_p, inclusion_policy=args.inclusion_policy)
+    bundle = evaluate_parent_runs(args.parent_runs_dir, p=args.rbo_p, inclusion_policy=args.inclusion_policy, selected_modes=args.modes)
     print(f"Evaluation inclusion policy: {bundle.inclusion_policy}")
+    print(f"Selected modes: {', '.join(bundle.selected_modes)}")
     print(f"Discovered query run folders: {len(bundle.discovered_run_dirs)}")
     print(f"Loaded ranking reports: {len(bundle.loaded_report_paths)}")
     print(f"Included query/subtask cases: {len(bundle.cases)}")

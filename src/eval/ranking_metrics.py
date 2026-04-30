@@ -13,10 +13,11 @@ MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 METRIC_NAMES = ["spearman", "average_overlap", "rbo", "jaccard"]
 DEFAULT_RBO_P = 0.9
 FALLBACK_K = 5
-STRICT_ALL_MODES = "strict_all_modes"
-PAIRWISE_AVAILABLE = "pairwise_available"
-INCLUSION_POLICIES = [PAIRWISE_AVAILABLE, STRICT_ALL_MODES]
-DEFAULT_INCLUSION_POLICY = PAIRWISE_AVAILABLE
+STRICT_SELECTED_MODES = "strict_selected_modes"
+STRICT_ALL_MODES = "strict_all_modes"  # Backward-compatible alias.
+PAIRWISE_AVAILABLE = "pairwise_available"  # Internal/debug only.
+INCLUSION_POLICIES = [STRICT_SELECTED_MODES, PAIRWISE_AVAILABLE, STRICT_ALL_MODES]
+DEFAULT_INCLUSION_POLICY = STRICT_SELECTED_MODES
 
 REQUIRED_COLUMNS = {
     "query_id",
@@ -155,6 +156,26 @@ CANONICAL_COLUMNS = {
         "unknown api ids",
         "unknown_api_ids",
     },
+    "is_hallucinated": {
+        "is hallucinated 0 1",
+        "is_hallucinated_0_1",
+        "is hallucinated",
+        "is_hallucinated",
+    },
+    "is_duplicated": {
+        "is duplicated 0 1",
+        "is_duplicated_0_1",
+        "is duplicated",
+        "is_duplicated",
+    },
+    "ranking_anomaly": {
+        "ranking anomaly",
+        "ranking_anomaly",
+    },
+    "ranking_anomaly_reason": {
+        "ranking anomaly reason",
+        "ranking_anomaly_reason",
+    },
 }
 
 MODE_ALIASES = {
@@ -188,6 +209,7 @@ class RankingCase:
     ranked_lists: Dict[str, List[str]]
     top_lists: Dict[str, List[str]]
     valid_modes: List[str]
+    selected_modes: List[str]
 
 
 @dataclass(frozen=True)
@@ -202,6 +224,7 @@ class EvaluationBundle:
     discovered_run_dirs: List[str]
     loaded_report_paths: List[str]
     inclusion_policy: str
+    selected_modes: List[str]
 
 
 def _normalize_name(name: Any) -> str:
@@ -429,6 +452,12 @@ def load_report_rows(report_path: str | Path, run_dir: str | Path | None = None)
     else:
         out["failure_flag"] = 0
 
+    for flag_col in ["is_hallucinated", "is_duplicated", "ranking_anomaly"]:
+        if flag_col in out.columns:
+            out[flag_col] = out[flag_col].map(_parse_binary).astype(int)
+        else:
+            out[flag_col] = 0
+
     if "exclude_from_ranking_eval" in out.columns:
         out["exclude_from_ranking_eval"] = out["exclude_from_ranking_eval"].map(_parse_binary).astype(int)
     else:
@@ -499,12 +528,12 @@ def _ordered_unique(values: Iterable[Any]) -> List[str]:
 
 def _build_top_list(group: pd.DataFrame, k: int) -> List[str]:
     ordered = group.sort_values(["mode_rank", "api_id"], kind="mergesort")
-    return _ordered_unique(ordered["api_id"].tolist())[:k]
+    return [str(value).strip() for value in ordered["api_id"].tolist() if str(value).strip()][:k]
 
 
 def _build_ranked_list(group: pd.DataFrame) -> List[str]:
     ordered = group.sort_values(["mode_rank", "api_id"], kind="mergesort")
-    return _ordered_unique(ordered["api_id"].tolist())
+    return [str(value).strip() for value in ordered["api_id"].tolist() if str(value).strip()]
 
 
 def _format_case_name(query_id: str, subtask_id: str, run_dir: str) -> str:
@@ -536,11 +565,24 @@ def _selected_counts_by_mode(case_df: pd.DataFrame) -> Dict[str, int]:
 
 def _normalize_inclusion_policy(inclusion_policy: str | None) -> str:
     policy = str(inclusion_policy or DEFAULT_INCLUSION_POLICY).strip()
+    if policy == STRICT_ALL_MODES:
+        return STRICT_SELECTED_MODES
     if policy not in INCLUSION_POLICIES:
         raise ValueError(
             f"Unsupported inclusion policy {policy!r}. Expected one of: {', '.join(INCLUSION_POLICIES)}"
         )
     return policy
+
+
+def _normalize_selected_modes(selected_modes: Sequence[str] | None) -> List[str]:
+    if selected_modes is None:
+        return list(MODE_ORDER)
+    normalized: List[str] = []
+    for mode in selected_modes:
+        canonical = _canonical_mode(mode)
+        if canonical in MODE_ORDER and canonical not in normalized:
+            normalized.append(canonical)
+    return normalized or list(MODE_ORDER)
 
 
 def _failure_details(excluded_rows: pd.DataFrame) -> List[str]:
@@ -620,8 +662,17 @@ def collect_invalid_case_rows(df: pd.DataFrame) -> pd.DataFrame:
 def build_ranking_cases(
     df: pd.DataFrame,
     inclusion_policy: str = DEFAULT_INCLUSION_POLICY,
+    selected_modes: Sequence[str] | None = None,
 ) -> Tuple[List[RankingCase], List[str]]:
+    """Build query/subtask ranking cases for the selected modes.
+
+    The public/default evaluation rule is strict over selected modes: a case is
+    retained only when every selected mode has a non-fatal ranking output. Metric
+    functions later decide whether a partially malformed returned ranking can be
+    used as-is for that specific metric.
+    """
     inclusion_policy = _normalize_inclusion_policy(inclusion_policy)
+    selected = _normalize_selected_modes(selected_modes)
     warnings: List[str] = []
     cases: List[RankingCase] = []
     if df.empty:
@@ -632,19 +683,23 @@ def build_ranking_cases(
         query_id = str(query_id)
         subtask_id = str(subtask_id)
         case_name = _format_case_name(query_id, subtask_id, str(run_dir))
+        case_df = case_df[case_df["mode"].isin(selected)].copy()
+        if case_df.empty:
+            warnings.append(f"Skipped {case_name}: no rows for selected modes {', '.join(selected)}.")
+            continue
 
         eval_df = case_df
         if "exclude_from_ranking_eval" in case_df.columns and (case_df["exclude_from_ranking_eval"] == 1).any():
             excluded_rows = case_df[case_df["exclude_from_ranking_eval"] == 1]
             details = _failure_details(excluded_rows)
             suffix = f": {', '.join(details)}" if details else ""
-            if inclusion_policy == STRICT_ALL_MODES:
+            if inclusion_policy == STRICT_SELECTED_MODES:
                 warnings.append(
-                    f"Excluded {case_name} from ranking evaluation under strict_all_modes due to failure metadata{suffix}."
+                    f"Excluded {case_name} from ranking evaluation because selected mode output was invalid{suffix}."
                 )
                 continue
             warnings.append(
-                f"{case_name}: excluding invalid mode/subtask rows under pairwise_available{suffix}."
+                f"{case_name}: excluding invalid mode/subtask rows under internal pairwise_available policy{suffix}."
             )
             invalid_modes = set(excluded_rows["mode"].dropna().astype(str))
             eval_df = case_df[
@@ -653,17 +708,17 @@ def build_ranking_cases(
             ]
 
         modes = set(eval_df["mode"].dropna().astype(str))
-        missing_modes = [mode for mode in MODE_ORDER if mode not in modes]
-        if missing_modes and inclusion_policy == STRICT_ALL_MODES:
-            warnings.append(f"Skipped {case_name}: missing modes {', '.join(missing_modes)}.")
+        missing_modes = [mode for mode in selected if mode not in modes]
+        if missing_modes and inclusion_policy == STRICT_SELECTED_MODES:
+            warnings.append(f"Skipped {case_name}: missing selected modes {', '.join(missing_modes)}.")
             continue
         if missing_modes:
             warnings.append(
-                f"{case_name}: missing modes under pairwise_available: {', '.join(missing_modes)}."
+                f"{case_name}: missing selected modes under internal pairwise_available policy: {', '.join(missing_modes)}."
             )
-        present_modes = [mode for mode in MODE_ORDER if mode in modes]
+        present_modes = [mode for mode in selected if mode in modes]
         if len(present_modes) < 2:
-            warnings.append(f"Skipped {case_name}: fewer than two valid modes were available.")
+            warnings.append(f"Skipped {case_name}: fewer than two selected modes were available.")
             continue
 
         k, fallback_used, k_source = _evaluation_k(eval_df, case_name, warnings)
@@ -677,12 +732,11 @@ def build_ranking_cases(
 
         selected_counts = _selected_counts_by_mode(eval_df)
         if selected_counts:
-            selected_scope = MODE_ORDER if inclusion_policy == STRICT_ALL_MODES else present_modes
-            missing_selected = [mode for mode in selected_scope if mode not in selected_counts]
+            missing_selected = [mode for mode in present_modes if mode not in selected_counts]
             differing_selected = {
                 mode: count
                 for mode, count in selected_counts.items()
-                if mode in selected_scope and count != k
+                if mode in present_modes and count != k
             }
             if missing_selected or differing_selected:
                 warnings.append(
@@ -693,43 +747,42 @@ def build_ranking_cases(
         ranked_lists: Dict[str, List[str]] = {}
         top_lists: Dict[str, List[str]] = {}
         too_short: List[str] = []
+        anomaly_modes: List[str] = []
         for mode in present_modes:
             mode_rows = eval_df[eval_df["mode"] == mode]
             ranked_lists[mode] = _build_ranked_list(mode_rows)
             top_lists[mode] = ranked_lists[mode][:k]
             if len(top_lists[mode]) < k:
                 too_short.append(f"{mode} ({len(top_lists[mode])}/{k})")
-        if too_short and inclusion_policy == STRICT_ALL_MODES:
-            warnings.append(f"Skipped {case_name}: not enough unique ranked APIs for K={k}: {', '.join(too_short)}.")
-            continue
+            if "ranking_anomaly" in mode_rows.columns and int(mode_rows["ranking_anomaly"].max() or 0) == 1:
+                reason_values = []
+                if "ranking_anomaly_reason" in mode_rows.columns:
+                    reason_values = mode_rows["ranking_anomaly_reason"].dropna().unique().tolist()
+                reasons = sorted(
+                    str(value)
+                    for value in reason_values
+                    if str(value).strip() and str(value).lower() != "nan"
+                )
+                reason_text = f" ({', '.join(reasons)})" if reasons else ""
+                anomaly_modes.append(f"{mode}{reason_text}")
         if too_short:
             warnings.append(
-                f"{case_name}: excluding modes with too few unique ranked APIs for K={k}: {', '.join(too_short)}."
+                f"{case_name}: selected mode ranking has fewer than K={k} returned APIs: {', '.join(too_short)}. "
+                "Top-K metrics will ignore unsafe prefixes for the affected metric."
             )
-            short_modes = {entry.split(" ", 1)[0] for entry in too_short}
-            for mode in short_modes:
-                ranked_lists.pop(mode, None)
-                top_lists.pop(mode, None)
-            present_modes = [mode for mode in present_modes if mode not in short_modes]
-            if len(present_modes) < 2:
-                warnings.append(f"Skipped {case_name}: fewer than two valid modes remained after K filtering.")
-                continue
+        if anomaly_modes:
+            warnings.append(
+                f"{case_name}: ranking anomalies detected and left unmodified for selected modes: {', '.join(anomaly_modes)}."
+            )
 
-        reference_mode = MODE_ORDER[0]
+        reference_mode = present_modes[0]
         reference_set = set(ranked_lists[reference_mode]) if reference_mode in ranked_lists else set()
-        mismatched_sets = []
-        if inclusion_policy == STRICT_ALL_MODES:
-            mismatched_sets = [
-                mode
-                for mode in MODE_ORDER[1:]
-                if set(ranked_lists[mode]) != reference_set
-            ]
+        mismatched_sets = [mode for mode in present_modes[1:] if set(ranked_lists[mode]) != reference_set]
         if mismatched_sets:
             warnings.append(
-                f"Skipped {case_name}: full candidate sets differ across modes, so standard Spearman "
-                f"cannot be computed on a shared ranked universe. Mismatched modes: {', '.join(mismatched_sets)}."
+                f"{case_name}: full candidate sets differ across selected modes, so Spearman will be excluded "
+                f"for this case. Mismatched modes: {', '.join(mismatched_sets)}."
             )
-            continue
 
         cases.append(
             RankingCase(
@@ -743,11 +796,11 @@ def build_ranking_cases(
                 ranked_lists=ranked_lists,
                 top_lists=top_lists,
                 valid_modes=present_modes,
+                selected_modes=selected,
             )
         )
 
     return cases, warnings
-
 
 def _metric_k(left: Sequence[str], right: Sequence[str], k: int | None) -> int:
     return int(k if k is not None else max(len(left), len(right)))
@@ -759,10 +812,27 @@ def _clip(value: float, lower: float, upper: float) -> float:
     return float(min(max(value, lower), upper))
 
 
+def _has_duplicates(values: Sequence[str]) -> bool:
+    cleaned = [str(value).strip() for value in values if str(value).strip()]
+    return len(cleaned) != len(set(cleaned))
+
+
+def _top_k_prefix_is_safe(values: Sequence[str], k: int) -> bool:
+    if k <= 0:
+        return True
+    cleaned = [str(value).strip() for value in values if str(value).strip()]
+    if len(cleaned) < k:
+        return False
+    top = cleaned[:k]
+    return len(top) == len(set(top))
+
+
 def spearman_full(left: Sequence[str], right: Sequence[str]) -> float:
     """Standard Spearman correlation over a complete shared candidate set."""
-    left_ranked = _ordered_unique(left)
-    right_ranked = _ordered_unique(right)
+    left_ranked = [str(value).strip() for value in left if str(value).strip()]
+    right_ranked = [str(value).strip() for value in right if str(value).strip()]
+    if _has_duplicates(left_ranked) or _has_duplicates(right_ranked):
+        raise ValueError("standard Spearman requires duplicate-free rankings")
     left_set = set(left_ranked)
     right_set = set(right_ranked)
     if left_set != right_set:
@@ -778,7 +848,6 @@ def spearman_full(left: Sequence[str], right: Sequence[str]) -> float:
     statistic = spearmanr(x, y).statistic
     return _clip(float(statistic), -1.0, 1.0)
 
-
 def spearman_union(left: Sequence[str], right: Sequence[str], k: int | None = None) -> float:
     """Backward-compatible alias for standard full-list Spearman.
 
@@ -793,8 +862,10 @@ def average_overlap(left: Sequence[str], right: Sequence[str], k: int | None = N
     if k <= 0:
         return 1.0
 
-    left_top = _ordered_unique(left)[:k]
-    right_top = _ordered_unique(right)[:k]
+    if not _top_k_prefix_is_safe(left, k) or not _top_k_prefix_is_safe(right, k):
+        raise ValueError("top-K metrics require each returned top-K prefix to contain K unique APIs")
+    left_top = [str(value).strip() for value in left if str(value).strip()][:k]
+    right_top = [str(value).strip() for value in right if str(value).strip()][:k]
     scores = []
     for depth in range(1, k + 1):
         overlap = len(set(left_top[:depth]) & set(right_top[:depth]))
@@ -804,8 +875,8 @@ def average_overlap(left: Sequence[str], right: Sequence[str], k: int | None = N
 
 def overlap_by_depth(left: Sequence[str], right: Sequence[str], k: int | None = None) -> pd.DataFrame:
     k = _metric_k(left, right, k)
-    left_top = _ordered_unique(left)[:k]
-    right_top = _ordered_unique(right)[:k]
+    left_top = [str(value).strip() for value in left if str(value).strip()][:k]
+    right_top = [str(value).strip() for value in right if str(value).strip()][:k]
     rows: List[Dict[str, Any]] = []
     for depth in range(1, k + 1):
         overlap = len(set(left_top[:depth]) & set(right_top[:depth]))
@@ -833,8 +904,10 @@ def rbo_score(
     if k <= 0:
         return 1.0
 
-    left_top = _ordered_unique(left)[:k]
-    right_top = _ordered_unique(right)[:k]
+    if not _top_k_prefix_is_safe(left, k) or not _top_k_prefix_is_safe(right, k):
+        raise ValueError("top-K metrics require each returned top-K prefix to contain K unique APIs")
+    left_top = [str(value).strip() for value in left if str(value).strip()][:k]
+    right_top = [str(value).strip() for value in right if str(value).strip()][:k]
     weighted = 0.0
     last_agreement = 0.0
     for depth in range(1, k + 1):
@@ -845,8 +918,10 @@ def rbo_score(
 
 def jaccard_similarity(left: Sequence[str], right: Sequence[str], k: int | None = None) -> float:
     k = _metric_k(left, right, k)
-    left_set = set(_ordered_unique(left)[:k])
-    right_set = set(_ordered_unique(right)[:k])
+    if not _top_k_prefix_is_safe(left, k) or not _top_k_prefix_is_safe(right, k):
+        raise ValueError("top-K metrics require each returned top-K prefix to contain K unique APIs")
+    left_set = set([str(value).strip() for value in left if str(value).strip()][:k])
+    right_set = set([str(value).strip() for value in right if str(value).strip()][:k])
     union = left_set | right_set
     if not union:
         return 1.0
@@ -871,18 +946,44 @@ def pairwise_metric(
     raise ValueError(f"Unsupported metric: {metric}")
 
 
+def _case_metric_is_usable(case: RankingCase, metric: str) -> bool:
+    selected = case.selected_modes or case.valid_modes
+    if len(selected) < 2:
+        return False
+    if any(mode not in case.ranked_lists or mode not in case.top_lists for mode in selected):
+        return False
+
+    if metric == "spearman":
+        ranked = {
+            mode: [str(value).strip() for value in case.ranked_lists.get(mode, []) if str(value).strip()]
+            for mode in selected
+        }
+        if any(len(values) < 2 or _has_duplicates(values) for values in ranked.values()):
+            return False
+        reference_set = set(ranked[selected[0]])
+        return all(set(values) == reference_set for values in ranked.values())
+
+    return all(_top_k_prefix_is_safe(case.top_lists.get(mode, []), case.k) for mode in selected)
+
+
 def compute_case_matrices(case: RankingCase, p: float = DEFAULT_RBO_P) -> Dict[str, pd.DataFrame]:
     matrices: Dict[str, pd.DataFrame] = {}
+    selected = case.selected_modes or case.valid_modes
+    selected_set = set(selected)
     for metric in METRIC_NAMES:
         matrix = pd.DataFrame(index=MODE_ORDER, columns=MODE_ORDER, dtype=float)
+        case_metric_usable = _case_metric_is_usable(case, metric)
         for left_idx, left_mode in enumerate(MODE_ORDER):
             for right_idx, right_mode in enumerate(MODE_ORDER):
                 left_available = left_mode in case.ranked_lists and left_mode in case.top_lists
                 right_available = right_mode in case.ranked_lists and right_mode in case.top_lists
-                if not left_available or not right_available:
+                pair_in_selected_scope = left_mode in selected_set and right_mode in selected_set
+                if not left_available or not right_available or not pair_in_selected_scope:
                     value = np.nan
                 elif left_idx == right_idx:
-                    value = 1.0
+                    value = 1.0 if case_metric_usable else np.nan
+                elif not case_metric_usable:
+                    value = np.nan
                 else:
                     left_list = case.ranked_lists[left_mode] if metric == "spearman" else case.top_lists[left_mode]
                     right_list = case.ranked_lists[right_mode] if metric == "spearman" else case.top_lists[right_mode]
@@ -893,7 +994,6 @@ def compute_case_matrices(case: RankingCase, p: float = DEFAULT_RBO_P) -> Dict[s
                 matrix.loc[left_mode, right_mode] = value
         matrices[metric] = matrix.astype(float)
     return matrices
-
 
 def aggregate_matrices_with_counts(
     cases: Sequence[RankingCase],
@@ -963,10 +1063,12 @@ def evaluate_parent_runs(
     parent_runs_dir: str | Path,
     p: float = DEFAULT_RBO_P,
     inclusion_policy: str = DEFAULT_INCLUSION_POLICY,
+    selected_modes: Sequence[str] | None = None,
 ) -> EvaluationBundle:
     inclusion_policy = _normalize_inclusion_policy(inclusion_policy)
+    selected = _normalize_selected_modes(selected_modes)
     raw_rows, load_warnings, discovered_run_dirs, loaded_report_paths = load_parent_runs(parent_runs_dir)
-    cases, case_warnings = build_ranking_cases(raw_rows, inclusion_policy=inclusion_policy)
+    cases, case_warnings = build_ranking_cases(raw_rows, inclusion_policy=inclusion_policy, selected_modes=selected)
     matrices, pairwise_counts = aggregate_matrices_with_counts(cases, p=p)
     invalid_cases = collect_invalid_case_rows(raw_rows)
     return EvaluationBundle(
@@ -980,6 +1082,7 @@ def evaluate_parent_runs(
         discovered_run_dirs=discovered_run_dirs,
         loaded_report_paths=loaded_report_paths,
         inclusion_policy=inclusion_policy,
+        selected_modes=selected,
     )
 
 
@@ -994,6 +1097,7 @@ def cases_to_frame(cases: Sequence[RankingCase]) -> pd.DataFrame:
         "k_fallback_used",
         "ranked_count",
         "valid_modes",
+        "selected_modes",
     ]
     rows = [
         {
@@ -1006,6 +1110,7 @@ def cases_to_frame(cases: Sequence[RankingCase]) -> pd.DataFrame:
             "k_fallback_used": case.k_fallback_used,
             "ranked_count": min((len(case.ranked_lists.get(mode, [])) for mode in case.valid_modes), default=0),
             "valid_modes": ", ".join(case.valid_modes),
+            "selected_modes": ", ".join(case.selected_modes),
         }
         for case in cases
     ]

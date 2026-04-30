@@ -12,6 +12,7 @@ _MODEL_USAGE_PATH: Path | None = None
 _WARNING_LOG_PATH: Path | None = None
 _ERROR_LOG_PATH: Path | None = None
 _INVALID_CASES_LOG_PATH: Path | None = None
+_RANKING_ANOMALIES_LOG_PATH: Path | None = None
 _LLM_DEBUG_COUNTER = 0
 _LLM_DEBUG_LOCK = Lock()
 _MODEL_USAGE_LOCK = Lock()
@@ -19,7 +20,7 @@ _STRUCTURED_LOG_LOCK = Lock()
 
 
 def configure_run_log(path: str | Path | None) -> Path | None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _LLM_DEBUG_COUNTER
     if path is None:
         _RUN_LOG_PATH = None
         _LLM_DEBUG_DIR = None
@@ -27,6 +28,7 @@ def configure_run_log(path: str | Path | None) -> Path | None:
         _WARNING_LOG_PATH = None
         _ERROR_LOG_PATH = None
         _INVALID_CASES_LOG_PATH = None
+        _RANKING_ANOMALIES_LOG_PATH = None
         _LLM_DEBUG_COUNTER = 0
         return None
     _RUN_LOG_PATH = Path(path)
@@ -37,12 +39,13 @@ def configure_run_log(path: str | Path | None) -> Path | None:
     _WARNING_LOG_PATH = _RUN_LOG_PATH.parent / "warnings.log"
     _ERROR_LOG_PATH = _RUN_LOG_PATH.parent / "errors.log"
     _INVALID_CASES_LOG_PATH = _RUN_LOG_PATH.parent / "invalid_cases.log"
+    _RANKING_ANOMALIES_LOG_PATH = _RUN_LOG_PATH.parent / "ranking_anomalies.log"
     _LLM_DEBUG_COUNTER = 0
     return _RUN_LOG_PATH
 
 
 def clear_run_log() -> None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _LLM_DEBUG_COUNTER
     _RUN_LOG_PATH = None
     _LLM_DEBUG_DIR = None
     _MODEL_USAGE_PATH = None
@@ -72,6 +75,10 @@ def current_invalid_cases_log_path() -> Path | None:
     return _INVALID_CASES_LOG_PATH
 
 
+def current_ranking_anomalies_log_path() -> Path | None:
+    return _RANKING_ANOMALIES_LOG_PATH
+
+
 def _timestamp() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -97,6 +104,12 @@ def _invalid_cases_log_path() -> Path:
     if _INVALID_CASES_LOG_PATH is not None:
         return _INVALID_CASES_LOG_PATH
     return Path("results/logs") / "invalid_cases.log"
+
+
+def _ranking_anomalies_log_path() -> Path:
+    if _RANKING_ANOMALIES_LOG_PATH is not None:
+        return _RANKING_ANOMALIES_LOG_PATH
+    return Path("results/logs") / "ranking_anomalies.log"
 
 
 def _write_structured_log(level: str, payload: dict) -> None:
@@ -125,6 +138,20 @@ def log_invalid_case_event(payload: dict) -> None:
     event.setdefault("exclude_from_ranking_eval", True)
     event.setdefault("timestamp", _timestamp())
     path = _invalid_cases_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _STRUCTURED_LOG_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def log_ranking_anomaly_event(payload: dict) -> None:
+    event = dict(payload or {})
+    event.setdefault("level", "warning")
+    event.setdefault("event_type", "ranking_output_anomaly")
+    event.setdefault("exclude_from_ranking_eval", False)
+    event.setdefault("metric_dependent_validity", True)
+    event.setdefault("timestamp", _timestamp())
+    path = _ranking_anomalies_log_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     with _STRUCTURED_LOG_LOCK:
         with path.open("a", encoding="utf-8") as handle:

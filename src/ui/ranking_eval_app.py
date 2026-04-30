@@ -12,9 +12,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.ranking_metrics import (  # noqa: E402
-    DEFAULT_INCLUSION_POLICY,
     DEFAULT_RBO_P,
-    INCLUSION_POLICIES,
     METRIC_NAMES,
     MODE_ORDER,
     aggregate_matrices_with_counts,
@@ -53,8 +51,8 @@ K_HELP = (
 
 
 @st.cache_data(show_spinner=False)
-def _load_bundle(parent_dir: str, rbo_p: float, inclusion_policy: str):
-    return evaluate_parent_runs(parent_dir, p=rbo_p, inclusion_policy=inclusion_policy)
+def _load_bundle(parent_dir: str, rbo_p: float, selected_modes: tuple[str, ...]):
+    return evaluate_parent_runs(parent_dir, p=rbo_p, selected_modes=list(selected_modes))
 
 
 def _heatmap(matrix: pd.DataFrame, title: str, value_range: tuple[float, float]):
@@ -105,19 +103,21 @@ def main() -> None:
             step=0.01,
             help=METRIC_HELP["rbo"],
         )
-        inclusion_policy = st.selectbox(
-            "Evaluation inclusion policy",
-            INCLUSION_POLICIES,
-            index=INCLUSION_POLICIES.index(DEFAULT_INCLUSION_POLICY),
-            format_func=lambda value: {
-                "pairwise_available": "pairwise_available",
-                "strict_all_modes": "strict_all_modes",
-            }.get(value, value),
+        selected_modes = st.multiselect(
+            "Modes",
+            MODE_ORDER,
+            default=MODE_ORDER,
+            help="Evaluation includes only query/subtask cases where all selected modes have usable outputs for the metric being computed.",
         )
+        st.caption(K_HELP)
         if st.button("Reload reports"):
             _load_bundle.clear()
 
-    bundle = _load_bundle(parent_dir, rbo_p, inclusion_policy)
+    if len(selected_modes) < 2:
+        st.warning("Select at least two modes.")
+        return
+
+    bundle = _load_bundle(parent_dir, rbo_p, tuple(selected_modes))
     cases_df = cases_to_frame(bundle.cases)
 
     if bundle.warnings:
@@ -126,7 +126,7 @@ def main() -> None:
                 st.warning(warning)
 
     if not bundle.cases:
-        st.error("No complete query/subtask cases were available for ranking evaluation.")
+        st.error("No query/subtask cases were available for the selected modes.")
         st.caption("Check that the selected parent directory contains q* run folders with Excel reports.")
         if not bundle.invalid_cases.empty:
             with st.expander(f"Invalid mode/subtask cases ({len(bundle.invalid_cases)})", expanded=True):
@@ -148,14 +148,9 @@ def main() -> None:
             default=METRIC_NAMES,
             format_func=lambda value: METRIC_LABELS.get(value, value),
         )
-        selected_modes = st.multiselect("Modes", MODE_ORDER, default=MODE_ORDER)
-        st.caption(K_HELP)
 
     if not selected_metrics:
         st.warning("Select at least one metric.")
-        return
-    if len(selected_modes) < 2:
-        st.warning("Select at least two modes.")
         return
 
     filtered_ids = set(
@@ -183,10 +178,10 @@ def main() -> None:
     stat_cols[1].metric("Discovered runs", len(bundle.discovered_run_dirs))
     stat_cols[2].metric("Loaded reports", len(bundle.loaded_report_paths))
     stat_cols[3].metric("Fallback K cases", fallback_count)
-    stat_cols[4].metric("Pairwise comparisons", included_pairwise)
+    stat_cols[4].metric("Metric comparisons", included_pairwise)
     stat_cols[5].metric("Invalid cases", len(bundle.invalid_cases))
     stat_cols[6].metric("Rows loaded", len(bundle.raw_rows))
-    st.caption(f"Evaluation mode: {bundle.inclusion_policy}")
+    st.caption("Evaluation rule: strict selected-mode evaluation. Final reporting should use all four modes selected.")
 
     if not bundle.invalid_cases.empty:
         st.subheader("Invalid Evaluation Cases")
