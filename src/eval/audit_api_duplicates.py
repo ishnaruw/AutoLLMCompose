@@ -36,7 +36,7 @@ DUPLICATE_COLUMNS = [
     "Repeat_Count",
     "Mode_Ranks",
     "Retrieved_Ranks",
-    "Relevancy_Values",
+    "Functional_Match_Values",
     "Comments",
 ]
 
@@ -92,7 +92,7 @@ def _iter_run_dirs(root_dir: Path) -> Iterable[Path]:
 
 
 def _find_evaluation_dir(run_dir: Path) -> Path | None:
-    for candidate in ("evaluation", "relevancy_eval"):
+    for candidate in ("evaluation", "functional_match_eval"):
         eval_dir = run_dir / candidate
         if eval_dir.exists():
             return eval_dir
@@ -103,7 +103,7 @@ def _find_rows_json(run_dir: Path) -> Path | None:
     eval_dir = _find_evaluation_dir(run_dir)
     if eval_dir is None:
         return None
-    matches = sorted(eval_dir.glob("query_*_api_relevancy_rows.json"))
+    matches = sorted(eval_dir.glob("query_*_candidate_api_rankings_rows.json"))
     return matches[0] if matches else None
 
 
@@ -143,7 +143,7 @@ def _collect_group_summary(
         matching_rows = [row for row in rows if str(row.get("Selected_API", "")).strip() == api_id]
         mode_ranks = _int_sort(row.get("Mode Rank", "") for row in matching_rows)
         retrieved_ranks = _int_sort(row.get("Retrieved Rank", "") for row in matching_rows)
-        relevancy_values = [str(row.get("API Relevancy (0/1)", "")) for row in matching_rows]
+        functional_match_values = [str(row.get("Functional Match (0/1)", "")) for row in matching_rows]
         unique_comments = []
         seen_comments = set()
         for row in matching_rows:
@@ -163,7 +163,7 @@ def _collect_group_summary(
                 "Repeat_Count": repeat_count,
                 "Mode_Ranks": ", ".join(mode_ranks),
                 "Retrieved_Ranks": ", ".join(retrieved_ranks),
-                "Relevancy_Values": ", ".join(relevancy_values),
+                "Functional_Match_Values": ", ".join(functional_match_values),
                 "Comments": " | ".join(unique_comments[:3]),
             }
         )

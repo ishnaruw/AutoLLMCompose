@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from src.config import CONFIG
-from src.eval.api_relevancy_excel import enrich_relevancy_rows_with_anomaly_flags, write_relevancy_excel
+from src.eval.candidate_api_rankings_excel import enrich_functional_match_rows_with_anomaly_flags, write_candidate_api_rankings_excel
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
 
@@ -18,9 +18,9 @@ def _normalize_run_dir(path: Path) -> Path:
     path = path.resolve()
     if path.is_dir() and (path / "0_decomposer.json").exists():
         return path
-    if path.name in {"evaluation", "relevancy_eval"} and path.parent.is_dir() and (path.parent / "0_decomposer.json").exists():
+    if path.name in {"evaluation", "functional_match_eval"} and path.parent.is_dir() and (path.parent / "0_decomposer.json").exists():
         return path.parent.resolve()
-    raise ValueError(f"Expected a query run directory or its evaluation/relevancy_eval directory, got: {path}")
+    raise ValueError(f"Expected a query run directory or its evaluation/functional_match_eval directory, got: {path}")
 
 
 def _query_id_from_run_dir(run_dir: Path) -> str:
@@ -28,7 +28,7 @@ def _query_id_from_run_dir(run_dir: Path) -> str:
 
 
 def _default_eval_dir(run_dir: Path) -> Path:
-    for name in ("evaluation", "relevancy_eval"):
+    for name in ("evaluation", "functional_match_eval"):
         candidate = run_dir / name
         if candidate.exists():
             return candidate
@@ -62,14 +62,14 @@ def _backfill_single(run_path: Path, output_dir: Path | None) -> Path:
     run_dir = _normalize_run_dir(run_path)
     eval_dir = output_dir.resolve() if output_dir else _default_eval_dir(run_dir)
     query_id = _query_id_from_run_dir(run_dir)
-    rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
+    rows_path = eval_dir / f"query_{query_id}_candidate_api_rankings_rows.json"
     rows = _safe_load_json(rows_path)
     if not isinstance(rows, list):
         raise ValueError(f"Expected list rows JSON at {rows_path}, got: {type(rows).__name__}")
 
     duplicate_audit = _load_or_collect_duplicate_audit(run_dir, eval_dir, query_id)
     hallucination_audit = _load_or_collect_hallucination_audit(run_dir, eval_dir, query_id)
-    enriched_rows = enrich_relevancy_rows_with_anomaly_flags(
+    enriched_rows = enrich_functional_match_rows_with_anomaly_flags(
         rows,
         duplicate_audit=duplicate_audit,
         hallucination_audit=hallucination_audit,
@@ -77,8 +77,8 @@ def _backfill_single(run_path: Path, output_dir: Path | None) -> Path:
 
     eval_dir.mkdir(parents=True, exist_ok=True)
     rows_path.write_text(json.dumps(enriched_rows, indent=2, ensure_ascii=False), encoding="utf-8")
-    out_path = eval_dir / f"query_{query_id}_api_relevancy.xlsx"
-    write_relevancy_excel(
+    out_path = eval_dir / f"query_{query_id}_candidate_api_rankings.xlsx"
+    write_candidate_api_rankings_excel(
         enriched_rows,
         out_path,
         duplicate_audit=duplicate_audit,
@@ -106,12 +106,12 @@ def _backfill_root(root_dir: Path) -> List[Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Backfill query_<id>_api_relevancy.xlsx and rows JSON with anomaly flags for historical runs."
+        description="Backfill query_<id>_candidate_api_rankings.xlsx and rows JSON with anomaly flags for historical runs."
     )
     parser.add_argument(
         "--run-dir",
         type=Path,
-        help="Single query run directory, or its evaluation/relevancy_eval directory.",
+        help="Single query run directory, or its evaluation/functional_match_eval directory.",
     )
     parser.add_argument(
         "--output-dir",

@@ -12,10 +12,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.eval.ranking_metrics import (  # noqa: E402
+    DEFAULT_INCLUSION_POLICY,
     DEFAULT_RBO_P,
+    INCLUSION_POLICIES,
     METRIC_NAMES,
     MODE_ORDER,
-    aggregate_matrices,
+    aggregate_matrices_with_counts,
     cases_to_frame,
     compute_case_matrices,
     evaluate_parent_runs,
@@ -30,16 +32,29 @@ DEFAULT_PARENT = (
 )
 
 METRIC_LABELS = {
-    "spearman": "Spearman",
-    "average_overlap": "Average Overlap",
-    "rbo": "RBO",
-    "jaccard": "Jaccard",
+    "spearman": "Spearman (All Candidates)",
+    "average_overlap": "Top-K Average Overlap",
+    "rbo": "Top-K RBO",
+    "jaccard": "Top-K Jaccard",
 }
+
+METRIC_HELP = {
+    "spearman": "Standard Spearman correlation over the complete shared ranked candidate list for each mode.",
+    "average_overlap": "Top-K mean overlap across depths 1..K.",
+    "rbo": "Top-K RBO with p=0.9 by default; emphasizes highly ranked overlap and is less sensitive to exact position changes when lists contain similar APIs.",
+    "jaccard": "Top-K set overlap only; it ignores within-set order.",
+}
+
+K_HELP = (
+    "Top-K metrics use a shared K per query/subtask. K is derived from the qos_hybrid functional-match "
+    "count because qos_hybrid is the functional-refinement mode used to define the meaningful valid "
+    "selection depth. This keeps AO, RBO, and Jaccard comparisons at the same cutoff across all modes."
+)
 
 
 @st.cache_data(show_spinner=False)
-def _load_bundle(parent_dir: str, rbo_p: float):
-    return evaluate_parent_runs(parent_dir, p=rbo_p)
+def _load_bundle(parent_dir: str, rbo_p: float, inclusion_policy: str):
+    return evaluate_parent_runs(parent_dir, p=rbo_p, inclusion_policy=inclusion_policy)
 
 
 def _heatmap(matrix: pd.DataFrame, title: str, value_range: tuple[float, float]):
@@ -82,11 +97,27 @@ def main() -> None:
     with st.sidebar:
         st.header("Input")
         parent_dir = st.text_input("Parent runs directory", value=str(DEFAULT_PARENT))
-        rbo_p = st.slider("RBO p", min_value=0.5, max_value=0.99, value=DEFAULT_RBO_P, step=0.01)
+        rbo_p = st.slider(
+            "RBO p",
+            min_value=0.5,
+            max_value=0.99,
+            value=DEFAULT_RBO_P,
+            step=0.01,
+            help=METRIC_HELP["rbo"],
+        )
+        inclusion_policy = st.selectbox(
+            "Evaluation inclusion policy",
+            INCLUSION_POLICIES,
+            index=INCLUSION_POLICIES.index(DEFAULT_INCLUSION_POLICY),
+            format_func=lambda value: {
+                "pairwise_available": "pairwise_available",
+                "strict_all_modes": "strict_all_modes",
+            }.get(value, value),
+        )
         if st.button("Reload reports"):
             _load_bundle.clear()
 
-    bundle = _load_bundle(parent_dir, rbo_p)
+    bundle = _load_bundle(parent_dir, rbo_p, inclusion_policy)
     cases_df = cases_to_frame(bundle.cases)
 
     if bundle.warnings:
@@ -97,6 +128,9 @@ def main() -> None:
     if not bundle.cases:
         st.error("No complete query/subtask cases were available for ranking evaluation.")
         st.caption("Check that the selected parent directory contains q* run folders with Excel reports.")
+        if not bundle.invalid_cases.empty:
+            with st.expander(f"Invalid mode/subtask cases ({len(bundle.invalid_cases)})", expanded=True):
+                st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
         return
 
     with st.sidebar:
@@ -115,6 +149,7 @@ def main() -> None:
             format_func=lambda value: METRIC_LABELS.get(value, value),
         )
         selected_modes = st.multiselect("Modes", MODE_ORDER, default=MODE_ORDER)
+        st.caption(K_HELP)
 
     if not selected_metrics:
         st.warning("Select at least one metric.")
@@ -134,29 +169,65 @@ def main() -> None:
         st.error("No cases match the selected filters.")
         return
 
-    filtered_matrices = aggregate_matrices(filtered_cases, p=rbo_p)
-    filtered_pairwise = matrices_to_pairwise_table(filtered_matrices)
+    filtered_matrices, filtered_counts = aggregate_matrices_with_counts(filtered_cases, p=rbo_p)
+    filtered_pairwise = matrices_to_pairwise_table(filtered_matrices, filtered_counts)
 
     fallback_count = sum(case.k_fallback_used for case in filtered_cases)
-    stat_cols = st.columns(5)
+    included_pairwise = (
+        int(filtered_pairwise["included_cases"].sum())
+        if "included_cases" in filtered_pairwise.columns and not filtered_pairwise.empty
+        else 0
+    )
+    stat_cols = st.columns(7)
     stat_cols[0].metric("Included cases", len(filtered_cases))
     stat_cols[1].metric("Discovered runs", len(bundle.discovered_run_dirs))
     stat_cols[2].metric("Loaded reports", len(bundle.loaded_report_paths))
     stat_cols[3].metric("Fallback K cases", fallback_count)
-    stat_cols[4].metric("Rows loaded", len(bundle.raw_rows))
+    stat_cols[4].metric("Pairwise comparisons", included_pairwise)
+    stat_cols[5].metric("Invalid cases", len(bundle.invalid_cases))
+    stat_cols[6].metric("Rows loaded", len(bundle.raw_rows))
+    st.caption(f"Evaluation mode: {bundle.inclusion_policy}")
+
+    if not bundle.invalid_cases.empty:
+        st.subheader("Invalid Evaluation Cases")
+        invalid_cols = st.columns(3)
+        invalid_cols[0].dataframe(
+            bundle.invalid_cases.groupby("mode", dropna=False).size().reset_index(name="count"),
+            width="stretch",
+            hide_index=True,
+        )
+        invalid_cols[1].dataframe(
+            bundle.invalid_cases.groupby("failure_reason", dropna=False).size().reset_index(name="count"),
+            width="stretch",
+            hide_index=True,
+        )
+        invalid_cols[2].dataframe(
+            bundle.invalid_cases.groupby(["query_id", "subtask_id"], dropna=False).size().reset_index(name="count"),
+            width="stretch",
+            hide_index=True,
+        )
+        with st.expander("Excluded invalid mode/subtask rows", expanded=False):
+            st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
 
     st.subheader("Overall Mode Similarity")
+    with st.expander("Metric notes", expanded=False):
+        for metric in METRIC_NAMES:
+            st.markdown(f"**{METRIC_LABELS[metric]}**: {METRIC_HELP[metric]}")
+        st.markdown(f"**K**: {K_HELP}")
     for metric in selected_metrics:
         matrix = filtered_matrices[metric].loc[selected_modes, selected_modes]
         value_range = (-1.0, 1.0) if metric == "spearman" else (0.0, 1.0)
         st.plotly_chart(
             _heatmap(matrix, METRIC_LABELS.get(metric, metric), value_range),
-            use_container_width=True,
+            width="stretch",
         )
 
     st.subheader("Pairwise Scores")
     pairwise_view = _filter_pairwise(filtered_pairwise, selected_metrics, selected_modes)
-    st.dataframe(pairwise_view.round({"score": 4}), use_container_width=True, hide_index=True)
+    pairwise_table = pairwise_view.copy()
+    if not pairwise_table.empty:
+        pairwise_table["metric"] = pairwise_table["metric"].map(METRIC_LABELS)
+    st.dataframe(pairwise_table.round({"score": 4}), width="stretch", hide_index=True)
 
     if not pairwise_view.empty:
         pairwise_plot = pairwise_view.copy()
@@ -172,7 +243,7 @@ def main() -> None:
             labels={"mode_pair": "Mode pair", "score": "Score", "metric_label": "Metric"},
         )
         fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=380)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     st.subheader("Selected Query/Subtask Details")
     detail_df = cases_to_frame(filtered_cases)
@@ -184,10 +255,11 @@ def main() -> None:
     k_note = (
         "fallback K used because qos_hybrid had 0 functional matches"
         if selected_case.k_fallback_used
-        else "K from qos_hybrid Functional Match Label count"
+        else "K from qos_hybrid functional-match count"
     )
-    st.caption(f"K = {selected_case.k} ({k_note})")
-    st.dataframe(top_lists_to_wide_frame(selected_case), use_container_width=True, hide_index=True)
+    ranked_count = min((len(selected_case.ranked_lists.get(mode, [])) for mode in selected_case.valid_modes), default=0)
+    st.caption(f"K = {selected_case.k} ({k_note}); Spearman uses all {ranked_count} ranked candidates.")
+    st.dataframe(top_lists_to_wide_frame(selected_case), width="stretch", hide_index=True)
 
     st.subheader("Case-Level Metrics")
     case_matrices = compute_case_matrices(selected_case, p=rbo_p)
@@ -203,7 +275,7 @@ def main() -> None:
             f"{METRIC_LABELS.get(selected_case_metric, selected_case_metric)} for selected case",
             value_range,
         ),
-        use_container_width=True,
+        width="stretch",
     )
 
     st.subheader("Average Overlap by Depth")
@@ -211,6 +283,9 @@ def main() -> None:
     left_mode = pair_cols[0].selectbox("Mode A", selected_modes, index=0)
     default_right = selected_modes.index("qos_hybrid") if "qos_hybrid" in selected_modes else len(selected_modes) - 1
     right_mode = pair_cols[1].selectbox("Mode B", selected_modes, index=default_right)
+    if left_mode not in selected_case.top_lists or right_mode not in selected_case.top_lists:
+        st.warning("The selected pair is not available for this query/subtask under the current inclusion policy.")
+        return
     ao_depth = overlap_by_depth(
         selected_case.top_lists[left_mode],
         selected_case.top_lists[right_mode],
@@ -225,7 +300,7 @@ def main() -> None:
         labels={"depth": "Depth", "overlap_ratio": "Overlap ratio"},
     )
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=320)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 if __name__ == "__main__":

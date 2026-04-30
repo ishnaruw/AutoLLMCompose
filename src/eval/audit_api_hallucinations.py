@@ -120,7 +120,7 @@ def _provider_dir_label(root_dir: Path, run_dir: Path) -> str:
 
 
 def _find_evaluation_dir(run_dir: Path) -> Path | None:
-    for candidate in ("evaluation", "relevancy_eval"):
+    for candidate in ("evaluation", "functional_match_eval"):
         eval_dir = run_dir / candidate
         if eval_dir.exists():
             return eval_dir
@@ -131,7 +131,7 @@ def _find_rows_json(run_dir: Path) -> Path | None:
     eval_dir = _find_evaluation_dir(run_dir)
     if eval_dir is None:
         return None
-    matches = sorted(eval_dir.glob("query_*_api_relevancy_rows.json"))
+    matches = sorted(eval_dir.glob("query_*_candidate_api_rankings_rows.json"))
     return matches[0] if matches else None
 
 

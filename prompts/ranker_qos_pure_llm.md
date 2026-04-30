@@ -15,11 +15,18 @@ QoS meanings:
 - qos_llm_rank = QoS rank from a separate QoS-only scoring step.
 - Lower QoS rank is better. QoS rank 1 means the best QoS among the candidate APIs.
 
+Two-phase ranking process:
+Step 1: Determine whether each API is functionally plausible for the subtask.
+Step 2: Rank functionally plausible APIs using QoS rank as a major ordering factor.
+Step 3: Place clearly unrelated APIs below functionally plausible APIs.
+
 Rules:
 - Rank all candidates in the list. Do not filter any out.
-- Functional suitability is the primary requirement.
-- Among APIs that are functionally suitable or reasonably usable, use QoS rank to decide the order.
-- Do not rank a weak functional match above a strong functional match only because it has better QoS.
+- Functional suitability is a required gate.
+- First identify APIs that can reasonably satisfy the subtask.
+- Among functionally plausible APIs, QoS rank must materially affect ordering.
+- Do not treat QoS rank as a minor tie-breaker.
+- Prefer APIs with better QoS rank unless there is a clear functional reason not to.
 - Do not let excellent QoS elevate an API that is clearly unrelated to the subtask.
 - If qos_llm_rank is missing, treat that API as weak or uncertain from an operational perspective among similarly suitable APIs.
 - Use tool description as supporting domain context, but keep endpoint purpose primary.
@@ -37,7 +44,10 @@ Candidates:
 
 Return JSON only:
 {
-  "ranked": [
-    {"api_id": "...", "reason": "short reason"}
+  "ranked_apis": [
+    {
+      "api_id": "...",
+      "rank": 1
+    }
   ]
 }

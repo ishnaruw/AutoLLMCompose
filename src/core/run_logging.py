@@ -9,17 +9,24 @@ from pathlib import Path
 _RUN_LOG_PATH: Path | None = None
 _LLM_DEBUG_DIR: Path | None = None
 _MODEL_USAGE_PATH: Path | None = None
+_WARNING_LOG_PATH: Path | None = None
+_ERROR_LOG_PATH: Path | None = None
+_INVALID_CASES_LOG_PATH: Path | None = None
 _LLM_DEBUG_COUNTER = 0
 _LLM_DEBUG_LOCK = Lock()
 _MODEL_USAGE_LOCK = Lock()
+_STRUCTURED_LOG_LOCK = Lock()
 
 
 def configure_run_log(path: str | Path | None) -> Path | None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _LLM_DEBUG_COUNTER
     if path is None:
         _RUN_LOG_PATH = None
         _LLM_DEBUG_DIR = None
         _MODEL_USAGE_PATH = None
+        _WARNING_LOG_PATH = None
+        _ERROR_LOG_PATH = None
+        _INVALID_CASES_LOG_PATH = None
         _LLM_DEBUG_COUNTER = 0
         return None
     _RUN_LOG_PATH = Path(path)
@@ -27,15 +34,21 @@ def configure_run_log(path: str | Path | None) -> Path | None:
     _LLM_DEBUG_DIR = _RUN_LOG_PATH.parent / "llm_debug"
     _LLM_DEBUG_DIR.mkdir(parents=True, exist_ok=True)
     _MODEL_USAGE_PATH = _RUN_LOG_PATH.parent / "model_usage.json"
+    _WARNING_LOG_PATH = _RUN_LOG_PATH.parent / "warnings.log"
+    _ERROR_LOG_PATH = _RUN_LOG_PATH.parent / "errors.log"
+    _INVALID_CASES_LOG_PATH = _RUN_LOG_PATH.parent / "invalid_cases.log"
     _LLM_DEBUG_COUNTER = 0
     return _RUN_LOG_PATH
 
 
 def clear_run_log() -> None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _LLM_DEBUG_COUNTER
     _RUN_LOG_PATH = None
     _LLM_DEBUG_DIR = None
     _MODEL_USAGE_PATH = None
+    _WARNING_LOG_PATH = None
+    _ERROR_LOG_PATH = None
+    _INVALID_CASES_LOG_PATH = None
     _LLM_DEBUG_COUNTER = 0
 
 
@@ -45,6 +58,18 @@ def current_run_log_path() -> Path | None:
 
 def current_model_usage_path() -> Path | None:
     return _MODEL_USAGE_PATH
+
+
+def current_warning_log_path() -> Path | None:
+    return _WARNING_LOG_PATH
+
+
+def current_error_log_path() -> Path | None:
+    return _ERROR_LOG_PATH
+
+
+def current_invalid_cases_log_path() -> Path | None:
+    return _INVALID_CASES_LOG_PATH
 
 
 def _timestamp() -> str:
@@ -58,6 +83,52 @@ def log_line(message: str, *, echo: bool = True) -> None:
         return
     with _RUN_LOG_PATH.open("a", encoding="utf-8") as handle:
         handle.write(f"{_timestamp()} {message}\n")
+
+
+def _structured_log_path(level: str) -> Path:
+    if level == "warning" and _WARNING_LOG_PATH is not None:
+        return _WARNING_LOG_PATH
+    if level == "error" and _ERROR_LOG_PATH is not None:
+        return _ERROR_LOG_PATH
+    return Path("results/logs") / f"{level}s.log"
+
+
+def _invalid_cases_log_path() -> Path:
+    if _INVALID_CASES_LOG_PATH is not None:
+        return _INVALID_CASES_LOG_PATH
+    return Path("results/logs") / "invalid_cases.log"
+
+
+def _write_structured_log(level: str, payload: dict) -> None:
+    event = dict(payload or {})
+    event.setdefault("level", level)
+    event.setdefault("timestamp", _timestamp())
+    path = _structured_log_path(level)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _STRUCTURED_LOG_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def log_warning_event(payload: dict) -> None:
+    _write_structured_log("warning", payload)
+
+
+def log_error_event(payload: dict) -> None:
+    _write_structured_log("error", payload)
+
+
+def log_invalid_case_event(payload: dict) -> None:
+    event = dict(payload or {})
+    event.setdefault("level", "warning")
+    event.setdefault("event_type", "invalid_evaluation_case")
+    event.setdefault("exclude_from_ranking_eval", True)
+    event.setdefault("timestamp", _timestamp())
+    path = _invalid_cases_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _STRUCTURED_LOG_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
 
 
 def _safe_name(text: str) -> str:

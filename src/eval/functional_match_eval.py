@@ -9,10 +9,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.config import CONFIG
 from src.core.api_formatting import normalize_api_for_ranking
-from src.core.run_logging import log_line
+from src.core.run_logging import log_line, log_warning_event
 from src.core.retry import call_with_backoff
-from src.eval.api_relevancy_excel import write_relevancy_excel
-from src.eval.api_relevancy_prompt import build_llm_prompt
+from src.eval.candidate_api_rankings_excel import write_candidate_api_rankings_excel
+from src.eval.functional_match_prompt import build_llm_prompt
 from src.llm.autogen_runner import run_autogen_agent
 from src.llm.backends import make_backend
 
@@ -24,7 +24,7 @@ EVAL_SYS = "You are a strict functional-match evaluator. Decide only whether an 
 
 def _chunk_size() -> int:
     try:
-        return max(1, int(CONFIG.api_relevancy_chunk_size))
+        return max(1, int(CONFIG.functional_match_chunk_size))
     except Exception:
         return 3
 
@@ -182,15 +182,89 @@ def _extract_api_info(item: Dict[str, Any], catalog: Dict[str, Dict[str, Any]]) 
     return merged
 
 
+def _sort_text(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _retrieved_rank_sort_key(item: Dict[str, Any]) -> int:
+    try:
+        return int(item.get("retrieved_rank") or 10**9)
+    except Exception:
+        return 10**9
+
+
+def _prompt_api_sort_key(api: Dict[str, Any]) -> Tuple[str, str, str]:
+    if not isinstance(api, dict):
+        return ("", "", "")
+    api_id = api.get("api_id")
+    name = api.get("name")
+    tool_name = api.get("tool_name")
+    primary = api_id or name or tool_name or ""
+    return (_sort_text(primary), _sort_text(name), _sort_text(tool_name))
+
+
+def _warn_api_id_quality(candidates: List[Dict[str, Any]], *, context: str) -> None:
+    ids = [str(c.get("api_id") or "").strip() for c in candidates if isinstance(c, dict)]
+    missing = sum(1 for api_id in ids if not api_id)
+    duplicates = sorted(api_id for api_id, count in Counter(api_id for api_id in ids if api_id).items() if count > 1)
+    if not missing and not duplicates:
+        return
+
+    parts = []
+    if missing:
+        parts.append(f"{missing} missing api_id")
+    if duplicates:
+        preview = ", ".join(duplicates[:5])
+        suffix = "..." if len(duplicates) > 5 else ""
+        parts.append(f"{len(duplicates)} duplicate api_id value(s): {preview}{suffix}")
+    log_line(f"[retrieval_functional_match] warning: {context} has " + "; ".join(parts))
+    if missing:
+        log_warning_event(
+            {
+                "warning_type": "missing_api_id",
+                "missing_api_id_count": missing,
+                "context": context,
+                "source": "functional_match_prompt_payload",
+            }
+        )
+    if duplicates:
+        log_warning_event(
+            {
+                "warning_type": "duplicate_api_id_in_prompt_payload",
+                "duplicate_api_ids": duplicates,
+                "duplicate_api_id_count": len(duplicates),
+                "context": context,
+                "source": "functional_match_prompt_payload",
+            }
+        )
+
+
+def _fixed_retrieval_pool(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    try:
+        top_k = max(1, int(CONFIG.rag_top_k))
+    except Exception:
+        top_k = 40
+    return sorted(
+        (item for item in items if isinstance(item, dict)),
+        key=_retrieved_rank_sort_key,
+    )[:top_k]
+
+
 def _build_shared_retrieval_batches(query_id: str, main_task: str, subtasks: List[Dict[str, Any]], shared_candidates: Dict[str, List[Dict[str, Any]]], catalog: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     batches: List[Dict[str, Any]] = []
     for sub in subtasks:
         sid = str(sub.get("id"))
         purpose = sub.get("description", "")
+        candidate_pool = _fixed_retrieval_pool(shared_candidates.get(sid, []))
         apis: List[Dict[str, Any]] = []
-        for row in shared_candidates.get(sid, []):
+        for row in candidate_pool:
             merged = _extract_api_info(row, catalog)
             apis.append(normalize_api_for_ranking(merged, subtask_text=str(purpose), include_qos_rank=False))
+        _warn_api_id_quality(
+            apis,
+            context=f"query={query_id} subtask={sid} top-{len(candidate_pool)} functional-match prompt pool",
+        )
+        apis = sorted(apis, key=_prompt_api_sort_key)
         batches.append({
             "query_id": query_id,
             "main_task": main_task,
@@ -206,7 +280,7 @@ def _chunk_list(items: List[Dict[str, Any]], size: int) -> Iterable[List[Dict[st
         yield items[i : i + size]
 
 
-def _normalize_relevant(val: Any) -> Optional[int]:
+def _normalize_functional_match(val: Any) -> Optional[int]:
     if isinstance(val, bool):
         return 1 if val else 0
     if val in (0, 1):
@@ -221,7 +295,27 @@ def _normalize_relevant(val: Any) -> Optional[int]:
 
 
 def _functional_match_value(info: Dict[str, Any]) -> int:
-    return int(info.get("Functional Match Label", info.get("API Relevancy (0/1)", info.get("relevant", 0))) or 0)
+    return int(
+        info.get(
+            "Functional Match (0/1)",
+            info.get("Functional Match Label", info.get("functional_match", info.get("relevant", 0))),
+        )
+        or 0
+    )
+
+
+def _truthy(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return False
+
+
+def _is_failure_row(item: Dict[str, Any]) -> bool:
+    return _truthy(item.get("failure_flag")) or _truthy(item.get("exclude_from_ranking_eval"))
 
 
 def _planner_k_by_subtask(
@@ -265,10 +359,10 @@ def _parse_results(text: str, expected_ids: List[str]) -> Dict[str, Dict[str, An
         api_id = str(api_id).strip()
         if api_id not in expected_set:
             continue
-        rel = _normalize_relevant(r.get("relevant"))
-        if rel is None:
+        functional_match = _normalize_functional_match(r.get("functional_match", r.get("relevant")))
+        if functional_match is None:
             continue
-        out[api_id] = {"relevant": rel, "comment": str(r.get("comment", "")).strip()[:200]}
+        out[api_id] = {"functional_match": functional_match, "comment": str(r.get("comment", "")).strip()[:200]}
     return out
 
 
@@ -360,10 +454,10 @@ def _evaluate_batches(
                         timeout_seconds=timeout_seconds,
                     )
 
-                raw = _invoke(_call, name=f"api_relevancy_eval_s{sid}_chunk{chunk_idx}")
+                raw = _invoke(_call, name=f"functional_match_eval_s{sid}_chunk{chunk_idx}")
                 parsed = _parse_results(raw, expected_ids)
                 if len(parsed) != len(expected_ids):
-                    retry_raw = _invoke(_call, name=f"api_relevancy_eval_retry_s{sid}_chunk{chunk_idx}")
+                    retry_raw = _invoke(_call, name=f"functional_match_eval_retry_s{sid}_chunk{chunk_idx}")
                     retry_parsed = _parse_results(retry_raw, expected_ids)
                     if len(retry_parsed) >= len(parsed):
                         parsed = retry_parsed
@@ -371,7 +465,7 @@ def _evaluate_batches(
                 for api in chunk:
                     api_id = api["api_id"]
                     key = f"{query_id}_{sid}_{api_id}"
-                    val = parsed.get(api_id, {"relevant": 0, "comment": "Missing from LLM response"})
+                    val = parsed.get(api_id, {"functional_match": 0, "comment": "Missing from LLM response"})
                     cache[key] = val
                     sub_results[api_id] = val
                     completed_api_items += 1
@@ -420,7 +514,7 @@ def _evaluate_batches(
     return batch_results
 
 
-def evaluate_retrieval_relevancy(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
+def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
     meta = _load_meta(query_dir)
     main_task = str(meta.get("user_goal") or "")
     query_id = query_id or str(meta.get("query_id") or query_dir.name)
@@ -434,23 +528,23 @@ def evaluate_retrieval_relevancy(*, query_dir: Path, query_id: Optional[str], pr
         provider=provider,
         model=model,
         cache_path=cache_path,
-        progress_path=output_dir / "retrieval_relevancy_progress.json",
-        stage_name="retrieval_relevancy",
+        progress_path=output_dir / "retrieval_functional_match_progress.json",
+        stage_name="retrieval_functional_match",
     )
 
     rows: List[Dict[str, Any]] = []
     for sub in subtasks:
         sid = str(sub.get("id"))
-        for item in shared_candidates.get(sid, []):
+        for item in _fixed_retrieval_pool(shared_candidates.get(sid, [])):
             api_id = str(item.get("api_id", ""))
-            rel_info = batch_results.get((query_id, sid), {}).get(api_id, {"relevant": 0, "comment": "Missing from LLM response"})
+            rel_info = batch_results.get((query_id, sid), {}).get(api_id, {"functional_match": 0, "comment": "Missing from LLM response"})
+            functional_match = _functional_match_value(rel_info)
             rows.append({
                 "Query_ID": query_id,
                 "Sub Task": sid,
                 "Retrieved Rank": item.get("retrieved_rank"),
                 "Selected_API": api_id,
-                "Functional Match Label": rel_info.get("relevant", 0),
-                "API Relevancy (0/1)": rel_info.get("relevant", 0),
+                "Functional Match (0/1)": functional_match,
                 "Comments": rel_info.get("comment", ""),
             })
 
@@ -462,9 +556,9 @@ def evaluate_retrieval_relevancy(*, query_dir: Path, query_id: Optional[str], pr
     )
 
     output_dir.mkdir(parents=True, exist_ok=True)
-    rows_path = output_dir / f"query_{query_id}_retrieval_relevancy_rows.json"
+    rows_path = output_dir / f"query_{query_id}_retrieval_functional_match_rows.json"
     rows_path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary_path = output_dir / f"query_{query_id}_retrieval_relevancy_summary.json"
+    summary_path = output_dir / f"query_{query_id}_retrieval_functional_match_summary.json"
     summary_path.write_text(
         json.dumps(
             {
@@ -504,9 +598,38 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
             sid = str(item.get("subtask_id") or "")
             purpose = subtask_map.get(sid, "")
             api_id = str(item.get("api_id", ""))
+            if _is_failure_row(item):
+                rows.append({
+                    "Query_ID": query_id,
+                    "Mode": mode,
+                    "Sub Task": sid,
+                    "Retrieved Rank": item.get("retrieved_rank"),
+                    "Mode Rank": item.get("mode_rank"),
+                    "LLM Reported Rank": item.get("llm_reported_rank", ""),
+                    "Subtask_Purpose": purpose,
+                    "Selected_API": api_id,
+                    "Ranker Reason": item.get("reason", ""),
+                    "Is Hallucinated? (0/1)": 0,
+                    "Is Duplicated? (0/1)": 0,
+                    "Functional Match (0/1)": 0,
+                    "Used in Ranking": "No",
+                    "Selected for Planner": "No",
+                    "Planner Selection K": planner_k_by_subtask.get(sid, 0),
+                    "Failure Flag": 1,
+                    "Failure Stage": item.get("failure_stage", ""),
+                    "Failure Reason": item.get("failure_reason", ""),
+                    "Exclude From Ranking Eval": 1,
+                    "Expected API Count": item.get("expected_api_count", ""),
+                    "Actual API Count": item.get("actual_api_count", ""),
+                    "QoS_RT": "",
+                    "QoS_TP": "",
+                    "QoS Availability": "",
+                    "Comments": item.get("failure_reason", "invalid ranking case"),
+                })
+                continue
             rel_info = cache.get(
                 f"{query_id}_{sid}_{api_id}",
-                {"relevant": 0, "comment": "Missing from retrieval-stage relevancy cache"},
+                {"relevant": 0, "comment": "Missing from retrieval-stage functional match cache"},
             )
             functional_match = _functional_match_value(rel_info)
             planner_k = int(planner_k_by_subtask.get(sid, 0) or 0)
@@ -530,15 +653,22 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Sub Task": sid,
                 "Retrieved Rank": item.get("retrieved_rank"),
                 "Mode Rank": item.get("mode_rank"),
+                "LLM Reported Rank": item.get("llm_reported_rank", ""),
                 "Subtask_Purpose": purpose,
                 "Selected_API": api_id,
+                "Ranker Reason": item.get("reason", ""),
                 "Is Hallucinated? (0/1)": hallucination_flags.get((mode, sid, api_id), 0),
                 "Is Duplicated? (0/1)": duplicate_flags.get((mode, sid, api_id), 0),
-                "Functional Match Label": functional_match,
+                "Functional Match (0/1)": functional_match,
                 "Used in Ranking": "Yes" if mode == "qos_hybrid" else "No",
                 "Selected for Planner": "Yes" if selected_for_planner else "No",
                 "Planner Selection K": planner_k,
-                "API Relevancy (0/1)": rel_info.get("relevant", 0),
+                "Failure Flag": 0,
+                "Failure Stage": "",
+                "Failure Reason": "",
+                "Exclude From Ranking Eval": 0,
+                "Expected API Count": "",
+                "Actual API Count": "",
                 "QoS_RT": qos.get("rt_ms"),
                 "QoS_TP": qos.get("tp_rps"),
                 "QoS Availability": qos.get("availability"),
@@ -547,16 +677,16 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
 
     rows.sort(key=lambda r: (int(str(r["Sub Task"])) if str(r["Sub Task"]).isdigit() else 9999, MODE_ORDER.get(str(r["Mode"]), 999), int(r.get("Mode Rank") or 9999)))
     output_dir.mkdir(parents=True, exist_ok=True)
-    out_xlsx = output_dir / f"query_{query_id}_api_relevancy.xlsx"
-    write_relevancy_excel(rows, out_xlsx)
-    (output_dir / f"query_{query_id}_api_relevancy_rows.json").write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
-    (output_dir / f"query_{query_id}_api_relevancy_summary.json").write_text(
+    out_xlsx = output_dir / f"query_{query_id}_candidate_api_rankings.xlsx"
+    write_candidate_api_rankings_excel(rows, out_xlsx)
+    (output_dir / f"query_{query_id}_candidate_api_rankings_rows.json").write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    (output_dir / f"query_{query_id}_candidate_api_rankings_summary.json").write_text(
         json.dumps(
             {
                 "query_id": query_id,
                 "excel": str(out_xlsx),
-                "rows_json": str(output_dir / f"query_{query_id}_api_relevancy_rows.json"),
-                "source": "retrieval_relevancy_cache",
+                "rows_json": str(output_dir / f"query_{query_id}_candidate_api_rankings_rows.json"),
+                "source": "retrieval_functional_match_cache",
                 "cache": str(cache_path),
             },
             indent=2,

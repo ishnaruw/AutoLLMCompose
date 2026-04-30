@@ -13,14 +13,22 @@ COLUMNS = [
     "Sub Task",
     "Retrieved Rank",
     "Mode Rank",
+    "LLM Reported Rank",
     "Subtask_Purpose",
     "Selected_API",
+    "Ranker Reason",
     "Is Hallucinated? (0/1)",
     "Is Duplicated? (0/1)",
-    "Functional Match Label",
+    "Functional Match (0/1)",
     "Used in Ranking",
     "Selected for Planner",
     "Planner Selection K",
+    "Failure Flag",
+    "Failure Stage",
+    "Failure Reason",
+    "Exclude From Ranking Eval",
+    "Expected API Count",
+    "Actual API Count",
     "QoS_RT",
     "QoS_TP",
     "QoS Availability",
@@ -61,10 +69,14 @@ def _safe_int(value: Any, default: int = 0) -> int:
 def _functional_match_label(row: Dict[str, Any]) -> int:
     return _safe_int(
         row.get(
-            "Functional Match Label",
-            row.get("API Relevancy (0/1)", row.get("relevant", 0)),
+            "Functional Match (0/1)",
+            row.get("Functional Match Label", row.get("functional_match", row.get("relevant", 0))),
         )
     )
+
+
+def _exclude_from_ranking_eval(row: Dict[str, Any]) -> bool:
+    return _normalize_flag(row.get("Exclude From Ranking Eval")) == 1
 
 
 def _normalize_flag(value: Any) -> int | None:
@@ -143,7 +155,7 @@ def _build_hallucination_flag_keys(hallucination_audit: Dict[str, Any] | None) -
     return flagged
 
 
-def enrich_relevancy_rows_with_anomaly_flags(
+def enrich_functional_match_rows_with_anomaly_flags(
     rows: List[Dict[str, Any]],
     *,
     duplicate_audit: Dict[str, Any] | None = None,
@@ -155,8 +167,10 @@ def enrich_relevancy_rows_with_anomaly_flags(
     enriched_rows: List[Dict[str, Any]] = []
     for row in rows:
         enriched = dict(row)
-        if "Functional Match Label" not in enriched and "API Relevancy (0/1)" in enriched:
-            enriched["Functional Match Label"] = enriched.get("API Relevancy (0/1)")
+        if "Functional Match (0/1)" not in enriched and "Functional Match Label" in enriched:
+            enriched["Functional Match (0/1)"] = enriched.get("Functional Match Label")
+        if "Functional Match (0/1)" not in enriched and "functional_match" in enriched:
+            enriched["Functional Match (0/1)"] = enriched.get("functional_match")
         key = (
             str(row.get("Query_ID", "")),
             str(row.get("Sub Task", "")),
@@ -247,8 +261,13 @@ def _append_legacy_query_sheet(
             for row in group:
                 ws.append([row.get(column, "") for column in COLUMNS])
 
-            relevant = sum(1 for row in group if _functional_match_label(row) == 1)
-            total = len(group)
+            valid_group = [row for row in group if not _exclude_from_ranking_eval(row)]
+            if not valid_group:
+                ws.append([""] * len(COLUMNS))
+                continue
+
+            relevant = sum(1 for row in valid_group if _functional_match_label(row) == 1)
+            total = len(valid_group)
             precision = round(relevant / float(total or 1), 4)
 
             summary_row = {
@@ -257,7 +276,7 @@ def _append_legacy_query_sheet(
                 "Sub Task": subtask_id,
                 "Subtask_Purpose": group[0].get("Subtask_Purpose", ""),
                 "Selected_API": "Precision",
-                "Functional Match Label": precision,
+                "Functional Match (0/1)": precision,
                 "Comments": f"Precision = {relevant}/{total}",
             }
             ws.append([summary_row.get(column, "") for column in COLUMNS])
@@ -283,6 +302,9 @@ def _build_precision_rows(
         grouped.items(),
         key=lambda item: (_subtask_sort_key(item[0][1]), _mode_sort_key(item[0][2])),
     ):
+        group = [row for row in group if not _exclude_from_ranking_eval(row)]
+        if not group:
+            continue
         relevant = sum(1 for row in group if _functional_match_label(row) == 1)
         total = len(group)
         precision_rows.append(
@@ -342,7 +364,7 @@ def _aggregate_subtask_rows(precision_rows: List[Dict[str, Any]]) -> List[Dict[s
     return out
 
 
-def write_relevancy_excel(
+def write_candidate_api_rankings_excel(
     rows: List[Dict[str, Any]],
     out_path: str | Path,
     *,
@@ -351,7 +373,7 @@ def write_relevancy_excel(
 ) -> Path:
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    rows = enrich_relevancy_rows_with_anomaly_flags(
+    rows = enrich_functional_match_rows_with_anomaly_flags(
         rows,
         duplicate_audit=duplicate_audit,
         hallucination_audit=hallucination_audit,
@@ -371,6 +393,7 @@ def write_relevancy_excel(
 
     total_relevant = sum(_safe_int(row.get("Functional_Match_Count", row.get("Relevant_Count"))) for row in precision_rows)
     total_candidates = sum(_safe_int(row.get("Candidate_Count")) for row in precision_rows)
+    excluded_rows = sum(1 for row in rows if _exclude_from_ranking_eval(row))
 
     wb = Workbook()
 
@@ -383,6 +406,7 @@ def write_relevancy_excel(
     overview_rows = [
         {"Metric": "Query_ID", "Value": str(rows[0].get("Query_ID", "")) if rows else ""},
         {"Metric": "Total Ranked Rows", "Value": len(rows)},
+        {"Metric": "Excluded Ranking Rows", "Value": excluded_rows},
         {"Metric": "Functional Match Rows", "Value": total_relevant},
         {"Metric": "Overall Precision", "Value": round(total_relevant / float(total_candidates or 1), 4)},
         {"Metric": "Subtasks", "Value": len({str(row.get("Sub Task", "")) for row in rows})},

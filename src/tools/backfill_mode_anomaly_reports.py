@@ -18,9 +18,9 @@ def _normalize_run_dir(path: Path) -> Path:
     path = path.resolve()
     if path.is_dir() and (path / "0_decomposer.json").exists():
         return path
-    if path.name in {"evaluation", "relevancy_eval"} and path.parent.is_dir() and (path.parent / "0_decomposer.json").exists():
+    if path.name in {"evaluation", "functional_match_eval"} and path.parent.is_dir() and (path.parent / "0_decomposer.json").exists():
         return path.parent.resolve()
-    raise ValueError(f"Expected a query run directory or its evaluation/relevancy_eval directory, got: {path}")
+    raise ValueError(f"Expected a query run directory or its evaluation/functional_match_eval directory, got: {path}")
 
 
 def _query_id_from_run_dir(run_dir: Path) -> str:
@@ -28,7 +28,7 @@ def _query_id_from_run_dir(run_dir: Path) -> str:
 
 
 def _default_eval_dir(run_dir: Path) -> Path:
-    for name in ("evaluation", "relevancy_eval"):
+    for name in ("evaluation", "functional_match_eval"):
         candidate = run_dir / name
         if candidate.exists():
             return candidate
@@ -182,7 +182,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--run-dir",
         type=Path,
-        help="Single query run directory, or its evaluation/relevancy_eval directory.",
+        help="Single query run directory, or its evaluation/functional_match_eval directory.",
     )
     parser.add_argument(
         "--output-dir",
@@ -198,7 +198,7 @@ def parse_args() -> argparse.Namespace:
         "--write-into",
         choices=["eval_dir", "run_dir"],
         default="eval_dir",
-        help="For --root-dir backfills, write each report into the run's evaluation/relevancy_eval dir or run dir.",
+        help="For --root-dir backfills, write each report into the run's evaluation/functional_match_eval dir or run dir.",
     )
     return parser.parse_args()
 

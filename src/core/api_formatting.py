@@ -7,11 +7,14 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+from src.core.run_logging import log_warning_event
+
 
 DESCRIPTION_MAX_CHARS = 400
 TOOL_DESCRIPTION_MAX_CHARS = 250
 PARAMETER_DESCRIPTION_MAX_CHARS = 160
 MAX_PARAMETERS_PER_API = 6
+SHORT_DESCRIPTION_MIN_CHARS = 25
 
 EXCLUDED_PARAMS = {
     "api_key",
@@ -141,18 +144,20 @@ def normalize_api_for_ranking(
         endpoint_detail.get("tool_description"),
     )
     description = _first_value(
-        compressed.get("summary"),
+        endpoint_detail.get("description"),
+        service.get("description"),
+        api.get("description"),
         compressed.get("description"),
         compressed.get("desc"),
-        service.get("description"),
         service.get("summary"),
-        service.get("desc"),
-        api.get("description"),
         api.get("summary"),
-        api.get("desc"),
-        endpoint_detail.get("description"),
+        compressed.get("summary"),
     )
     method = _first_value(compressed.get("method"), service.get("method"), api.get("method"))
+    normalized_description = truncate_text(description, DESCRIPTION_MAX_CHARS)
+    raw_parameter_count = _raw_parameter_count(api, compressed, service, endpoint_detail)
+    parameter_candidates = _collect_parameter_candidates(api, compressed, service, endpoint_detail)
+    parameters = _select_parameter_candidates(parameter_candidates, subtask_text)
 
     compact: Dict[str, Any] = {
         "api_id": _clean_text(api_id),
@@ -160,10 +165,20 @@ def normalize_api_for_ranking(
         "category": _clean_text(category),
         "tool_name": _clean_text(tool_name),
         "tool_description": truncate_text(tool_description, TOOL_DESCRIPTION_MAX_CHARS),
-        "description": truncate_text(description, DESCRIPTION_MAX_CHARS),
+        "description": normalized_description,
         "method": _clean_text(method),
-        "parameters": _select_parameters(api, compressed, service, endpoint_detail, subtask_text),
+        "parameters": parameters,
     }
+
+    _log_formatting_anomalies(
+        compact=compact,
+        api=api,
+        compressed=compressed,
+        service=service,
+        endpoint_detail=endpoint_detail,
+        raw_parameter_count=raw_parameter_count,
+        normalized_parameter_count=len(parameters),
+    )
 
     if include_qos_rank:
         qos_rank = _first_value(
@@ -176,6 +191,75 @@ def normalize_api_for_ranking(
             compact["qos_llm_rank"] = qos_rank
 
     return compact
+
+
+def _log_formatting_anomalies(
+    *,
+    compact: Dict[str, Any],
+    api: Dict[str, Any],
+    compressed: Dict[str, Any],
+    service: Dict[str, Any],
+    endpoint_detail: Dict[str, Any],
+    raw_parameter_count: int,
+    normalized_parameter_count: int,
+) -> None:
+    api_id = compact.get("api_id", "")
+    base = {
+        "api_id": api_id,
+        "name": compact.get("name", ""),
+        "category": compact.get("category", ""),
+        "source": "api_formatting",
+    }
+
+    if not api_id:
+        log_warning_event(
+            {
+                **base,
+                "warning_type": "missing_api_id",
+            }
+        )
+
+    raw_endpoint_details = _collect_endpoint_detail_dicts(api, compressed, service, endpoint_detail)
+    endpoint_description = _endpoint_details_description(raw_endpoint_details)
+    normalized_description = str(compact.get("description") or "")
+    if endpoint_description and not normalized_description:
+        log_warning_event(
+            {
+                **base,
+                "warning_type": "endpoint_details_description_not_used",
+                "has_endpoint_details_description": True,
+                "normalized_description": normalized_description,
+            }
+        )
+    elif raw_endpoint_details and not endpoint_detail.get("description") and not normalized_description:
+        log_warning_event(
+            {
+                **base,
+                "warning_type": "endpoint_details_not_used",
+                "has_endpoint_details": True,
+                "normalized_description": normalized_description,
+            }
+        )
+
+    description_length = len(normalized_description)
+    if description_length < SHORT_DESCRIPTION_MIN_CHARS:
+        log_warning_event(
+            {
+                **base,
+                "warning_type": "missing_or_short_description",
+                "description_length": description_length,
+            }
+        )
+
+    if raw_parameter_count > 0 and normalized_parameter_count == 0:
+        log_warning_event(
+            {
+                **base,
+                "warning_type": "parameters_filtered_out",
+                "raw_parameter_count": raw_parameter_count,
+                "normalized_parameter_count": normalized_parameter_count,
+            }
+        )
 
 
 def _as_dict(value: Any) -> Dict[str, Any]:
@@ -194,6 +278,32 @@ def _first_value(*values: Any) -> Any:
 
 def _clean_text(value: Any) -> str:
     return truncate_text(value, 10_000)
+
+
+def _collect_endpoint_detail_dicts(
+    api: Dict[str, Any],
+    compressed: Dict[str, Any],
+    service: Dict[str, Any],
+    endpoint_detail: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for source in (
+        api.get("endpoint_details"),
+        compressed.get("endpoint_details"),
+        service.get("endpoint_details"),
+        endpoint_detail.get("endpoint_details"),
+    ):
+        detail = _as_dict(source)
+        if detail:
+            out.append(detail)
+    return out
+
+
+def _endpoint_details_description(details: List[Dict[str, Any]]) -> str:
+    values: List[Any] = []
+    for detail in details:
+        values.extend([detail.get("description"), detail.get("desc"), detail.get("summary")])
+    return truncate_text(_first_value(*values), DESCRIPTION_MAX_CHARS)
 
 
 def _candidate_field(
@@ -304,6 +414,13 @@ def _select_parameters(
     subtask_text: str | None,
 ) -> List[Dict[str, str]]:
     candidates = _collect_parameter_candidates(api, compressed, service, endpoint_detail)
+    return _select_parameter_candidates(candidates, subtask_text)
+
+
+def _select_parameter_candidates(
+    candidates: List[Dict[str, Any]],
+    subtask_text: str | None,
+) -> List[Dict[str, str]]:
     subtask_words = _word_set(subtask_text or "")
     scored: List[Tuple[int, int, str, str]] = []
 
@@ -330,6 +447,37 @@ def _select_parameters(
         {"name": name, "description": description}
         for _, _, name, description in scored[:MAX_PARAMETERS_PER_API]
     ]
+
+
+def _raw_parameter_count(
+    api: Dict[str, Any],
+    compressed: Dict[str, Any],
+    service: Dict[str, Any],
+    endpoint_detail: Dict[str, Any],
+) -> int:
+    count = 0
+    seen_detail_ids: set[int] = set()
+    for source in (
+        endpoint_detail.get("endpoint_details"),
+        api.get("endpoint_details"),
+        compressed.get("endpoint_details"),
+        service.get("endpoint_details"),
+    ):
+        details = _as_dict(source)
+        if not details or id(details) in seen_detail_ids:
+            continue
+        seen_detail_ids.add(id(details))
+        count += sum(1 for _ in _iter_parameters(details.get("required_parameters")))
+        count += sum(1 for _ in _iter_parameters(details.get("optional_parameters")))
+
+    for source in (api, compressed, service):
+        count += sum(1 for _ in _iter_parameters(source.get("required_parameters")))
+        count += sum(1 for _ in _iter_parameters(source.get("optional_parameters")))
+
+    for source in (api, compressed, service):
+        count += sum(1 for _ in _iter_parameters(source.get("parameters")))
+        count += sum(1 for _ in _iter_parameters(source.get("params")))
+    return count
 
 
 def _collect_parameter_candidates(

@@ -38,7 +38,7 @@ def build_llm_prompt(
         "Do not add explanation outside JSON.\n"
         "Judge only functional suitability for the subtask.\n"
         "Use endpoint name, description, method, compact parameter descriptions, and tool-level context when available.\n"
-        "If the API belongs to the wrong domain or dataset, mark it not relevant even if some keywords overlap.\n"
+        "If the API belongs to the wrong domain or dataset, set functional_match to 0 even if some keywords overlap.\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
@@ -46,12 +46,12 @@ def build_llm_prompt(
         "Output format: \n"
         "{\n"
         '  "results": [\n'
-        '    {"api_id": "...", "relevant": 0, "comment": "..."},\n'
-        '    {"api_id": "...", "relevant": 1, "comment": "..."}\n'
+        '    {"api_id": "...", "functional_match": 0, "comment": "..."},\n'
+        '    {"api_id": "...", "functional_match": 1, "comment": "..."}\n'
         "  ]\n"
         "}\n\n"
         "Important rules:\n"
-        "- relevant must be 0 or 1\n"
+        "- functional_match must be 0 or 1\n"
         "- return one item for every api_id\n"
         "- keep comments short\n"
         "- prioritize actual function and domain fit over keyword overlap\n"

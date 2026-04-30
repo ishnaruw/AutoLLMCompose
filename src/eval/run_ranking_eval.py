@@ -11,6 +11,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from src.eval.ranking_metrics import (  # noqa: E402
     DEFAULT_RBO_P,
+    DEFAULT_INCLUSION_POLICY,
+    INCLUSION_POLICIES,
     cases_to_frame,
     evaluate_parent_runs,
 )
@@ -21,9 +23,12 @@ def _write_outputs(bundle, output_dir: Path) -> None:
 
     for metric, matrix in bundle.matrices.items():
         matrix.to_csv(output_dir / f"{metric}_matrix.csv")
+    for metric, matrix in bundle.pairwise_counts.items():
+        matrix.to_csv(output_dir / f"{metric}_included_counts.csv")
 
     bundle.pairwise_scores.to_csv(output_dir / "pairwise_scores.csv", index=False)
     cases_to_frame(bundle.cases).to_csv(output_dir / "included_cases.csv", index=False)
+    bundle.invalid_cases.to_csv(output_dir / "invalid_cases.csv", index=False)
     bundle.raw_rows.to_csv(output_dir / "loaded_rows.csv", index=False)
     (output_dir / "warnings.json").write_text(
         json.dumps(bundle.warnings, indent=2, ensure_ascii=False),
@@ -32,7 +37,9 @@ def _write_outputs(bundle, output_dir: Path) -> None:
     (output_dir / "summary.json").write_text(
         json.dumps(
             {
+                "inclusion_policy": bundle.inclusion_policy,
                 "included_cases": len(bundle.cases),
+                "invalid_mode_subtask_cases": len(bundle.invalid_cases),
                 "discovered_run_dirs": len(bundle.discovered_run_dirs),
                 "loaded_reports": bundle.loaded_report_paths,
                 "warnings": len(bundle.warnings),
@@ -65,12 +72,22 @@ def main() -> None:
         default=DEFAULT_RBO_P,
         help="RBO persistence parameter. Default: 0.9",
     )
+    parser.add_argument(
+        "--inclusion-policy",
+        choices=INCLUSION_POLICIES,
+        default=DEFAULT_INCLUSION_POLICY,
+        help="Evaluation inclusion policy. Default: pairwise_available.",
+    )
     args = parser.parse_args()
 
-    bundle = evaluate_parent_runs(args.parent_runs_dir, p=args.rbo_p)
+    bundle = evaluate_parent_runs(args.parent_runs_dir, p=args.rbo_p, inclusion_policy=args.inclusion_policy)
+    print(f"Evaluation inclusion policy: {bundle.inclusion_policy}")
     print(f"Discovered query run folders: {len(bundle.discovered_run_dirs)}")
     print(f"Loaded ranking reports: {len(bundle.loaded_report_paths)}")
     print(f"Included query/subtask cases: {len(bundle.cases)}")
+    print(f"Excluded invalid mode/subtask cases: {len(bundle.invalid_cases)}")
+    if "included_cases" in bundle.pairwise_scores.columns:
+        print(f"Included pairwise comparisons: {int(bundle.pairwise_scores['included_cases'].sum())}")
     print(f"Warnings: {len(bundle.warnings)}")
     for warning in bundle.warnings[:12]:
         print(f"- {warning}")

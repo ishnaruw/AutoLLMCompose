@@ -8,13 +8,21 @@ from typing import Any, Dict, List, Tuple
 
 from src.agents.decomposer import decompose_goal
 from src.agents.planner import planner_call
-from src.agents.ranker import rank_subtask
-from src.agents.qos_scorer_llm import score_qos_llm
+from src.agents.ranker import InvalidRankingOutput, rank_subtask
+from src.agents.qos_scorer_llm import InvalidQosScoringOutput, score_qos_llm
 from src.agents.retriever import collect_candidates
 from src.config import CONFIG
-from src.core.run_logging import clear_run_log, configure_model_usage, configure_run_log, current_model_usage_path, log_line
+from src.core.run_logging import (
+    clear_run_log,
+    configure_model_usage,
+    configure_run_log,
+    current_model_usage_path,
+    log_error_event,
+    log_invalid_case_event,
+    log_line,
+)
 from src.core.retry import call_with_backoff
-from src.eval.api_relevancy_eval import evaluate_query, evaluate_retrieval_relevancy
+from src.eval.functional_match_eval import evaluate_query, evaluate_retrieval_functional_match
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
 from src.eval.mode_anomaly_report import write_mode_anomaly_excel
@@ -47,6 +55,7 @@ PLANNER_SYS = (
 )
 
 MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
+ALL_QUERIES_PATH = Path("data/queries/all_user_query.jsonl")
 
 PROVIDER_POLICY = {
     "mistral": {"sleep_after_query": 0.5},
@@ -60,7 +69,7 @@ PROVIDER_POLICY = {
 }
 
 
-def load_queries(path: Path = CONFIG.queries_path) -> List[Dict[str, Any]]:
+def load_queries(path: Path) -> List[Dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"Queries file not found: {path.resolve()}")
     queries: List[Dict[str, Any]] = []
@@ -77,6 +86,84 @@ def load_queries(path: Path = CONFIG.queries_path) -> List[Dict[str, Any]]:
                         f"Line content starts with: {preview}"
                     ) from exc
     return queries
+
+
+def _parse_query_selection(selection: str, total_queries: int) -> List[int]:
+    text = (selection or "").strip().lower()
+    if not text:
+        raise ValueError("Enter a query number, all, a range like 1-5, or comma-separated numbers like 1,3,5.")
+
+    if text == "all":
+        return list(range(total_queries))
+
+    if text.startswith("range"):
+        text = text[len("range") :].strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1].strip()
+    text = text.replace(" ", "")
+
+    def _to_index(value: str) -> int:
+        if not value.isdigit():
+            raise ValueError(f"Invalid query number: {value}")
+        number = int(value)
+        if number < 1 or number > total_queries:
+            raise ValueError(f"Query number {number} is outside 1-{total_queries}.")
+        return number - 1
+
+    if "," in text:
+        parts = [part for part in text.split(",") if part]
+        if not parts:
+            raise ValueError("No query numbers found.")
+        indices = [_to_index(part) for part in parts]
+    elif "-" in text:
+        parts = text.split("-", 1)
+        if len(parts) != 2 or not parts[0] or not parts[1]:
+            raise ValueError("Ranges must look like 1-5.")
+        start = _to_index(parts[0])
+        end = _to_index(parts[1])
+        if start > end:
+            raise ValueError("Range start must be less than or equal to range end.")
+        indices = list(range(start, end + 1))
+    else:
+        indices = [_to_index(text)]
+
+    selected: List[int] = []
+    seen: set[int] = set()
+    for index in indices:
+        if index not in seen:
+            selected.append(index)
+            seen.add(index)
+    return selected
+
+
+def choose_queries_interactive(queries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    if not queries:
+        raise ValueError(f"No queries loaded from {ALL_QUERIES_PATH}.")
+
+    print(f"\nLoaded {len(queries)} queries from {ALL_QUERIES_PATH}:")
+    for idx, query in enumerate(queries, start=1):
+        qid = query.get("id", f"q{idx:02d}")
+        title = query.get("title", "")
+        print(f"  {idx:>2}) {qid} | {title}")
+
+    print("\nWhich queries do you want to run?")
+    print("  - Single query: 1")
+    print("  - All queries: all")
+    print("  - Range: 1-5 or [1-5]")
+    print("  - Comma-separated: 1,3,5")
+
+    while True:
+        selection = input("Enter query selection: ").strip()
+        try:
+            indices = _parse_query_selection(selection, len(queries))
+        except ValueError as exc:
+            print(f"Invalid selection: {exc}")
+            continue
+
+        selected = [queries[index] for index in indices]
+        selected_labels = ", ".join(str(query.get("id", f"q{index + 1:02d}")) for index, query in zip(indices, selected))
+        print(f"Selected {len(selected)} quer{'y' if len(selected) == 1 else 'ies'}: {selected_labels}\n")
+        return selected
 
 
 def choose_provider_interactive() -> str:
@@ -134,13 +221,21 @@ def _safe_name(text: str) -> str:
     return safe or "unknown"
 
 
+def _model_dir_name(model_tag: str) -> str:
+    provider, sep, model_name = (model_tag or "").partition(":")
+    if not sep:
+        return _safe_name(model_tag)
+    model_leaf = model_name.rstrip("/").rsplit("/", 1)[-1] or model_name
+    return f"{_safe_name(provider)}_{_safe_name(model_leaf)}"
+
+
 def _run_dir(model_tag: str, query_id: str | None = None, run_tag: str | None = None) -> Path:
     run_id = time.strftime("%Y%m%dT%H%M%S")
     run_name = f"{_safe_name(query_id)}_{run_id}" if query_id else run_id
     base_dir = Path("results/logs")
     if run_tag:
         base_dir = base_dir / _safe_name(run_tag)
-    out = base_dir / model_tag.replace(":", "_") / run_name
+    out = base_dir / _model_dir_name(model_tag) / run_name
     out.mkdir(parents=True, exist_ok=True)
     return out
 
@@ -404,52 +499,62 @@ def _deterministic_topsis_ranking(retrieved: List[Dict[str, Any]], topsis_meta: 
     return [{"api_id": api_id, "reason": "Deterministic QoS ordering."} for _, api_id, _ in enriched]
 
 
-def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, relevancy_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _functional_match_value(entry: Dict[str, Any]) -> int:
+    return int(
+        entry.get(
+            "Functional Match (0/1)",
+            entry.get("Functional Match Label", entry.get("functional_match", entry.get("relevant", 0))),
+        )
+        or 0
+    )
+
+
+def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, functional_match_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Apply Functional Candidate Refinement for qos_hybrid only."""
-    relevant_enriched = []
-    non_relevant_enriched = []
+    matching_enriched = []
+    non_matching_enriched = []
 
     for r in retrieved:
         api_id = str(r.get("api_id", ""))
         m = topsis_meta.get(api_id, {})
         topsis_rank = int(m.get("topsis_rank") or 10**9)
         topsis_score = m.get("topsis_score")
-        rel_entry = relevancy_map.get((sub_id, api_id), {})
-        is_relevant = int(rel_entry.get("Functional Match Label", rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0))) or 0) == 1
+        match_entry = functional_match_map.get((sub_id, api_id), {})
+        is_functional_match = _functional_match_value(match_entry) == 1
 
-        if is_relevant:
-            relevant_enriched.append((topsis_rank, api_id, topsis_score))
+        if is_functional_match:
+            matching_enriched.append((topsis_rank, api_id, topsis_score))
         else:
-            non_relevant_enriched.append((topsis_rank, api_id, topsis_score))
+            non_matching_enriched.append((topsis_rank, api_id, topsis_score))
 
-    relevant_enriched.sort(key=lambda x: (x[0], x[1]))
-    non_relevant_enriched.sort(key=lambda x: (x[0], x[1]))
-    combined = relevant_enriched + non_relevant_enriched
+    matching_enriched.sort(key=lambda x: (x[0], x[1]))
+    non_matching_enriched.sort(key=lambda x: (x[0], x[1]))
+    combined = matching_enriched + non_matching_enriched
 
     ranked: List[Dict[str, Any]] = []
     for topsis_rank, api_id, _ in combined:
-        rel_entry = relevancy_map.get((sub_id, api_id), {})
-        is_relevant = int(rel_entry.get("Functional Match Label", rel_entry.get("API Relevancy (0/1)", rel_entry.get("relevant", 0))) or 0) == 1
-        rel_label = "functional match" if is_relevant else "not a functional match"
+        match_entry = functional_match_map.get((sub_id, api_id), {})
+        match_label = "functional match" if _functional_match_value(match_entry) == 1 else "not a functional match"
         ranked.append(
             {
                 "api_id": api_id,
-                "reason": f"Functional Candidate Refinement: {rel_label}; ordered by TOPSIS rank {topsis_rank}.",
+                "reason": f"Functional Candidate Refinement: {match_label}; ordered by TOPSIS rank {topsis_rank}.",
             }
         )
     return ranked
 
 
-def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], extras: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
+def _write_ranked(
+    mode_dir: Path,
+    sub_id: str,
+    ranked: List[Dict[str, Any]],
+    retrieved: List[Dict[str, Any]],
+    id_to_service: Dict[str, Dict[str, Any]],
+    extras: Dict[str, Dict[str, Any]] | None = None,
+) -> List[Dict[str, Any]]:
     rag_map = {str(r.get("api_id")): r for r in retrieved}
     full = []
     ranked_full = [item for item in ranked if str(item.get("api_id", "")) in rag_map]
-    ranked_ids = {str(item.get("api_id", "")) for item in ranked_full}
-    for r in retrieved:
-        api_id = str(r.get("api_id", ""))
-        if api_id and api_id not in ranked_ids:
-            ranked_full.append({"api_id": api_id, "reason": "Appended to preserve all shared retrieved candidates in reports."})
-            ranked_ids.add(api_id)
 
     for idx, item in enumerate(ranked_full, start=1):
         api_id = str(item.get("api_id", ""))
@@ -457,6 +562,7 @@ def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], ret
         row = {
             "api_id": api_id,
             "mode_rank": idx,
+            "llm_reported_rank": item.get("llm_reported_rank"),
             "retrieved_rank": base.get("retrieved_rank"),
             "rag_score": base.get("rag_score"),
             "reason": item.get("reason", ""),
@@ -469,7 +575,64 @@ def _write_ranked(mode_dir: Path, sub_id: str, ranked: List[Dict[str, Any]], ret
     return full
 
 
-def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]]:
+def _write_invalid_ranked(mode_dir: Path, sub_id: str, failure: Dict[str, Any]) -> List[Dict[str, Any]]:
+    row = {
+        "api_id": "",
+        "mode_rank": None,
+        "retrieved_rank": None,
+        "rag_score": None,
+        "reason": failure.get("failure_reason", "invalid_ranking_case"),
+        "service": {},
+        **failure,
+    }
+    _write_json(mode_dir / f"2_ranked_s{sub_id}.json", [row])
+    _write_json(mode_dir / "debug" / f"failure_s{sub_id}.json", row)
+    return []
+
+
+def _ranking_failure_record(
+    *,
+    metadata: Dict[str, Any],
+    query_id: str | None,
+    subtask_id: str,
+    mode: str,
+    out_dir: Path,
+) -> Dict[str, Any]:
+    record = {
+        "failure_flag": True,
+        "query_id": query_id,
+        "subtask_id": subtask_id,
+        "mode": mode,
+        "exclude_from_ranking_eval": True,
+        **metadata,
+    }
+    record.setdefault("failure_stage", "llm_ranking")
+    record.setdefault("failure_reason", "parse_error")
+    record["ranked_file"] = _to_run_relative(out_dir / mode / f"2_ranked_s{subtask_id}.json", out_dir)
+    return record
+
+
+def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
+    if record.get("error"):
+        return False
+    stage = str(record.get("failure_stage") or "")
+    reason = str(record.get("failure_reason") or "")
+    if reason.endswith("_after_retries"):
+        reason = reason[: -len("_after_retries")]
+    expected_reasons = {
+        "parse_error",
+        "invalid_json",
+        "duplicate_ranked_apis",
+        "unknown_api_ids",
+        "incomplete_ranked_api_list",
+        "missing_ranked_apis",
+        "incomplete_qos_scores",
+        "missing_api_scores",
+    }
+    return stage in {"llm_ranking", "qos_llm_scoring"} and reason in expected_reasons
+
+
+def _load_functional_match_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]]:
     data = json.loads(rows_path.read_text(encoding="utf-8"))
     out = {}
     for row in data:
@@ -477,13 +640,12 @@ def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]
         api_id = str(row.get("Selected_API", row.get("api_id", "")))
         if not sub_id or not api_id:
             continue
-        relevant = row.get("Functional Match Label", row.get("API Relevancy (0/1)", row.get("relevant", 0)))
+        functional_match = _functional_match_value(row)
         comment = row.get("Comments", row.get("comment", ""))
         out[(sub_id, api_id)] = {
-            "Functional Match Label": row.get("Functional Match Label", relevant),
-            "API Relevancy (0/1)": relevant,
+            "Functional Match (0/1)": functional_match,
+            "functional_match": functional_match,
             "Comments": comment,
-            "relevant": relevant,
             "comment": comment,
         }
     return out
@@ -491,15 +653,14 @@ def _load_relevancy_map(rows_path: Path) -> Dict[tuple[str, str], Dict[str, Any]
 
 def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
     data = json.loads(rows_path.read_text(encoding="utf-8"))
-    relevant_api_ids_by_subtask: Dict[str, set[str]] = {}
+    matching_api_ids_by_subtask: Dict[str, set[str]] = {}
     for row in data:
         sub_id = str(row.get("Sub Task", row.get("subtask_id", "")))
         api_id = str(row.get("Selected_API", row.get("api_id", "")))
-        relevant = row.get("Functional Match Label", row.get("API Relevancy (0/1)", row.get("relevant", 0)))
-        if not sub_id or not api_id or int(relevant or 0) != 1:
+        if not sub_id or not api_id or _functional_match_value(row) != 1:
             continue
-        relevant_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
-    return {sub_id: len(api_ids) for sub_id, api_ids in relevant_api_ids_by_subtask.items()}
+        matching_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
+    return {sub_id: len(api_ids) for sub_id, api_ids in matching_api_ids_by_subtask.items()}
 
 
 def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], planner_top_n: Dict[str, int], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
@@ -533,7 +694,6 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
                 "planner_top_n": selected_limit,
                 "planner_top_n_source": top_n_source,
                 "dynamic_top_n_from_functional_match": dynamic_top_n,
-                "dynamic_top_n_from_relevancy": dynamic_top_n,
                 "fallback_used": fallback_used,
                 "available_ranked": len(ranked_rows),
                 "selected_count": len(selected),
@@ -578,6 +738,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             "modes": MODE_ORDER,
             "log_file": _to_run_relative(run_log_path, out_dir) if run_log_path else None,
             "model_usage_file": _to_run_relative(model_usage_path, out_dir) if model_usage_path else None,
+            "ranking_failures": [],
             "status": "running",
             "timing": {
                 "run": {
@@ -601,17 +762,47 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     no_qos_services: Dict[str, Dict[str, Any]] = {}
     with_qos_services: Dict[str, Dict[str, Any]] = {}
     ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
-    relevancy_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]] = {}
     planner_top_n: Dict[str, int] = {}
-    retrieval_relevancy_rows_path: Path | None = None
+    retrieval_functional_match_rows_path: Path | None = None
     eval_out: Path | None = None
-    relevancy_rows_path: Path | None = None
+    candidate_api_rankings_rows_path: Path | None = None
     mode_anomaly_xlsx: Path | None = None
     duplicate_audit_json: Path | None = None
     hallucination_audit_json: Path | None = None
     summary_selected = {"planner_enabled": CONFIG.planner_enabled}
+    ranking_failures: List[Dict[str, Any]] = []
     run_status = "completed"
     run_error: str | None = None
+
+    def _record_invalid_mode(metadata: Dict[str, Any], *, mode: str, subtask_id: str) -> List[Dict[str, Any]]:
+        nonlocal run_status
+        record = _ranking_failure_record(
+            metadata=metadata,
+            query_id=query_id,
+            subtask_id=subtask_id,
+            mode=mode,
+            out_dir=out_dir,
+        )
+        ranking_failures.append(record)
+        ranked_rows = _write_invalid_ranked(out_dir / mode, subtask_id, record)
+        if _is_expected_invalid_evaluation_case(record):
+            log_invalid_case_event(record)
+        else:
+            log_error_event(
+                {
+                    "event_type": "ranking_mode_failure",
+                    **record,
+                }
+            )
+        meta_tracker.update(ranking_failures=ranking_failures)
+        if run_status == "completed":
+            run_status = "completed_with_warnings"
+        log_line(
+            f"[{run_label}] subtask={subtask_id} mode={mode} marked invalid "
+            f"stage={record.get('failure_stage')} reason={record.get('failure_reason')}"
+        )
+        return ranked_rows
 
     try:
         meta_tracker.start_stage("decomposer")
@@ -657,11 +848,11 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
 
         eval_dir = out_dir / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
-        eval_cache = eval_dir / "relevancy_cache.json"
-        meta_tracker.start_stage("retrieval_relevancy_evaluation")
+        eval_cache = eval_dir / "functional_match_cache.json"
+        meta_tracker.start_stage("retrieval_functional_match_evaluation")
         log_line(f"[{run_label}] starting Functional Candidate Refinement labeling")
         try:
-            retrieval_relevancy_rows_path = evaluate_retrieval_relevancy(
+            retrieval_functional_match_rows_path = evaluate_retrieval_functional_match(
                 query_dir=out_dir,
                 query_id=query_id,
                 output_dir=eval_dir,
@@ -669,18 +860,18 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 provider=provider or "azure",
                 model=model,
             )
-            relevancy_map = _load_relevancy_map(retrieval_relevancy_rows_path)
+            functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
             meta_tracker.finish_stage(
-                "retrieval_relevancy_evaluation",
-                rows_json=_to_run_relative(retrieval_relevancy_rows_path, out_dir),
+                "retrieval_functional_match_evaluation",
+                rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
             )
             log_line(f"[{run_label}] finished Functional Candidate Refinement labeling")
         except Exception as e:
-            (out_dir / "retrieval_relevancy_error.txt").write_text(str(e), encoding="utf-8")
+            (out_dir / "retrieval_functional_match_error.txt").write_text(str(e), encoding="utf-8")
             meta_tracker.finish_stage(
-                "retrieval_relevancy_evaluation",
+                "retrieval_functional_match_evaluation",
                 status="failed",
-                error_file="retrieval_relevancy_error.txt",
+                error_file="retrieval_functional_match_error.txt",
             )
             if run_status == "completed":
                 run_status = "completed_with_warnings"
@@ -695,20 +886,35 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 log_line(f"[{run_label}] subtask={sub_id} starting ranking bundle")
 
                 no_qos_candidates = _candidate_rows(retrieved, no_qos_services)
-                no_qos_ranked, no_qos_duration = _timed_invocation(
-                    meta_tracker,
-                    "ranker_no_qos",
-                    lambda: rank_subtask(
-                        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
-                        user_query=user_goal,
-                        subtask=sub,
-                        candidates=no_qos_candidates,
-                        prompt_path="prompts/ranker_no_qos.md",
-                        debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
-                    ),
-                )
-                ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(out_dir / "no_qos", sub_id, no_qos_ranked, retrieved, no_qos_services)
-                log_line(f"[{run_label}] subtask={sub_id} finished no_qos ranking in {no_qos_duration:.2f}s")
+                try:
+                    no_qos_ranked, no_qos_duration = _timed_invocation(
+                        meta_tracker,
+                        "ranker_no_qos",
+                        lambda: rank_subtask(
+                            llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                            user_query=user_goal,
+                            subtask=sub,
+                            candidates=no_qos_candidates,
+                            prompt_path="prompts/ranker_no_qos.md",
+                            debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                            use_compact_api_evidence=True,
+                            include_qos_rank=False,
+                        ),
+                    )
+                    ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(
+                        out_dir / "no_qos",
+                        sub_id,
+                        no_qos_ranked,
+                        retrieved,
+                        no_qos_services,
+                    )
+                    log_line(f"[{run_label}] subtask={sub_id} finished no_qos ranking in {no_qos_duration:.2f}s")
+                except InvalidRankingOutput as exc:
+                    ranked_full_by_mode["no_qos"][sub_id] = _record_invalid_mode(
+                        exc.metadata,
+                        mode="no_qos",
+                        subtask_id=sub_id,
+                    )
 
                 pure_qos_candidates = []
                 for r in retrieved:
@@ -721,36 +927,59 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         "tp_rps": qos.get("tp_rps"),
                         "availability": qos.get("availability"),
                     })
-                pure_qos_meta, qos_duration = _timed_invocation(
-                    meta_tracker,
-                    "qos_scorer",
-                    lambda: score_qos_llm(
-                        llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
-                        candidates=pure_qos_candidates,
-                        prompt_path="prompts/qos_score_llm.md",
-                        debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
-                    ),
-                )
-                _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
-                log_line(f"[{run_label}] subtask={sub_id} finished qos scoring in {qos_duration:.2f}s")
-
-                pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
-                pure_ranked, pure_rank_duration = _timed_invocation(
-                    meta_tracker,
-                    "ranker_qos_pure_llm",
-                    lambda: rank_subtask(
-                        llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
-                        user_query=user_goal,
-                        subtask=sub,
-                        candidates=pure_candidates,
-                        prompt_path="prompts/ranker_qos_pure_llm.md",
-                        debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
-                        use_compact_api_evidence=True,
-                        include_qos_rank=True,
-                    ),
-                )
-                ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(out_dir / "qos_pure_llm", sub_id, pure_ranked, retrieved, with_qos_services, pure_qos_meta)
-                log_line(f"[{run_label}] subtask={sub_id} finished qos_pure_llm ranking in {pure_rank_duration:.2f}s")
+                try:
+                    pure_qos_meta, qos_duration = _timed_invocation(
+                        meta_tracker,
+                        "qos_scorer",
+                        lambda: score_qos_llm(
+                            llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
+                            candidates=pure_qos_candidates,
+                            prompt_path="prompts/qos_score_llm.md",
+                            debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
+                            batch_size=0,
+                        ),
+                    )
+                    _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
+                    log_line(f"[{run_label}] subtask={sub_id} finished qos scoring in {qos_duration:.2f}s")
+                except InvalidQosScoringOutput as exc:
+                    _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", exc.metadata)
+                    ranked_full_by_mode["qos_pure_llm"][sub_id] = _record_invalid_mode(
+                        exc.metadata,
+                        mode="qos_pure_llm",
+                        subtask_id=sub_id,
+                    )
+                else:
+                    pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
+                    try:
+                        pure_ranked, pure_rank_duration = _timed_invocation(
+                            meta_tracker,
+                            "ranker_qos_pure_llm",
+                            lambda: rank_subtask(
+                                llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                                user_query=user_goal,
+                                subtask=sub,
+                                candidates=pure_candidates,
+                                prompt_path="prompts/ranker_qos_pure_llm.md",
+                                debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                                use_compact_api_evidence=True,
+                                include_qos_rank=True,
+                            ),
+                        )
+                        ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(
+                            out_dir / "qos_pure_llm",
+                            sub_id,
+                            pure_ranked,
+                            retrieved,
+                            with_qos_services,
+                            pure_qos_meta,
+                        )
+                        log_line(f"[{run_label}] subtask={sub_id} finished qos_pure_llm ranking in {pure_rank_duration:.2f}s")
+                    except InvalidRankingOutput as exc:
+                        ranked_full_by_mode["qos_pure_llm"][sub_id] = _record_invalid_mode(
+                            exc.metadata,
+                            mode="qos_pure_llm",
+                            subtask_id=sub_id,
+                        )
 
                 topsis_meta, topsis_duration = _timed_invocation(
                     meta_tracker,
@@ -764,12 +993,12 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 hybrid_ranked, hybrid_duration = _timed_invocation(
                     meta_tracker,
                     "qos_hybrid",
-                    lambda: _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, relevancy_map),
+                    lambda: _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, functional_match_map),
                 )
                 ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
                 log_line(f"[{run_label}] subtask={sub_id} finished qos_hybrid ranking in {hybrid_duration:.2f}s")
                 log_line(f"[{run_label}] subtask={sub_id} finished ranking bundle")
-            meta_tracker.finish_stage("ranking", subtask_count=len(subtasks))
+            meta_tracker.finish_stage("ranking", subtask_count=len(subtasks), ranking_failure_count=len(ranking_failures))
             log_line(f"[{run_label}] finished ranking stages")
         except Exception:
             meta_tracker.finish_stage("ranking", status="failed")
@@ -781,9 +1010,9 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         try:
             eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
             log_line(f"[{run_label}] finished building final functional match report outputs")
-            relevancy_rows_path = eval_dir / f"query_{query_id}_api_relevancy_rows.json"
-            if relevancy_rows_path.exists():
-                planner_top_n = _load_planner_top_n(relevancy_rows_path)
+            candidate_api_rankings_rows_path = eval_dir / f"query_{query_id}_candidate_api_rankings_rows.json"
+            if candidate_api_rankings_rows_path.exists():
+                planner_top_n = _load_planner_top_n(candidate_api_rankings_rows_path)
 
             duplicate_audit = collect_duplicate_audit_for_run(out_dir)
             duplicate_audit_json = eval_dir / f"query_{query_id}_duplicate_audit.json"
@@ -800,9 +1029,9 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 out_dir / "evaluation_result.json",
                 {
                     "evaluation_dir": _to_run_relative(eval_dir, out_dir),
-                    "api_relevancy_excel": _to_run_relative(eval_out, out_dir),
-                    "api_relevancy_rows_json": _to_run_relative(relevancy_rows_path, out_dir),
-                    "retrieval_relevancy_rows_json": _to_run_relative(retrieval_relevancy_rows_path, out_dir),
+                    "candidate_api_rankings_excel": _to_run_relative(eval_out, out_dir),
+                    "candidate_api_rankings_rows_json": _to_run_relative(candidate_api_rankings_rows_path, out_dir),
+                    "retrieval_functional_match_rows_json": _to_run_relative(retrieval_functional_match_rows_path, out_dir),
                     "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
                     "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
                     "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
@@ -842,6 +1071,15 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     except Exception as e:
         run_status = "failed"
         run_error = str(e)
+        log_error_event(
+            {
+                "event_type": "pipeline_failure",
+                "query_id": query_id,
+                "failure_stage": "pipeline",
+                "failure_reason": type(e).__name__,
+                "error": str(e),
+            }
+        )
         log_line(f"[{run_label}] run failed: {e}")
         raise
     finally:
@@ -855,9 +1093,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
 
 
 if __name__ == "__main__":
+    queries = choose_queries_interactive(load_queries(ALL_QUERIES_PATH))
     provider, model = choose_provider_and_model_interactive()
-    queries = load_queries()
-    print(f"Loaded {len(queries)} queries from file.\n")
     for i, q in enumerate(queries, start=1):
         goal = q.get("goal", "")
         qid = q.get("id", f"q{i:02d}")
