@@ -38,6 +38,34 @@ class RankerParserTests(unittest.TestCase):
         self.assertIsNone(issue)
         self.assertEqual([item["api_id"] for item in ranked], ["api_a", "api_b"])
 
+    def test_accepts_compact_ranked_order_without_rank_or_reason(self) -> None:
+        raw = json.dumps({"ranked": [{"api_id": "api_b"}, {"api_id": "api_a"}]})
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["api_id"] for item in ranked], ["api_b", "api_a"])
+        self.assertEqual([item["llm_reported_rank"] for item in ranked], [1, 2])
+        self.assertEqual([item["reason"] for item in ranked], ["", ""])
+
+    def test_accepts_compact_ranked_candidate_ids_without_rank_or_reason(self) -> None:
+        raw = json.dumps({"ranked": [{"candidate_id": "C02"}, {"candidate_id": "C01"}]})
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"], {"C01": "api_a", "C02": "api_b"})
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["candidate_id"] for item in ranked], ["C02", "C01"])
+        self.assertEqual([item["api_id"] for item in ranked], ["api_b", "api_a"])
+        self.assertEqual([item["llm_reported_rank"] for item in ranked], [1, 2])
+
+    def test_compact_api_id_schema_backfills_candidate_ids_when_available(self) -> None:
+        raw = json.dumps({"ranked": [{"api_id": "api_b"}, {"api_id": "api_a"}]})
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"], {"C01": "api_a", "C02": "api_b"})
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["candidate_id"] for item in ranked], ["C02", "C01"])
+
     def test_accepts_old_reason_fields_without_requiring_them(self) -> None:
         raw = json.dumps(
             {

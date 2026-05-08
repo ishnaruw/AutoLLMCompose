@@ -324,6 +324,31 @@ def _format_list_field(value: Any) -> str:
     return str(value)
 
 
+def _extract_json_text(raw: str) -> Tuple[str, str | None]:
+    text = (raw or "").strip()
+    if not text:
+        return "", "empty_response"
+    try:
+        json.loads(text)
+        return text, None
+    except Exception:
+        pass
+    match = re.search(r"(\{.*\}|\[.*\])", text, flags=re.DOTALL)
+    if not match:
+        return "", "invalid_json"
+    return match.group(1), None
+
+
+def _functional_match_label_value(item: Dict[str, Any]) -> Any:
+    if "label" in item:
+        return item.get("label")
+    return item.get("functional_match", item.get("relevant"))
+
+
+def _functional_match_comment_value(item: Dict[str, Any]) -> str:
+    return str(item.get("comment", item.get("reason", item.get("explanation", ""))) or "").strip()[:200]
+
+
 def _is_failure_row(item: Dict[str, Any]) -> bool:
     return _truthy(item.get("failure_flag")) or _truthy(item.get("exclude_from_ranking_eval"))
 
@@ -374,8 +399,18 @@ def _parse_results_with_issue(
         api_id_to_candidate_id.setdefault(api_id, candidate_id)
     expected_candidate_ids = list(candidate_id_to_api_id.keys())
 
+    json_text, json_error = _extract_json_text(text)
+    if json_error:
+        return {}, {
+            "reason": json_error,
+            "expected_api_count": len(expected_ids),
+            "expected_candidate_count": len(expected_candidate_ids),
+            "actual_api_count": 0,
+            "actual_candidate_count": 0,
+        }
+
     try:
-        data = json.loads(text)
+        data = json.loads(json_text)
     except Exception as exc:
         return {}, {
             "reason": "invalid_json",
@@ -385,7 +420,11 @@ def _parse_results_with_issue(
             "actual_candidate_count": 0,
             "parse_error": str(exc),
         }
-    results = data.get("results") if isinstance(data, dict) else None
+    results = None
+    if isinstance(data, dict):
+        results = data.get("matches")
+        if not isinstance(results, list):
+            results = data.get("results")
     if not isinstance(results, list):
         return {}, {
             "reason": "parse_error",
@@ -393,7 +432,7 @@ def _parse_results_with_issue(
             "expected_candidate_count": len(expected_candidate_ids),
             "actual_api_count": 0,
             "actual_candidate_count": 0,
-            "detail": "missing_results_list",
+            "detail": "missing_matches_or_results_list",
         }
     contains_candidate_ids = any(
         isinstance(item, dict) and str(item.get("candidate_id") or "").strip()
@@ -426,11 +465,11 @@ def _parse_results_by_api_id(
         returned_ids.append(api_id)
         if api_id not in expected_set:
             continue
-        functional_match = _normalize_functional_match(r.get("functional_match", r.get("relevant")))
+        functional_match = _normalize_functional_match(_functional_match_label_value(r))
         if functional_match is None:
             malformed_items += 1
             continue
-        out[api_id] = {"functional_match": functional_match, "comment": str(r.get("comment", "")).strip()[:200]}
+        out[api_id] = {"functional_match": functional_match, "comment": _functional_match_comment_value(r)}
 
     returned_counts = Counter(returned_ids)
     duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
@@ -492,14 +531,14 @@ def _parse_results_by_candidate_id(
             continue
         if candidate_id not in expected_candidate_set:
             continue
-        functional_match = _normalize_functional_match(r.get("functional_match", r.get("relevant")))
+        functional_match = _normalize_functional_match(_functional_match_label_value(r))
         if functional_match is None:
             malformed_items += 1
             continue
         out[api_id] = {
             "candidate_id": candidate_id,
             "functional_match": functional_match,
-            "comment": str(r.get("comment", "")).strip()[:200],
+            "comment": _functional_match_comment_value(r),
         }
 
     returned_counts = Counter(returned_candidate_ids)

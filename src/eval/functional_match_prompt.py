@@ -27,6 +27,31 @@ def build_llm_prompt(
         }
         compact_entries.append(entry)
 
+    from src.config import CONFIG
+
+    if CONFIG.include_llm_reasons:
+        output_contract = (
+            "Output format:\n"
+            "{\n"
+            '  "matches": [\n'
+            '    {"candidate_id": "C01", "label": 0, "reason": "..."},\n'
+            '    {"candidate_id": "C02", "label": 1, "reason": "..."}\n'
+            "  ]\n"
+            "}\n"
+            "reason is optional and must be short when included."
+        )
+    else:
+        output_contract = (
+            "Output format:\n"
+            "{\n"
+            '  "matches": [\n'
+            '    {"candidate_id": "C01", "label": 0},\n'
+            '    {"candidate_id": "C02", "label": 1}\n'
+            "  ]\n"
+            "}\n"
+            "Do not include reason, explanation, comments, or prose."
+        )
+
     return (
         "You are evaluating whether APIs are functionally suitable for one subtask in an API-selection experiment.\n"
         "Your job is to judge whether each API is a good functional match for the subtask, not whether it is loosely related by topic words.\n"
@@ -45,18 +70,11 @@ def build_llm_prompt(
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
         f"Subtask Description: {subtask_description}\n"
-        "Output format: \n"
-        "{\n"
-        '  "results": [\n'
-        '    {"candidate_id": "C01", "relevant": 0, "comment": "..."},\n'
-        '    {"candidate_id": "C02", "relevant": 1, "comment": "..."}\n'
-        "  ]\n"
-        "}\n\n"
+        f"{output_contract}\n\n"
         "Important rules:\n"
-        "- relevant must be 0 or 1\n"
+        "- label must be 0 or 1\n"
         "- return one item for every candidate_id exactly once\n"
         "- do not output api_id\n"
-        "- keep comments short\n"
         "- prioritize actual function and domain fit over keyword overlap\n"
         "- tool_description can reveal the true purpose of the API and should be used\n"
         "- parameters contain only compact name/description pairs and should be used as functional evidence\n"

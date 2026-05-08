@@ -29,8 +29,10 @@ Candidates:
 
 Return JSON only:
 {
-  "qos_scored": [
-    {"candidate_id": "C01", "qos_score": 0.75},
-    {"candidate_id": "C02", "qos_score": 0.50}
+  "scores": [
+    {"candidate_id": "C01", "score": 0.75},
+    {"candidate_id": "C02", "score": 0.50}
   ]
 }
+
+{llm_output_contract}

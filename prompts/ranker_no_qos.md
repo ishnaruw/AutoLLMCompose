@@ -33,8 +33,10 @@ Candidates:
 
 Return JSON only:
 {
-  "ranked_apis": [
-    {"candidate_id": "C01", "rank": 1},
-    {"candidate_id": "C02", "rank": 2}
+  "ranked": [
+    {"candidate_id": "C01"},
+    {"candidate_id": "C02"}
   ]
 }
+
+{llm_output_contract}

@@ -259,10 +259,16 @@ def _parse_ranked_output(
             api_id_to_candidate_id,
         )
     else:
-        ranked, issue = _parse_ranked_output_by_api_id(ranked_raw, expected_ids, expected_candidate_ids)
+        ranked, issue = _parse_ranked_output_by_api_id(
+            ranked_raw,
+            expected_ids,
+            expected_candidate_ids,
+            api_id_to_candidate_id,
+        )
 
     if issue is not None:
         return ranked, issue
+    _assign_order_ranks_when_compact(ranked)
     return _validate_and_sort_by_reported_rank(
         ranked,
         expected_api_count=len(expected_ids),
@@ -277,6 +283,34 @@ def _ranked_item_reason_fields(item: Dict[str, Any], parsed_item: Dict[str, Any]
         parsed_item["functional_reason"] = str(item.get("functional_reason") or "")[:160]
     if item.get("qos_reason") is not None:
         parsed_item["qos_reason"] = str(item.get("qos_reason") or "")[:160]
+
+
+def _assign_order_ranks_when_compact(ranked: List[Dict[str, Any]]) -> None:
+    if not ranked or any("llm_reported_rank" in item for item in ranked):
+        return
+    for idx, item in enumerate(ranked, start=1):
+        item["llm_reported_rank"] = idx
+
+
+def _ranker_output_contract(include_reasons: bool) -> str:
+    base = (
+        "LLM output contract:\n"
+        "- Return one compact JSON object only.\n"
+        '- Preferred compact schema: {"ranked": [{"candidate_id": "C01"}]}.\n'
+        "- Return one item for every input candidate_id exactly once, in ranked order.\n"
+        "- Do not include rank values when using the compact schema; list order is the rank.\n"
+        "- Use candidate_id in output and do not output api_id."
+    )
+    if include_reasons:
+        return base + "\n- Optional: each item may include a short reason string."
+    return base + "\n- Do not include reason, functional_reason, qos_reason, explanation, or any prose."
+
+
+def _apply_ranker_output_contract(prompt: str, include_reasons: bool) -> str:
+    contract = _ranker_output_contract(include_reasons)
+    if "{llm_output_contract}" in prompt:
+        return prompt.replace("{llm_output_contract}", contract)
+    return prompt + "\n\n" + contract
 
 
 def _coerce_rank_value(value: Any) -> int | None:
@@ -422,8 +456,10 @@ def _parse_ranked_output_by_api_id(
     ranked_raw: List[Any],
     expected_ids: List[str],
     expected_candidate_ids: List[str] | None = None,
+    api_id_to_candidate_id: Dict[str, str] | None = None,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
     expected_candidate_ids = expected_candidate_ids or []
+    api_id_to_candidate_id = api_id_to_candidate_id or {}
     expected_set = set(expected_ids)
     returned_ids: List[str] = []
     ranked: List[Dict[str, Any]] = []
@@ -442,6 +478,8 @@ def _parse_ranked_output_by_api_id(
             "reason": (item.get("reason", "") or "")[:160],
             "is_unknown_api_id": api_id not in expected_set,
         }
+        if api_id in api_id_to_candidate_id:
+            parsed_item["candidate_id"] = api_id_to_candidate_id[api_id]
         _ranked_item_reason_fields(item, parsed_item)
         ranked.append(parsed_item)
 
@@ -700,6 +738,7 @@ def rank_subtask(
         .replace("{subtask_json}", json.dumps(subtask, ensure_ascii=False))
         .replace("{candidates_json}", json.dumps(cand_slim, ensure_ascii=False))
     )
+    prompt = _apply_ranker_output_contract(prompt, bool(CONFIG.include_llm_reasons))
 
     attempts = max(0, int(max_validation_retries or 0)) + 1
     last_issue: Dict[str, Any] = {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import Counter
 from pathlib import Path
@@ -93,13 +94,17 @@ def _parse_qos_score_output(
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
         return {}, issue
 
-    items = data.get("qos_scored") if isinstance(data, dict) else None
+    items = None
+    if isinstance(data, dict):
+        items = data.get("scores")
+        if not isinstance(items, list):
+            items = data.get("qos_scored")
     if not isinstance(items, list):
         issue = {
             "reason": "parse_error",
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
-            "detail": "missing_qos_scored_list",
+            "detail": "missing_scores_or_qos_scored_list",
         }
         if expected_candidate_ids:
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
@@ -113,6 +118,45 @@ def _parse_qos_score_output(
         return _parse_qos_score_output_by_candidate_id(items, expected_ids, candidate_id_to_api_id, api_id_to_candidate_id)
 
     return _parse_qos_score_output_by_api_id(items, expected_ids, expected_candidate_ids)
+
+
+def _score_value(item: Dict[str, Any]) -> Any:
+    if "score" in item:
+        return item.get("score")
+    return item.get("qos_score")
+
+
+def _coerce_valid_score(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        score = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(score) or score < 0.0 or score > 1.0:
+        return None
+    return score
+
+
+def _qos_output_contract(include_reasons: bool) -> str:
+    base = (
+        "LLM output contract:\n"
+        "- Return one compact JSON object only.\n"
+        '- Preferred compact schema: {"scores": [{"candidate_id": "C01", "score": 0.75}]}.\n'
+        "- score must be a finite number from 0.0 to 1.0.\n"
+        "- Return one item for every input candidate_id exactly once.\n"
+        "- Use candidate_id in output and do not output api_id."
+    )
+    if include_reasons:
+        return base + "\n- Optional: each item may include a short reason or explanation string."
+    return base + "\n- Do not include reason, explanation, comments, or any prose."
+
+
+def _apply_qos_output_contract(prompt: str, include_reasons: bool) -> str:
+    contract = _qos_output_contract(include_reasons)
+    if "{llm_output_contract}" in prompt:
+        return prompt.replace("{llm_output_contract}", contract)
+    return prompt + "\n\n" + contract
 
 
 def _parse_qos_score_output_by_api_id(
@@ -131,16 +175,14 @@ def _parse_qos_score_output_by_api_id(
             malformed_items += 1
             continue
         api_id = str(item.get("api_id") or "").strip()
-        if not api_id or item.get("qos_score") is None:
+        score = _coerce_valid_score(_score_value(item))
+        if not api_id or score is None:
             malformed_items += 1
             continue
         returned_ids.append(api_id)
         if validate_expected_ids and api_id not in expected_set:
             continue
-        try:
-            scores[api_id] = float(item.get("qos_score"))
-        except Exception:
-            malformed_items += 1
+        scores[api_id] = score
 
     returned_counts = Counter(returned_ids)
     duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
@@ -210,7 +252,8 @@ def _parse_qos_score_output_by_candidate_id(
         if not candidate_id and not raw_api_id:
             malformed_items += 1
             continue
-        if item.get("qos_score") is None:
+        score = _coerce_valid_score(_score_value(item))
+        if score is None:
             malformed_items += 1
             continue
 
@@ -227,10 +270,7 @@ def _parse_qos_score_output_by_candidate_id(
 
         if candidate_id not in expected_candidate_set:
             continue
-        try:
-            scores[api_id] = float(item.get("qos_score"))
-        except Exception:
-            malformed_items += 1
+        scores[api_id] = score
 
     returned_counts = Counter(returned_candidate_ids)
     duplicate_candidate_ids = sorted(candidate_id for candidate_id, count in returned_counts.items() if count > 1)
@@ -347,13 +387,13 @@ def _qos_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
         return (
             prompt
             + "\n\nIMPORTANT: The previous QoS scoring output was invalid "
-            + f"({reason}). Return JSON only with qos_scored containing every one of the {expected} input candidate_id values exactly once. "
+            + f"({reason}). Return JSON only with scores containing every one of the {expected} input candidate_id values exactly once. "
             + "Use candidate_id only. Do not output api_id. Do not omit APIs, duplicate APIs, or invent candidate_id values."
         )
     return (
         prompt
         + "\n\nIMPORTANT: The previous QoS scoring output was invalid "
-        + f"({reason}). Return JSON only with qos_scored containing every one of the {expected} input api_id values exactly once. "
+        + f"({reason}). Return JSON only with scores containing every one of the {expected} input api_id values exactly once. "
         + "Do not omit APIs, duplicate APIs, or invent api_id values."
     )
 
@@ -387,7 +427,10 @@ def _score_payload_with_retries(
     if not expected_ids:
         return {}
 
+    from src.config import CONFIG
+
     prompt = template.replace("{candidates_json}", json.dumps(payload, ensure_ascii=False))
+    prompt = _apply_qos_output_contract(prompt, bool(CONFIG.include_llm_reasons))
     attempts = max(0, int(max_validation_retries or 0)) + 1
     last_issue: Dict[str, Any] = {
         "reason": "parse_error",
