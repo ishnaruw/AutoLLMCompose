@@ -9,6 +9,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from src.config import CONFIG
 from src.core.api_formatting import normalize_api_for_ranking
+from src.core.candidate_ids import assign_candidate_ids
 from src.core.run_logging import log_line, log_warning_event
 from src.core.retry import call_with_backoff
 from src.eval.candidate_api_rankings_excel import write_candidate_api_rankings_excel
@@ -265,6 +266,7 @@ def _build_shared_retrieval_batches(query_id: str, main_task: str, subtasks: Lis
             context=f"query={query_id} subtask={sid} top-{len(candidate_pool)} functional-match prompt pool",
         )
         apis = sorted(apis, key=_prompt_api_sort_key)
+        apis, _candidate_id_to_api_id, _api_id_to_candidate_id = assign_candidate_ids(apis)
         batches.append({
             "query_id": query_id,
             "main_task": main_task,
@@ -314,6 +316,14 @@ def _truthy(value: Any) -> bool:
     return False
 
 
+def _format_list_field(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
+
+
 def _is_failure_row(item: Dict[str, Any]) -> bool:
     return _truthy(item.get("failure_flag")) or _truthy(item.get("exclude_from_ranking_eval"))
 
@@ -340,30 +350,216 @@ def _planner_k_by_subtask(
     return planner_k
 
 
-def _parse_results(text: str, expected_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+def _parse_results(
+    text: str,
+    expected_ids: List[str],
+    candidate_id_to_api_id: Dict[str, str] | None = None,
+) -> Dict[str, Dict[str, Any]]:
+    parsed, _issue = _parse_results_with_issue(text, expected_ids, candidate_id_to_api_id)
+    return parsed
+
+
+def _parse_results_with_issue(
+    text: str,
+    expected_ids: List[str],
+    candidate_id_to_api_id: Dict[str, str] | None = None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any] | None]:
+    candidate_id_to_api_id = {
+        str(candidate_id).strip(): str(api_id).strip()
+        for candidate_id, api_id in (candidate_id_to_api_id or {}).items()
+        if str(candidate_id).strip() and str(api_id).strip()
+    }
+    api_id_to_candidate_id: Dict[str, str] = {}
+    for candidate_id, api_id in candidate_id_to_api_id.items():
+        api_id_to_candidate_id.setdefault(api_id, candidate_id)
+    expected_candidate_ids = list(candidate_id_to_api_id.keys())
+
     try:
         data = json.loads(text)
-    except Exception:
-        return {}
+    except Exception as exc:
+        return {}, {
+            "reason": "invalid_json",
+            "expected_api_count": len(expected_ids),
+            "expected_candidate_count": len(expected_candidate_ids),
+            "actual_api_count": 0,
+            "actual_candidate_count": 0,
+            "parse_error": str(exc),
+        }
     results = data.get("results") if isinstance(data, dict) else None
     if not isinstance(results, list):
-        return {}
+        return {}, {
+            "reason": "parse_error",
+            "expected_api_count": len(expected_ids),
+            "expected_candidate_count": len(expected_candidate_ids),
+            "actual_api_count": 0,
+            "actual_candidate_count": 0,
+            "detail": "missing_results_list",
+        }
+    contains_candidate_ids = any(
+        isinstance(item, dict) and str(item.get("candidate_id") or "").strip()
+        for item in results
+    )
+    if candidate_id_to_api_id and contains_candidate_ids:
+        return _parse_results_by_candidate_id(results, expected_ids, candidate_id_to_api_id, api_id_to_candidate_id)
+    return _parse_results_by_api_id(results, expected_ids, expected_candidate_ids)
+
+
+def _parse_results_by_api_id(
+    results: List[Any],
+    expected_ids: List[str],
+    expected_candidate_ids: List[str] | None = None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any] | None]:
+    expected_candidate_ids = expected_candidate_ids or []
     expected_set = set(expected_ids)
     out: Dict[str, Dict[str, Any]] = {}
+    returned_ids: List[str] = []
+    malformed_items = 0
     for r in results:
         if not isinstance(r, dict):
+            malformed_items += 1
             continue
         api_id = r.get("api_id")
         if api_id is None:
+            malformed_items += 1
             continue
         api_id = str(api_id).strip()
+        returned_ids.append(api_id)
         if api_id not in expected_set:
             continue
         functional_match = _normalize_functional_match(r.get("functional_match", r.get("relevant")))
         if functional_match is None:
+            malformed_items += 1
             continue
         out[api_id] = {"functional_match": functional_match, "comment": str(r.get("comment", "")).strip()[:200]}
-    return out
+
+    returned_counts = Counter(returned_ids)
+    duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
+    unknown_ids = sorted(api_id for api_id in returned_counts if api_id not in expected_set)
+    missing_ids = [api_id for api_id in expected_ids if api_id not in out]
+    issue_base = {
+        "expected_api_count": len(expected_ids),
+        "actual_api_count": len(out),
+        "returned_api_count": len(returned_ids),
+    }
+    if expected_candidate_ids:
+        issue_base.update(
+            {
+                "expected_candidate_count": len(expected_candidate_ids),
+                "actual_candidate_count": len(out),
+            }
+        )
+    if malformed_items:
+        return out, {**issue_base, "reason": "parse_error", "malformed_result_count": malformed_items}
+    if duplicate_ids:
+        return out, {**issue_base, "reason": "duplicate_api_ids", "duplicate_api_ids": duplicate_ids}
+    if unknown_ids:
+        return out, {**issue_base, "reason": "unknown_api_ids", "unknown_api_ids": unknown_ids, "missing_api_ids": missing_ids}
+    if missing_ids:
+        return out, {**issue_base, "reason": "incomplete_functional_match_results", "missing_api_ids": missing_ids}
+    return out, None
+
+
+def _parse_results_by_candidate_id(
+    results: List[Any],
+    expected_ids: List[str],
+    candidate_id_to_api_id: Dict[str, str],
+    api_id_to_candidate_id: Dict[str, str],
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any] | None]:
+    expected_candidate_ids = list(candidate_id_to_api_id.keys())
+    expected_candidate_set = set(expected_candidate_ids)
+    out: Dict[str, Dict[str, Any]] = {}
+    returned_candidate_ids: List[str] = []
+    unknown_legacy_api_ids: List[str] = []
+    malformed_items = 0
+    for r in results:
+        if not isinstance(r, dict):
+            malformed_items += 1
+            continue
+        candidate_id = str(r.get("candidate_id") or "").strip()
+        raw_api_id = str(r.get("api_id") or "").strip()
+        if candidate_id:
+            api_id = candidate_id_to_api_id.get(candidate_id, raw_api_id)
+            returned_candidate_ids.append(candidate_id)
+        elif raw_api_id:
+            api_id = raw_api_id
+            candidate_id = api_id_to_candidate_id.get(raw_api_id, "")
+            if candidate_id:
+                returned_candidate_ids.append(candidate_id)
+            else:
+                unknown_legacy_api_ids.append(raw_api_id)
+        else:
+            malformed_items += 1
+            continue
+        if candidate_id not in expected_candidate_set:
+            continue
+        functional_match = _normalize_functional_match(r.get("functional_match", r.get("relevant")))
+        if functional_match is None:
+            malformed_items += 1
+            continue
+        out[api_id] = {
+            "candidate_id": candidate_id,
+            "functional_match": functional_match,
+            "comment": str(r.get("comment", "")).strip()[:200],
+        }
+
+    returned_counts = Counter(returned_candidate_ids)
+    duplicate_candidate_ids = sorted(candidate_id for candidate_id, count in returned_counts.items() if count > 1)
+    unknown_candidate_ids = sorted(candidate_id for candidate_id in returned_counts if candidate_id not in expected_candidate_set)
+    missing_candidate_ids = [candidate_id for candidate_id in expected_candidate_ids if candidate_id not in returned_counts]
+    duplicate_api_ids = sorted(
+        {
+            candidate_id_to_api_id[candidate_id]
+            for candidate_id in duplicate_candidate_ids
+            if candidate_id in candidate_id_to_api_id
+        }
+    )
+    missing_api_ids = [
+        candidate_id_to_api_id[candidate_id]
+        for candidate_id in missing_candidate_ids
+        if candidate_id in candidate_id_to_api_id
+    ]
+    unknown_api_ids = sorted(set(unknown_legacy_api_ids))
+    issue_base = {
+        "expected_api_count": len(expected_ids),
+        "actual_api_count": len(out),
+        "returned_api_count": len(returned_candidate_ids) + len(unknown_legacy_api_ids),
+        "expected_candidate_count": len(expected_candidate_ids),
+        "actual_candidate_count": len(out),
+        "returned_candidate_count": len(returned_candidate_ids),
+    }
+    if malformed_items:
+        return out, {**issue_base, "reason": "parse_error", "malformed_result_count": malformed_items}
+    if duplicate_candidate_ids:
+        return out, {
+            **issue_base,
+            "reason": "duplicate_candidate_ids",
+            "duplicate_candidate_ids": duplicate_candidate_ids,
+            "duplicate_api_ids": duplicate_api_ids,
+        }
+    if unknown_candidate_ids:
+        return out, {
+            **issue_base,
+            "reason": "unknown_candidate_ids",
+            "unknown_candidate_ids": unknown_candidate_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if unknown_api_ids:
+        return out, {
+            **issue_base,
+            "reason": "unknown_api_ids",
+            "unknown_api_ids": unknown_api_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if missing_candidate_ids:
+        return out, {
+            **issue_base,
+            "reason": "incomplete_functional_match_results",
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    return out, None
 
 
 def _evaluate_batches(
@@ -433,9 +629,19 @@ def _evaluate_batches(
                     api_entries=chunk,
                 )
                 expected_ids = [a["api_id"] for a in chunk]
+                candidate_id_to_api_id = {
+                    str(a.get("candidate_id")): str(a.get("api_id"))
+                    for a in chunk
+                    if str(a.get("candidate_id") or "").strip() and str(a.get("api_id") or "").strip()
+                }
+                expected_candidate_ids = list(candidate_id_to_api_id.keys())
 
                 def _call() -> str:
-                    timeout_seconds = CONFIG.lmstudio_timeout_seconds if getattr(backend, "provider", "") == "lmstudio" else None
+                    timeout_seconds = (
+                        CONFIG.lmstudio_timeout_seconds
+                        if getattr(backend, "provider", "") in {"lmstudio", "lmstudio_qwen"}
+                        else None
+                    )
                     if CONFIG.use_autogen_agents:
                         return run_autogen_agent(
                             backend=backend,
@@ -455,11 +661,16 @@ def _evaluate_batches(
                     )
 
                 raw = _invoke(_call, name=f"functional_match_eval_s{sid}_chunk{chunk_idx}")
-                parsed = _parse_results(raw, expected_ids)
-                if len(parsed) != len(expected_ids):
+                parsed, issue = _parse_results_with_issue(raw, expected_ids, candidate_id_to_api_id)
+                if issue is not None:
+                    log_line(
+                        f"[{stage_name}] invalid functional-match output ({issue.get('reason')}) "
+                        f"chunk={chunk_idx}/{total_chunks}; expected={issue.get('expected_candidate_count', issue.get('expected_api_count'))} "
+                        f"actual={issue.get('actual_candidate_count', issue.get('actual_api_count'))}"
+                    )
                     retry_raw = _invoke(_call, name=f"functional_match_eval_retry_s{sid}_chunk{chunk_idx}")
-                    retry_parsed = _parse_results(retry_raw, expected_ids)
-                    if len(retry_parsed) >= len(parsed):
+                    retry_parsed, retry_issue = _parse_results_with_issue(retry_raw, expected_ids, candidate_id_to_api_id)
+                    if retry_issue is None or len(retry_parsed) >= len(parsed):
                         parsed = retry_parsed
 
                 for api in chunk:
@@ -487,6 +698,7 @@ def _evaluate_batches(
                         "current_chunk_index": chunk_idx,
                         "total_chunks_in_subtask": total_chunks,
                         "last_chunk_api_ids": expected_ids,
+                        "last_chunk_candidate_ids": expected_candidate_ids,
                         "completed_api_items": completed_api_items,
                         "total_api_items": total_api_items,
                     },
@@ -522,6 +734,14 @@ def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[s
     shared_candidates = _load_shared_candidates(query_dir)
     catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
     batches = _build_shared_retrieval_batches(query_id, main_task, subtasks, shared_candidates, catalog)
+    candidate_ids_by_subtask = {
+        batch["subtask_id"]: {
+            str(api.get("api_id")): str(api.get("candidate_id"))
+            for api in batch.get("apis", [])
+            if str(api.get("api_id") or "").strip() and str(api.get("candidate_id") or "").strip()
+        }
+        for batch in batches
+    }
     batch_results = _evaluate_batches(
         query_id=query_id,
         batches=batches,
@@ -543,6 +763,7 @@ def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[s
                 "Query_ID": query_id,
                 "Sub Task": sid,
                 "Retrieved Rank": item.get("retrieved_rank"),
+                "Candidate_ID": rel_info.get("candidate_id", candidate_ids_by_subtask.get(sid, {}).get(api_id, "")),
                 "Selected_API": api_id,
                 "Functional Match (0/1)": functional_match,
                 "Comments": rel_info.get("comment", ""),
@@ -592,6 +813,12 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
     )
     rows: List[Dict[str, Any]] = []
     subtask_map = {str(sub.get("id")): str(sub.get("description", "")) for sub in subtasks}
+    retrieved_lookup: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for lookup_subtask_id, lookup_items in shared_candidates.items():
+        for lookup_item in lookup_items:
+            lookup_api_id = str(lookup_item.get("api_id", "")).strip()
+            if lookup_api_id:
+                retrieved_lookup.setdefault((str(lookup_subtask_id), lookup_api_id), lookup_item)
 
     for mode in MODE_DIRS:
         for item in ranked_by_mode.get(mode, []):
@@ -599,19 +826,34 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
             purpose = subtask_map.get(sid, "")
             api_id = str(item.get("api_id", ""))
             if _is_failure_row(item):
+                rel_info = cache.get(
+                    f"{query_id}_{sid}_{api_id}",
+                    {"relevant": 0, "comment": item.get("failure_reason", "invalid ranking case")},
+                )
+                functional_match = _functional_match_value(rel_info)
+                catalog_entry = catalog.get(api_id, {})
+                service = item.get("service") or {}
+                retrieved_item = retrieved_lookup.get((sid, api_id), {})
+                if isinstance(service.get("qos"), dict):
+                    qos = service.get("qos") or {}
+                elif isinstance(catalog_entry.get("qos"), dict):
+                    qos = catalog_entry.get("qos") or {}
+                else:
+                    qos = {}
                 rows.append({
                     "Query_ID": query_id,
                     "Mode": mode,
                     "Sub Task": sid,
-                    "Retrieved Rank": item.get("retrieved_rank"),
+                    "Retrieved Rank": item.get("retrieved_rank") or retrieved_item.get("retrieved_rank"),
                     "Mode Rank": item.get("mode_rank"),
                     "LLM Reported Rank": item.get("llm_reported_rank", ""),
                     "Subtask_Purpose": purpose,
+                    "Candidate_ID": item.get("candidate_id", ""),
                     "Selected_API": api_id,
                     "Ranker Reason": item.get("reason", ""),
-                    "Is Hallucinated? (0/1)": 0,
-                    "Is Duplicated? (0/1)": 0,
-                    "Functional Match (0/1)": 0,
+                    "Is Hallucinated? (0/1)": hallucination_flags.get((mode, sid, api_id), 0),
+                    "Is Duplicated? (0/1)": duplicate_flags.get((mode, sid, api_id), 0),
+                    "Functional Match (0/1)": functional_match,
                     "Used in Ranking": "No",
                     "Selected for Planner": "No",
                     "Planner Selection K": planner_k_by_subtask.get(sid, 0),
@@ -619,12 +861,24 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                     "Failure Stage": item.get("failure_stage", ""),
                     "Failure Reason": item.get("failure_reason", ""),
                     "Exclude From Ranking Eval": 1,
+                    "Expected Candidate Count": item.get("expected_candidate_count", ""),
+                    "Actual Candidate Count": item.get("actual_candidate_count", ""),
+                    "Returned Candidate Count": item.get("returned_candidate_count", ""),
                     "Expected API Count": item.get("expected_api_count", ""),
                     "Actual API Count": item.get("actual_api_count", ""),
-                    "QoS_RT": "",
-                    "QoS_TP": "",
-                    "QoS Availability": "",
-                    "Comments": item.get("failure_reason", "invalid ranking case"),
+                    "Returned API Count": item.get("returned_api_count", ""),
+                    "Duplicate Candidate IDs": _format_list_field(item.get("duplicate_candidate_ids")),
+                    "Duplicate API IDs": _format_list_field(item.get("duplicate_api_ids")),
+                    "Missing Candidate IDs": _format_list_field(item.get("missing_candidate_ids")),
+                    "Missing API IDs": _format_list_field(item.get("missing_api_ids")),
+                    "Unknown Candidate IDs": _format_list_field(item.get("unknown_candidate_ids")),
+                    "Unknown API IDs": _format_list_field(item.get("unknown_api_ids")),
+                    "Ranking Anomaly": 1 if _truthy(item.get("ranking_anomaly")) else 0,
+                    "Ranking Anomaly Reason": item.get("ranking_anomaly_reason", ""),
+                    "QoS_RT": qos.get("rt_ms"),
+                    "QoS_TP": qos.get("tp_rps"),
+                    "QoS Availability": qos.get("availability"),
+                    "Comments": rel_info.get("comment", item.get("failure_reason", "invalid ranking case")),
                 })
                 continue
             rel_info = cache.get(
@@ -655,6 +909,7 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Mode Rank": item.get("mode_rank"),
                 "LLM Reported Rank": item.get("llm_reported_rank", ""),
                 "Subtask_Purpose": purpose,
+                "Candidate_ID": item.get("candidate_id", ""),
                 "Selected_API": api_id,
                 "Ranker Reason": item.get("reason", ""),
                 "Is Hallucinated? (0/1)": hallucination_flags.get((mode, sid, api_id), 0),
@@ -667,8 +922,20 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Failure Stage": "",
                 "Failure Reason": "",
                 "Exclude From Ranking Eval": 0,
+                "Expected Candidate Count": "",
+                "Actual Candidate Count": "",
+                "Returned Candidate Count": "",
                 "Expected API Count": "",
                 "Actual API Count": "",
+                "Returned API Count": "",
+                "Duplicate Candidate IDs": _format_list_field(item.get("duplicate_candidate_ids")),
+                "Duplicate API IDs": _format_list_field(item.get("duplicate_api_ids")),
+                "Missing Candidate IDs": _format_list_field(item.get("missing_candidate_ids")),
+                "Missing API IDs": _format_list_field(item.get("missing_api_ids")),
+                "Unknown Candidate IDs": _format_list_field(item.get("unknown_candidate_ids")),
+                "Unknown API IDs": _format_list_field(item.get("unknown_api_ids")),
+                "Ranking Anomaly": 1 if _truthy(item.get("ranking_anomaly")) else 0,
+                "Ranking Anomaly Reason": item.get("ranking_anomaly_reason", ""),
                 "QoS_RT": qos.get("rt_ms"),
                 "QoS_TP": qos.get("tp_rps"),
                 "QoS Availability": qos.get("availability"),

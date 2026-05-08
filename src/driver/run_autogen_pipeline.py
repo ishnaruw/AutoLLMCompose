@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import time
 from datetime import datetime
@@ -45,7 +46,7 @@ RANKER_SYS = (
 )
 
 QOS_SCORER_SYS = (
-    "You are a QoS scoring agent. Given only api ids and QoS metrics, produce a relative QoS-only ranking and score. "
+    "You are a QoS scoring agent. Given only candidate IDs and QoS metrics, produce a relative QoS-only ranking and score. "
     "Return strict JSON only."
 )
 
@@ -65,6 +66,7 @@ PROVIDER_POLICY = {
     "azure_foundry": {"sleep_after_query": 0.2},
     "azure": {"sleep_after_query": 0.2},
     "lmstudio": {"sleep_after_query": 0.0},
+    "lmstudio_qwen": {"sleep_after_query": 0.0},
     "_default": {"sleep_after_query": 0.4},
 }
 
@@ -171,8 +173,8 @@ def choose_provider_interactive() -> str:
         ("mistral", "Mistral"),
         ("groq", "Groq"),
         ("fireworks", "Fireworks AI"),
-        ("azure_foundry", "Azure (DeepSeek via Foundry endpoint)"),
         ("lmstudio", "LM Studio (local, meta-llama-3.1-8b-instruct)"),
+        ("lmstudio_qwen", "LM Studio Qwen (local, qwen2.5-3b-instruct.gguf)"),
     ]
     print("\nSelect model provider:")
     for i, (_, label) in enumerate(options, start=1):
@@ -210,6 +212,65 @@ def choose_provider_and_model_interactive() -> tuple[str, str | None]:
     if provider == "groq":
         return provider, choose_groq_model_interactive()
     return provider, None
+
+
+def _query_lookup(queries: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    return {
+        str(query.get("id", f"q{idx:02d}")).lower(): query
+        for idx, query in enumerate(queries, start=1)
+    }
+
+
+def _select_queries_by_ids(queries: List[Dict[str, Any]], raw_ids: str) -> List[Dict[str, Any]]:
+    query_ids = [part.strip().lower() for part in (raw_ids or "").split(",") if part.strip()]
+    if not query_ids:
+        raise ValueError("At least one query id is required.")
+    lookup = _query_lookup(queries)
+    missing = [query_id for query_id in query_ids if query_id not in lookup]
+    if missing:
+        raise ValueError(f"Unknown query id(s): {', '.join(missing)}")
+    return [lookup[query_id] for query_id in query_ids]
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Run MAOF query-level pipeline experiments.")
+    parser.add_argument(
+        "--query-ids",
+        help="Comma-separated query ids to run, such as q01,q03. If omitted, interactive selection is used.",
+    )
+    parser.add_argument("--query-id", action="append", help="Query id to run. Can be passed multiple times.")
+    parser.add_argument("--provider", help="LLM provider, such as mistral, fireworks, groq, lmstudio, or lmstudio_qwen.")
+    parser.add_argument("--model", help="Model name for the selected provider.")
+    parser.add_argument("--run-tag", help="Optional folder under results/logs for this batch.")
+    parser.add_argument("--queries-path", default=str(ALL_QUERIES_PATH), help="Path to JSONL query file.")
+    return parser.parse_args()
+
+
+def _run_from_args(args: argparse.Namespace) -> None:
+    queries = load_queries(Path(args.queries_path))
+    raw_query_ids = args.query_ids
+    if args.query_id:
+        raw_query_ids = ",".join(args.query_id if raw_query_ids is None else [raw_query_ids, *args.query_id])
+
+    selected_queries = _select_queries_by_ids(queries, raw_query_ids or "")
+    provider = args.provider
+    model = args.model
+    for i, q in enumerate(selected_queries, start=1):
+        goal = q.get("goal", "")
+        qid = q.get("id", f"q{i:02d}")
+        title = q.get("title", "")
+        print("\n" + "=" * 80)
+        print(f"Running query {i}/{len(selected_queries)} | {qid} | {title}")
+        print(f"User goal: {goal}")
+        print("=" * 80)
+        run_autogen_once(
+            user_goal=goal,
+            provider=provider,
+            model=model,
+            query_id=qid,
+            query_title=title,
+            run_tag=args.run_tag,
+        )
 
 
 def _safe_name(text: str) -> str:
@@ -261,10 +322,11 @@ def _fetch_catalog_subset(api_ids: List[str], with_qos: bool) -> Dict[str, Dict[
 def _build_llm_call(backend):
     def _lmstudio_limits(role_name: str) -> Dict[str, Any]:
         limits: Dict[str, Any] = {}
-        if getattr(backend, "provider", "") != "lmstudio":
+        provider = getattr(backend, "provider", "")
+        if provider not in {"lmstudio", "lmstudio_qwen"}:
             return limits
         limits["timeout_seconds"] = CONFIG.lmstudio_timeout_seconds
-        if role_name == "ranker":
+        if role_name == "ranker" and provider == "lmstudio":
             limits["max_tokens"] = CONFIG.lmstudio_ranker_max_tokens
         return limits
 
@@ -555,25 +617,51 @@ def _write_ranked(
     rag_map = {str(r.get("api_id")): r for r in retrieved}
     full = []
     ranked_full = [item for item in ranked if str(item.get("api_id", "")).strip()]
+    if ranked_full and all(item.get("llm_reported_rank") is not None for item in ranked_full):
+        ranked_full = sorted(ranked_full, key=lambda item: int(item.get("llm_reported_rank")))
     passthrough_keys = [
         "ranking_anomaly",
         "ranking_anomaly_reason",
         "ranking_anomaly_stage",
+        "candidate_id",
         "expected_api_count",
+        "expected_candidate_count",
         "actual_api_count",
+        "actual_candidate_count",
         "returned_api_count",
+        "returned_candidate_count",
+        "expected_rank_count",
+        "actual_rank_count",
+        "returned_rank_count",
+        "missing_rank_values",
+        "missing_rank_candidate_ids",
+        "missing_rank_api_ids",
+        "non_integer_rank_values",
+        "non_integer_rank_candidate_ids",
+        "non_integer_rank_api_ids",
+        "duplicate_rank_values",
+        "rank_values_out_of_range",
+        "duplicate_candidate_ids",
         "duplicate_api_ids",
+        "missing_candidate_ids",
         "missing_api_ids",
+        "unknown_candidate_ids",
         "unknown_api_ids",
         "is_unknown_api_id",
+        "is_unknown_candidate_id",
     ]
 
     for idx, item in enumerate(ranked_full, start=1):
         api_id = str(item.get("api_id", ""))
         base = rag_map.get(api_id, {})
+        try:
+            mode_rank = int(item.get("llm_reported_rank"))
+        except Exception:
+            mode_rank = idx
         row = {
             "api_id": api_id,
-            "mode_rank": idx,
+            "candidate_id": item.get("candidate_id", ""),
+            "mode_rank": mode_rank,
             "llm_reported_rank": item.get("llm_reported_rank"),
             "retrieved_rank": base.get("retrieved_rank"),
             "rag_score": base.get("rag_score"),
@@ -590,19 +678,74 @@ def _write_ranked(
     return full
 
 
-def _write_invalid_ranked(mode_dir: Path, sub_id: str, failure: Dict[str, Any]) -> List[Dict[str, Any]]:
-    row = {
-        "api_id": "",
-        "mode_rank": None,
-        "retrieved_rank": None,
-        "rag_score": None,
-        "reason": failure.get("failure_reason", "invalid_ranking_case"),
-        "service": {},
+def _coerce_optional_int(value: Any) -> int | None:
+    try:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _write_invalid_ranked(
+    mode_dir: Path,
+    sub_id: str,
+    failure: Dict[str, Any],
+    invalid_ranked_items: List[Dict[str, Any]] | None = None,
+) -> List[Dict[str, Any]]:
+    failure_fields = {
         **failure,
+        "ranking_anomaly": True,
+        "ranking_anomaly_reason": failure.get("failure_reason", "invalid_ranking_case"),
+        "ranking_anomaly_stage": failure.get("failure_stage", "llm_ranking"),
+        "invalid_output_row": True,
     }
-    _write_json(mode_dir / f"2_ranked_s{sub_id}.json", [row])
-    _write_json(mode_dir / "debug" / f"failure_s{sub_id}.json", row)
-    return []
+    rows: List[Dict[str, Any]] = []
+    for returned_position, item in enumerate(invalid_ranked_items or [], start=1):
+        api_id = str(item.get("api_id", "")).strip()
+        reported_rank = item.get("llm_reported_rank")
+        item_passthrough = {
+            key: item.get(key)
+            for key in [
+                "functional_reason",
+                "qos_reason",
+                "is_unknown_api_id",
+                "is_unknown_candidate_id",
+            ]
+            if key in item
+        }
+        rows.append(
+            {
+                "api_id": api_id,
+                "candidate_id": item.get("candidate_id", ""),
+                "mode_rank": _coerce_optional_int(reported_rank) or returned_position,
+                "llm_reported_rank": reported_rank,
+                "returned_position": returned_position,
+                "retrieved_rank": None,
+                "rag_score": None,
+                "reason": item.get("reason") or failure.get("failure_reason", "invalid_ranking_case"),
+                "service": {},
+                **item_passthrough,
+                **failure_fields,
+            }
+        )
+
+    if not rows:
+        rows = [
+            {
+                "api_id": "",
+                "mode_rank": None,
+                "retrieved_rank": None,
+                "rag_score": None,
+                "reason": failure.get("failure_reason", "invalid_ranking_case"),
+                "service": {},
+                **failure_fields,
+            }
+        ]
+
+    _write_json(mode_dir / f"2_ranked_s{sub_id}.json", rows)
+    _write_json(mode_dir / "debug" / f"failure_s{sub_id}.json", {"failure": failure, "rows": rows})
+    return rows
 
 
 def _ranking_failure_record(
@@ -632,13 +775,29 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
     reason = str(record.get("failure_reason") or "")
     if reason.endswith("_after_retries"):
         reason = reason[: -len("_after_retries")]
-    if record.get("error") and reason != "timeout":
+    if record.get("error") and reason not in {"timeout", "groq_prompt_too_large"}:
         return False
     expected_reasons = {
         "empty_response",
         "parse_error",
         "invalid_json",
         "timeout",
+        "duplicate_candidate_ids",
+        "duplicate_ranked_apis",
+        "duplicate_api_ids",
+        "unknown_candidate_ids",
+        "unknown_api_ids",
+        "incomplete_candidate_id_list",
+        "missing_candidate_ids",
+        "incomplete_ranked_api_list",
+        "missing_ranked_apis",
+        "missing_rank_values",
+        "duplicate_rank_values",
+        "non_integer_rank_values",
+        "rank_values_out_of_range",
+        "incomplete_rank_sequence",
+        "invalid_rank_sequence",
+        "groq_prompt_too_large",
         "incomplete_qos_scores",
         "missing_api_scores",
     }
@@ -674,6 +833,52 @@ def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
             continue
         matching_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
     return {sub_id: len(api_ids) for sub_id, api_ids in matching_api_ids_by_subtask.items()}
+
+
+def _summarize_retry_outcomes(run_dir: Path) -> Dict[str, Any]:
+    path = run_dir / "retry_outcomes.log"
+    summary: Dict[str, Any] = {
+        "total_events": 0,
+        "successes": 0,
+        "failures": 0,
+        "by_stage": {},
+        "by_role": {},
+        "max_attempts": CONFIG.llm_validation_max_retries + 1,
+        "max_validation_retries": CONFIG.llm_validation_max_retries,
+        "log_file": _to_run_relative(path, run_dir) if path.exists() else None,
+    }
+    if not path.exists():
+        return summary
+
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except Exception:
+            continue
+        outcome = str(event.get("outcome", ""))
+        stage = str(event.get("stage", "unknown"))
+        role = str(event.get("role", "unknown"))
+        summary["total_events"] += 1
+        if outcome == "success":
+            summary["successes"] += 1
+        elif outcome == "failed":
+            summary["failures"] += 1
+
+        for bucket_name, key in [("by_stage", stage), ("by_role", role)]:
+            bucket = summary[bucket_name].setdefault(key, {"successes": 0, "failures": 0, "total_events": 0})
+            bucket["total_events"] += 1
+            if outcome == "success":
+                bucket["successes"] += 1
+            elif outcome == "failed":
+                bucket["failures"] += 1
+
+    total = int(summary["successes"]) + int(summary["failures"])
+    summary["success_rate"] = round(float(summary["successes"]) / total, 4) if total else None
+    summary["failure_rate"] = round(float(summary["failures"]) / total, 4) if total else None
+    return summary
 
 
 def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], planner_top_n: Dict[str, int], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
@@ -749,6 +954,11 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             "evaluation_dir": "evaluation",
             "planner_enabled": CONFIG.planner_enabled,
             "modes": MODE_ORDER,
+            "llm_validation_policy": {
+                "max_validation_retries": CONFIG.llm_validation_max_retries,
+                "max_attempts": CONFIG.llm_validation_max_retries + 1,
+                "purpose": "bounded recovery for structurally invalid LLM outputs",
+            },
             "log_file": _to_run_relative(run_log_path, out_dir) if run_log_path else None,
             "model_usage_file": _to_run_relative(model_usage_path, out_dir) if model_usage_path else None,
             "ranking_failures": [],
@@ -798,8 +1008,14 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             mode=mode,
             out_dir=out_dir,
         )
+        invalid_ranked_items = record.pop("_invalid_ranked_items", None)
         ranking_failures.append(record)
-        ranked_rows = _write_invalid_ranked(out_dir / mode, subtask_id, record)
+        _write_invalid_ranked(
+            out_dir / mode,
+            subtask_id,
+            record,
+            invalid_ranked_items=invalid_ranked_items if isinstance(invalid_ranked_items, list) else None,
+        )
         if _is_expected_invalid_evaluation_case(record):
             log_invalid_case_event(record)
         else:
@@ -816,7 +1032,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             f"[{run_label}] subtask={subtask_id} mode={mode} marked invalid "
             f"stage={record.get('failure_stage')} reason={record.get('failure_reason')}"
         )
-        return ranked_rows
+        return []
 
     try:
         meta_tracker.start_stage("decomposer")
@@ -913,6 +1129,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
                             use_compact_api_evidence=True,
                             include_qos_rank=False,
+                            max_validation_retries=CONFIG.llm_validation_max_retries,
                         ),
                     )
                     ranked_full_by_mode["no_qos"][sub_id] = _write_ranked(
@@ -951,6 +1168,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             prompt_path="prompts/qos_score_llm.md",
                             debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
                             batch_size=0,
+                            max_validation_retries=CONFIG.llm_validation_max_retries,
                         ),
                     )
                     _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
@@ -977,6 +1195,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                                 debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
                                 use_compact_api_evidence=True,
                                 include_qos_rank=True,
+                                max_validation_retries=CONFIG.llm_validation_max_retries,
                             ),
                         )
                         ranked_full_by_mode["qos_pure_llm"][sub_id] = _write_ranked(
@@ -1012,7 +1231,14 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
                 log_line(f"[{run_label}] subtask={sub_id} finished qos_hybrid ranking in {hybrid_duration:.2f}s")
                 log_line(f"[{run_label}] subtask={sub_id} finished ranking bundle")
-            meta_tracker.finish_stage("ranking", subtask_count=len(subtasks), ranking_failure_count=len(ranking_failures))
+            retry_summary = _summarize_retry_outcomes(out_dir)
+            meta_tracker.update(retry_summary=retry_summary)
+            meta_tracker.finish_stage(
+                "ranking",
+                subtask_count=len(subtasks),
+                ranking_failure_count=len(ranking_failures),
+                retry_summary=retry_summary,
+            )
             log_line(f"[{run_label}] finished ranking stages")
         except Exception:
             meta_tracker.finish_stage("ranking", status="failed")
@@ -1112,14 +1338,18 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
 
 
 if __name__ == "__main__":
-    queries = choose_queries_interactive(load_queries(ALL_QUERIES_PATH))
-    provider, model = choose_provider_and_model_interactive()
-    for i, q in enumerate(queries, start=1):
-        goal = q.get("goal", "")
-        qid = q.get("id", f"q{i:02d}")
-        title = q.get("title", "")
-        print("\n" + "=" * 80)
-        print(f"Running query {i}/{len(queries)} | {qid} | {title}")
-        print(f"User goal: {goal}")
-        print("=" * 80)
-        run_autogen_once(user_goal=goal, provider=provider, model=model, query_id=qid, query_title=title)
+    args = _parse_args()
+    if args.query_ids or args.query_id:
+        _run_from_args(args)
+    else:
+        queries = choose_queries_interactive(load_queries(Path(args.queries_path)))
+        provider, model = choose_provider_and_model_interactive()
+        for i, q in enumerate(queries, start=1):
+            goal = q.get("goal", "")
+            qid = q.get("id", f"q{i:02d}")
+            title = q.get("title", "")
+            print("\n" + "=" * 80)
+            print(f"Running query {i}/{len(queries)} | {qid} | {title}")
+            print(f"User goal: {goal}")
+            print("=" * 80)
+            run_autogen_once(user_goal=goal, provider=provider, model=model, query_id=qid, query_title=title)

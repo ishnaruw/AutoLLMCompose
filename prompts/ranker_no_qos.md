@@ -5,8 +5,12 @@ Priority order:
 2) Preserve the intended subtask purpose and ordered workflow context.
 3) Use indirect or supporting APIs only when no direct candidate exists.
 
+Each candidate has:
+- candidate_id: short ID used only for your output
+- api_id: real API identifier, provided only as context
+
 Candidate fields contain compact functional API evidence only:
-api_id, name, category, tool_name, tool_description, description, method, parameters.
+candidate_id, api_id, name, category, tool_name, tool_description, description, method, parameters.
 
 Rules:
 - Rank all candidates in the list. Do not filter any out.
@@ -14,7 +18,9 @@ Rules:
 - When multiple APIs are plausible, prefer those that are more complete and immediately usable.
 - Use tool description only as supporting context; prioritize the endpoint's actual function.
 - Use parameter descriptions as supporting evidence for what the endpoint can actually do.
-- Return every candidate exactly once.
+- Return every candidate_id exactly once.
+- Use candidate_id in your output.
+- Do not output api_id.
 
 User query:
 {user_query}
@@ -27,7 +33,8 @@ Candidates:
 
 Return JSON only:
 {
-  "ranked": [
-    {"api_id": "...", "reason": "short reason"}
+  "ranked_apis": [
+    {"candidate_id": "C01", "rank": 1},
+    {"candidate_id": "C02", "rank": 2}
   ]
 }

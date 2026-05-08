@@ -15,6 +15,10 @@ COLUMNS = [
     "Mode",
     "APIs_Hallucinated",
     "APIs_Duplicated",
+    "Invalid_Case",
+    "Failure_Stage",
+    "Failure_Reason",
+    "Exclude_From_Ranking_Eval",
     "Ranking_Anomaly",
     "Ranking_Anomaly_Reason",
     "Missing_API_IDs",
@@ -75,11 +79,7 @@ def _safe_read_json(path: Path) -> Any:
 
 
 def collect_ranking_anomaly_audit_for_run(run_dir: str | Path, query_id: str | None = None) -> Dict[str, Any]:
-    """Collect recoverable ranking-output anomalies from ranked JSON files.
-
-    These are not fatal invalid cases. They are recorded separately so the main
-    candidate-ranking Excel stays clean while anomaly details remain auditable.
-    """
+    """Collect ranking-output anomalies and fatal invalid cases from ranked JSON files."""
     run_dir = Path(run_dir)
     qid = str(query_id or _query_id_from_run_dir(run_dir))
     rows: List[Dict[str, Any]] = []
@@ -105,6 +105,10 @@ def collect_ranking_anomaly_audit_for_run(run_dir: str | Path, query_id: str | N
                     "Query_ID": qid,
                     "Subtask": subtask_id,
                     "Mode": mode,
+                    "Invalid_Case": 1 if first.get("failure_flag") or first.get("exclude_from_ranking_eval") else "",
+                    "Failure_Stage": first.get("failure_stage", ""),
+                    "Failure_Reason": first.get("failure_reason", ""),
+                    "Exclude_From_Ranking_Eval": first.get("exclude_from_ranking_eval", ""),
                     "Ranking_Anomaly": 1,
                     "Ranking_Anomaly_Reason": first.get("ranking_anomaly_reason", ""),
                     "Missing_API_IDs": ", ".join(_split_csv_like(first.get("missing_api_ids"))),
@@ -191,6 +195,10 @@ def build_mode_anomaly_rows(
                 "Mode": mode,
                 "APIs_Hallucinated": ", ".join(hallucinated),
                 "APIs_Duplicated": ", ".join(duplicated),
+                "Invalid_Case": ranking.get("Invalid_Case", ""),
+                "Failure_Stage": ranking.get("Failure_Stage", ""),
+                "Failure_Reason": ranking.get("Failure_Reason", ""),
+                "Exclude_From_Ranking_Eval": ranking.get("Exclude_From_Ranking_Eval", ""),
                 "Ranking_Anomaly": ranking.get("Ranking_Anomaly", ""),
                 "Ranking_Anomaly_Reason": ranking.get("Ranking_Anomaly_Reason", ""),
                 "Missing_API_IDs": ranking.get("Missing_API_IDs", ""),

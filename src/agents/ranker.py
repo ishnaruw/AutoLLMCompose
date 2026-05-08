@@ -6,31 +6,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
+from src.core.candidate_ids import assign_candidate_ids
 from src.core.api_formatting import normalize_api_for_ranking
-from src.core.run_logging import log_line, log_ranking_anomaly_event
+from src.core.run_logging import log_line, log_retry_outcome_event, log_warning_event
 
 
 class InvalidRankingOutput(RuntimeError):
     def __init__(self, metadata: Dict[str, Any]) -> None:
         self.metadata = metadata
         super().__init__(str(metadata.get("failure_reason") or "invalid_ranking_output"))
-
-FATAL_RANKING_REASONS = {"empty_response", "invalid_json", "parse_error", "timeout"}
-RECOVERABLE_RANKING_ANOMALIES = {
-    "duplicate_ranked_apis",
-    "unknown_api_ids",
-    "incomplete_ranked_api_list",
-    "missing_ranked_apis",
-}
-
-
-def _base_reason(reason: Any) -> str:
-    text = str(reason or "parse_error")
-    return text[:-len("_after_retries")] if text.endswith("_after_retries") else text
-
-
-def _is_recoverable_ranking_anomaly(issue: Dict[str, Any] | None) -> bool:
-    return _base_reason((issue or {}).get("reason")) in RECOVERABLE_RANKING_ANOMALIES
 
 
 def _truncate(s: Any, n: int) -> str:
@@ -198,6 +182,8 @@ def _write_ranker_debug(debug_raw_path: str | None, raw: str, attempt: int) -> N
 
 def _exception_reason(exc: Exception) -> str:
     text = str(exc).lower()
+    if "groq_prompt_too_large" in text or "request too large for model" in text:
+        return "groq_prompt_too_large"
     if "timeout" in text or "timed out" in text:
         return "timeout"
     if "json" in text:
@@ -205,24 +191,44 @@ def _exception_reason(exc: Exception) -> str:
     return "parse_error"
 
 
-def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+def _parse_ranked_output(
+    raw: str,
+    expected_ids: List[str],
+    candidate_id_to_api_id: Dict[str, str] | None = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
     json_text, json_error = _extract_json_text(raw)
+    candidate_id_to_api_id = {
+        str(candidate_id).strip(): str(api_id).strip()
+        for candidate_id, api_id in (candidate_id_to_api_id or {}).items()
+        if str(candidate_id).strip() and str(api_id).strip()
+    }
+    api_id_to_candidate_id: Dict[str, str] = {}
+    for candidate_id, api_id in candidate_id_to_api_id.items():
+        api_id_to_candidate_id.setdefault(api_id, candidate_id)
+    expected_candidate_ids = list(candidate_id_to_api_id.keys())
+
     if json_error:
-        return [], {
+        issue = {
             "reason": json_error,
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
         }
+        if expected_candidate_ids:
+            issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
+        return [], issue
 
     try:
         data = json.loads(json_text)
     except Exception as exc:
-        return [], {
+        issue = {
             "reason": "invalid_json",
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
             "parse_error": str(exc),
         }
+        if expected_candidate_ids:
+            issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
+        return [], issue
 
     if isinstance(data, dict):
         ranked_raw = data.get("ranked_apis")
@@ -231,13 +237,193 @@ def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[s
     else:
         ranked_raw = None
     if not isinstance(ranked_raw, list):
-        return [], {
+        issue = {
             "reason": "parse_error",
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
             "detail": "missing_ranked_or_ranked_apis_list",
         }
+        if expected_candidate_ids:
+            issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
+        return [], issue
 
+    contains_candidate_ids = any(
+        isinstance(item, dict) and str(item.get("candidate_id") or "").strip()
+        for item in ranked_raw
+    )
+    if candidate_id_to_api_id and contains_candidate_ids:
+        ranked, issue = _parse_ranked_output_by_candidate_id(
+            ranked_raw,
+            expected_ids,
+            candidate_id_to_api_id,
+            api_id_to_candidate_id,
+        )
+    else:
+        ranked, issue = _parse_ranked_output_by_api_id(ranked_raw, expected_ids, expected_candidate_ids)
+
+    if issue is not None:
+        return ranked, issue
+    return _validate_and_sort_by_reported_rank(
+        ranked,
+        expected_api_count=len(expected_ids),
+        expected_candidate_count=len(expected_candidate_ids) or None,
+    )
+
+
+def _ranked_item_reason_fields(item: Dict[str, Any], parsed_item: Dict[str, Any]) -> None:
+    if item.get("rank") is not None:
+        parsed_item["llm_reported_rank"] = item.get("rank")
+    if item.get("functional_reason") is not None:
+        parsed_item["functional_reason"] = str(item.get("functional_reason") or "")[:160]
+    if item.get("qos_reason") is not None:
+        parsed_item["qos_reason"] = str(item.get("qos_reason") or "")[:160]
+
+
+def _coerce_rank_value(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value) if value.is_integer() else None
+    if isinstance(value, str):
+        text = value.strip()
+        if re.fullmatch(r"[+-]?\d+", text):
+            return int(text)
+    return None
+
+
+def _is_missing_rank_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    return False
+
+
+def _rank_issue_base(
+    ranked: List[Dict[str, Any]],
+    *,
+    expected_api_count: int,
+    expected_candidate_count: int | None,
+    coerced_ranks: List[int],
+) -> Dict[str, Any]:
+    base: Dict[str, Any] = {
+        "expected_api_count": expected_api_count,
+        "actual_api_count": len(ranked),
+        "expected_rank_count": expected_api_count,
+        "actual_rank_count": len(set(coerced_ranks)),
+        "returned_rank_count": len(coerced_ranks),
+    }
+    if expected_candidate_count is not None:
+        base.update(
+            {
+                "expected_candidate_count": expected_candidate_count,
+                "actual_candidate_count": len(ranked),
+            }
+        )
+    return base
+
+
+def _validate_and_sort_by_reported_rank(
+    ranked: List[Dict[str, Any]],
+    *,
+    expected_api_count: int,
+    expected_candidate_count: int | None = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+    coerced_ranks: List[int] = []
+    missing_rank_items: List[Dict[str, Any]] = []
+    non_integer_rank_items: List[Dict[str, Any]] = []
+    non_integer_rank_values: List[str] = []
+
+    for item in ranked:
+        raw_rank = item.get("llm_reported_rank")
+        if "llm_reported_rank" not in item or _is_missing_rank_value(raw_rank):
+            missing_rank_items.append(item)
+            continue
+        rank = _coerce_rank_value(raw_rank)
+        if rank is None:
+            non_integer_rank_items.append(item)
+            non_integer_rank_values.append(str(raw_rank))
+            continue
+        item["llm_reported_rank"] = rank
+        coerced_ranks.append(rank)
+
+    issue_base = _rank_issue_base(
+        ranked,
+        expected_api_count=expected_api_count,
+        expected_candidate_count=expected_candidate_count,
+        coerced_ranks=coerced_ranks,
+    )
+    if missing_rank_items:
+        return ranked, {
+            **issue_base,
+            "reason": "missing_rank_values",
+            "missing_rank_candidate_ids": [
+                str(item.get("candidate_id"))
+                for item in missing_rank_items
+                if str(item.get("candidate_id") or "").strip()
+            ],
+            "missing_rank_api_ids": [
+                str(item.get("api_id"))
+                for item in missing_rank_items
+                if str(item.get("api_id") or "").strip()
+            ],
+        }
+    if non_integer_rank_items:
+        return ranked, {
+            **issue_base,
+            "reason": "non_integer_rank_values",
+            "non_integer_rank_values": non_integer_rank_values,
+            "non_integer_rank_candidate_ids": [
+                str(item.get("candidate_id"))
+                for item in non_integer_rank_items
+                if str(item.get("candidate_id") or "").strip()
+            ],
+            "non_integer_rank_api_ids": [
+                str(item.get("api_id"))
+                for item in non_integer_rank_items
+                if str(item.get("api_id") or "").strip()
+            ],
+        }
+
+    rank_counts = Counter(coerced_ranks)
+    duplicate_rank_values = sorted(rank for rank, count in rank_counts.items() if count > 1)
+    if duplicate_rank_values:
+        return ranked, {
+            **issue_base,
+            "reason": "duplicate_rank_values",
+            "duplicate_rank_values": duplicate_rank_values,
+        }
+
+    expected_rank_values = set(range(1, expected_api_count + 1))
+    returned_rank_values = set(coerced_ranks)
+    out_of_range_rank_values = sorted(rank for rank in returned_rank_values if rank not in expected_rank_values)
+    missing_rank_values = sorted(expected_rank_values - returned_rank_values)
+    if out_of_range_rank_values:
+        return ranked, {
+            **issue_base,
+            "reason": "rank_values_out_of_range",
+            "rank_values_out_of_range": out_of_range_rank_values,
+            "missing_rank_values": missing_rank_values,
+        }
+    if missing_rank_values:
+        return ranked, {
+            **issue_base,
+            "reason": "incomplete_rank_sequence",
+            "missing_rank_values": missing_rank_values,
+            "returned_rank_values": sorted(returned_rank_values),
+        }
+
+    return sorted(ranked, key=lambda item: int(item["llm_reported_rank"])), None
+
+
+def _parse_ranked_output_by_api_id(
+    ranked_raw: List[Any],
+    expected_ids: List[str],
+    expected_candidate_ids: List[str] | None = None,
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+    expected_candidate_ids = expected_candidate_ids or []
     expected_set = set(expected_ids)
     returned_ids: List[str] = []
     ranked: List[Dict[str, Any]] = []
@@ -256,12 +442,7 @@ def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[s
             "reason": (item.get("reason", "") or "")[:160],
             "is_unknown_api_id": api_id not in expected_set,
         }
-        if item.get("rank") is not None:
-            parsed_item["llm_reported_rank"] = item.get("rank")
-        if item.get("functional_reason") is not None:
-            parsed_item["functional_reason"] = str(item.get("functional_reason") or "")[:160]
-        if item.get("qos_reason") is not None:
-            parsed_item["qos_reason"] = str(item.get("qos_reason") or "")[:160]
+        _ranked_item_reason_fields(item, parsed_item)
         ranked.append(parsed_item)
 
     returned_counts = Counter(returned_ids)
@@ -274,6 +455,13 @@ def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[s
         "actual_api_count": len(returned_expected_ids),
         "returned_api_count": len(returned_ids),
     }
+    if expected_candidate_ids:
+        issue_base.update(
+            {
+                "expected_candidate_count": len(expected_candidate_ids),
+                "actual_candidate_count": len(returned_expected_ids),
+            }
+        )
 
     if malformed_items:
         return ranked, {
@@ -309,14 +497,149 @@ def _parse_ranked_output(raw: str, expected_ids: List[str]) -> tuple[List[Dict[s
     return ranked, None
 
 
+def _parse_ranked_output_by_candidate_id(
+    ranked_raw: List[Any],
+    expected_ids: List[str],
+    candidate_id_to_api_id: Dict[str, str],
+    api_id_to_candidate_id: Dict[str, str],
+) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
+    expected_candidate_ids = list(candidate_id_to_api_id.keys())
+    expected_candidate_set = set(expected_candidate_ids)
+    returned_candidate_ids: List[str] = []
+    unknown_legacy_api_ids: List[str] = []
+    ranked: List[Dict[str, Any]] = []
+    malformed_items = 0
+    for item in ranked_raw:
+        if not isinstance(item, dict):
+            malformed_items += 1
+            continue
+        candidate_id = str(item.get("candidate_id") or "").strip()
+        raw_api_id = str(item.get("api_id") or "").strip()
+        if candidate_id:
+            api_id = candidate_id_to_api_id.get(candidate_id, raw_api_id)
+            returned_candidate_ids.append(candidate_id)
+        elif raw_api_id:
+            api_id = raw_api_id
+            candidate_id = api_id_to_candidate_id.get(raw_api_id, "")
+            if candidate_id:
+                returned_candidate_ids.append(candidate_id)
+            else:
+                unknown_legacy_api_ids.append(raw_api_id)
+        else:
+            malformed_items += 1
+            continue
+
+        parsed_item = {
+            "api_id": api_id,
+            "candidate_id": candidate_id,
+            "reason": (item.get("reason", "") or "")[:160],
+            "is_unknown_api_id": api_id not in set(expected_ids),
+            "is_unknown_candidate_id": candidate_id not in expected_candidate_set,
+        }
+        _ranked_item_reason_fields(item, parsed_item)
+        ranked.append(parsed_item)
+
+    returned_counts = Counter(returned_candidate_ids)
+    duplicate_candidate_ids = sorted(candidate_id for candidate_id, count in returned_counts.items() if count > 1)
+    unknown_candidate_ids = sorted(candidate_id for candidate_id in returned_counts if candidate_id not in expected_candidate_set)
+    valid_returned_candidate_ids = {
+        candidate_id for candidate_id in returned_candidate_ids if candidate_id in expected_candidate_set
+    }
+    missing_candidate_ids = [
+        candidate_id for candidate_id in expected_candidate_ids if candidate_id not in valid_returned_candidate_ids
+    ]
+    duplicate_api_ids = sorted(
+        {
+            candidate_id_to_api_id[candidate_id]
+            for candidate_id in duplicate_candidate_ids
+            if candidate_id in candidate_id_to_api_id
+        }
+    )
+    missing_api_ids = [
+        candidate_id_to_api_id[candidate_id]
+        for candidate_id in missing_candidate_ids
+        if candidate_id in candidate_id_to_api_id
+    ]
+    unknown_api_ids = sorted(set(unknown_legacy_api_ids))
+    issue_base = {
+        "expected_api_count": len(expected_ids),
+        "actual_api_count": len(valid_returned_candidate_ids),
+        "returned_api_count": len(returned_candidate_ids) + len(unknown_legacy_api_ids),
+        "expected_candidate_count": len(expected_candidate_ids),
+        "actual_candidate_count": len(valid_returned_candidate_ids),
+        "returned_candidate_count": len(returned_candidate_ids),
+    }
+
+    if malformed_items:
+        return ranked, {
+            **issue_base,
+            "reason": "parse_error",
+            "malformed_ranked_item_count": malformed_items,
+        }
+    if duplicate_candidate_ids:
+        return ranked, {
+            **issue_base,
+            "reason": "duplicate_candidate_ids",
+            "duplicate_candidate_ids": duplicate_candidate_ids,
+            "duplicate_api_ids": duplicate_api_ids,
+        }
+    if unknown_candidate_ids:
+        return ranked, {
+            **issue_base,
+            "reason": "unknown_candidate_ids",
+            "unknown_candidate_ids": unknown_candidate_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if unknown_api_ids:
+        return ranked, {
+            **issue_base,
+            "reason": "unknown_api_ids",
+            "unknown_api_ids": unknown_api_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if missing_candidate_ids:
+        return ranked, {
+            **issue_base,
+            "reason": "incomplete_candidate_id_list",
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if len(returned_candidate_ids) != len(expected_candidate_ids):
+        return ranked, {
+            **issue_base,
+            "reason": "missing_candidate_ids",
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+
+    return ranked, None
+
+
 def _ranker_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
     reason = issue.get("reason", "invalid_ranking_output")
-    expected = issue.get("expected_api_count", "")
+    expected = issue.get("expected_candidate_count") or issue.get("expected_api_count", "")
+    expected_ranks = issue.get("expected_rank_count")
+    rank_rule = (
+        f" Include integer rank values 1 through {expected_ranks} exactly once."
+        if expected_ranks
+        else ""
+    )
+    if issue.get("expected_candidate_count"):
+        return (
+            prompt
+            + "\n\nIMPORTANT: The previous ranking output was invalid "
+            + f"({reason}). Return JSON only using the output key requested by the prompt, containing every one of the {expected} candidate_id values exactly once. "
+            + "Use candidate_id only. Do not output api_id. Do not omit candidates, duplicate candidates, or invent candidate_id values."
+            + rank_rule
+        )
     return (
         prompt
         + "\n\nIMPORTANT: The previous ranking output was invalid "
         + f"({reason}). Return JSON only using the output key requested by the prompt, containing every one of the {expected} candidate api_id values exactly once. "
         + "Do not omit candidates, duplicate candidates, or invent api_id values."
+        + rank_rule
     )
 
 
@@ -330,30 +653,6 @@ def _failure_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str
         "exclude_from_ranking_eval": True,
         **issue,
     }
-
-
-def _ranking_anomaly_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str, Any]:
-    reason = str(issue.get("reason") or "ranking_anomaly")
-    anomaly_reason = reason if not after_retries else f"{reason}_after_retries"
-    return {
-        "ranking_anomaly": True,
-        "ranking_anomaly_stage": "llm_ranking",
-        "ranking_anomaly_reason": anomaly_reason,
-        "failure_flag": False,
-        "exclude_from_ranking_eval": False,
-        **issue,
-    }
-
-
-def _attach_ranking_anomaly(ranked: List[Dict[str, Any]], issue: Dict[str, Any], *, after_retries: bool) -> List[Dict[str, Any]]:
-    metadata = _ranking_anomaly_metadata(issue, after_retries=after_retries)
-    log_ranking_anomaly_event(metadata)
-    annotated: List[Dict[str, Any]] = []
-    for item in ranked:
-        row = dict(item)
-        row.update(metadata)
-        annotated.append(row)
-    return annotated
 
 
 def rank_subtask(
@@ -390,7 +689,8 @@ def rank_subtask(
     else:
         cand_slim = [_slim_candidate(c) for c in cand_trimmed]
     cand_slim = sorted(cand_slim, key=_candidate_prompt_sort_key)
-    expected_ids = [str(c.get("api_id")) for c in cand_slim if c.get("api_id")]
+    cand_slim, candidate_id_to_api_id, _api_id_to_candidate_id = assign_candidate_ids(cand_slim)
+    expected_ids = list(candidate_id_to_api_id.values())
     if not expected_ids:
         return []
 
@@ -405,8 +705,12 @@ def rank_subtask(
     last_issue: Dict[str, Any] = {
         "reason": "parse_error",
         "expected_api_count": len(expected_ids),
+        "expected_candidate_count": len(candidate_id_to_api_id),
         "actual_api_count": 0,
+        "actual_candidate_count": 0,
     }
+    last_ranked: List[Dict[str, Any]] = []
+    invalid_attempts = 0
     for attempt in range(1, attempts + 1):
         prompt_for_attempt = prompt if attempt == 1 else _ranker_retry_prompt(prompt, last_issue)
         try:
@@ -421,23 +725,58 @@ def rank_subtask(
             raise InvalidRankingOutput(_failure_metadata(issue, after_retries=False)) from exc
 
         _write_ranker_debug(debug_raw_path, resp_raw, attempt)
-        ranked, issue = _parse_ranked_output(resp_raw, expected_ids)
+        ranked, issue = _parse_ranked_output(resp_raw, expected_ids, candidate_id_to_api_id)
         if issue is None:
+            if invalid_attempts:
+                log_line(
+                    f"[ranker] retry validation succeeded after {invalid_attempts} invalid attempt(s); "
+                    f"final_attempt={attempt}/{attempts}"
+                )
+                log_retry_outcome_event(
+                    {
+                        "stage": "llm_ranking",
+                        "role": "ranker",
+                        "outcome": "success",
+                        "invalid_attempts": invalid_attempts,
+                        "final_attempt": attempt,
+                        "max_attempts": attempts,
+                        "last_failure_reason": last_issue.get("reason"),
+                        "expected_api_count": last_issue.get("expected_api_count"),
+                        "actual_api_count": last_issue.get("actual_api_count"),
+                        "expected_candidate_count": last_issue.get("expected_candidate_count"),
+                        "actual_candidate_count": last_issue.get("actual_candidate_count"),
+                    }
+                )
             return ranked[:ranker_pool_n]
 
         last_issue = issue
-        if _is_recoverable_ranking_anomaly(issue):
-            log_line(
-                f"[ranker] recoverable LLM ranking anomaly ({issue.get('reason')}) "
-                f"attempt {attempt}/{attempts}; expected={issue.get('expected_api_count')} actual={issue.get('actual_api_count')}"
-            )
-        else:
-            log_line(
-                f"[ranker] invalid LLM ranking output ({issue.get('reason')}) "
-                f"attempt {attempt}/{attempts}; expected={issue.get('expected_api_count')} actual={issue.get('actual_api_count')}"
-            )
+        last_ranked = ranked
+        invalid_attempts += 1
+        log_line(
+            f"[ranker] invalid LLM ranking output ({issue.get('reason')}) "
+            f"attempt {attempt}/{attempts}; expected={issue.get('expected_candidate_count', issue.get('expected_api_count'))} "
+            f"actual={issue.get('actual_candidate_count', issue.get('actual_api_count'))}"
+        )
 
-        if _is_recoverable_ranking_anomaly(issue) and attempt == attempts:
-            return _attach_ranking_anomaly(ranked[:ranker_pool_n], issue, after_retries=True)
-
-    raise InvalidRankingOutput(_failure_metadata(last_issue, after_retries=True))
+    metadata = _failure_metadata(last_issue, after_retries=True)
+    metadata["retry_invalid_attempts"] = invalid_attempts
+    metadata["retry_max_attempts"] = attempts
+    if last_ranked:
+        metadata["_invalid_ranked_items"] = last_ranked
+    log_retry_outcome_event(
+        {
+            "stage": "llm_ranking",
+            "role": "ranker",
+            "outcome": "failed",
+            "invalid_attempts": invalid_attempts,
+            "final_attempt": attempts,
+            "max_attempts": attempts,
+            "last_failure_reason": last_issue.get("reason"),
+            "failure_reason": metadata.get("failure_reason"),
+            "expected_api_count": last_issue.get("expected_api_count"),
+            "actual_api_count": last_issue.get("actual_api_count"),
+            "expected_candidate_count": last_issue.get("expected_candidate_count"),
+            "actual_candidate_count": last_issue.get("actual_candidate_count"),
+        }
+    )
+    raise InvalidRankingOutput(metadata)

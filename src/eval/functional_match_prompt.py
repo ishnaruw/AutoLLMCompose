@@ -15,6 +15,7 @@ def build_llm_prompt(
     compact_entries = []
     for a in api_entries:
         entry = {
+            "candidate_id": a.get("candidate_id"),
             "api_id": a.get("api_id"),
             "name": a.get("name"),
             "category": a.get("category"),
@@ -31,14 +32,15 @@ def build_llm_prompt(
         "Your job is to judge whether each API is a good functional match for the subtask, not whether it is loosely related by topic words.\n"
         "Return ONLY one JSON object.\n"
         "Do not omit any API.\n"
-        "For every input api_id, you must return exactly one output item.\n"
-        "Use the same api_id string exactly as given.\n"
+        "Each candidate has candidate_id, the short ID used only for your output, and api_id, the real API identifier provided only as context.\n"
+        "For every input candidate_id, you must return exactly one output item.\n"
+        "Use candidate_id in your output. Do not output api_id.\n"
         "Do not change field names.\n"
         "Do not add markdown.\n"
         "Do not add explanation outside JSON.\n"
         "Judge only functional suitability for the subtask.\n"
         "Use endpoint name, description, method, compact parameter descriptions, and tool-level context when available.\n"
-        "If the API belongs to the wrong domain or dataset, set functional_match to 0 even if some keywords overlap.\n"
+        "If the API belongs to the wrong domain or dataset, set relevant to 0 even if some keywords overlap.\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
@@ -46,13 +48,14 @@ def build_llm_prompt(
         "Output format: \n"
         "{\n"
         '  "results": [\n'
-        '    {"api_id": "...", "functional_match": 0, "comment": "..."},\n'
-        '    {"api_id": "...", "functional_match": 1, "comment": "..."}\n'
+        '    {"candidate_id": "C01", "relevant": 0, "comment": "..."},\n'
+        '    {"candidate_id": "C02", "relevant": 1, "comment": "..."}\n'
         "  ]\n"
         "}\n\n"
         "Important rules:\n"
-        "- functional_match must be 0 or 1\n"
-        "- return one item for every api_id\n"
+        "- relevant must be 0 or 1\n"
+        "- return one item for every candidate_id exactly once\n"
+        "- do not output api_id\n"
         "- keep comments short\n"
         "- prioritize actual function and domain fit over keyword overlap\n"
         "- tool_description can reveal the true purpose of the API and should be used\n"

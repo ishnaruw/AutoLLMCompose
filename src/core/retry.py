@@ -14,11 +14,27 @@ _RETRY_AFTER_RE = re.compile(
 )
 
 
+_REQUEST_TOO_LARGE_SIGNALS = [
+    "request too large for model",
+    "please reduce your message size",
+    "maximum context length",
+    "context length exceeded",
+]
+
+
+def _is_request_too_large_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(signal in msg for signal in _REQUEST_TOO_LARGE_SIGNALS)
+
+
 def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
     """
     Return (should_retry, reason).
     Handles rate limits and transient provider/backend failures.
     """
+    if _is_request_too_large_error(exc):
+        return False, "request_too_large"
+
     msg = str(exc).lower()
 
     retry_signals = {
@@ -30,7 +46,6 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
             "too many requests",
             "tokens per minute",
             "requests per minute",
-            "request too large for model",
         ],
         "backend_unavailable": [
             "503",
@@ -62,6 +77,10 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
 
 def classify_retryable_error(exc: Exception) -> tuple[bool, str]:
     return _is_retryable_error(exc)
+
+
+def is_request_too_large_error(exc: Exception) -> bool:
+    return _is_request_too_large_error(exc)
 
 
 def _extract_retry_after_seconds(exc: Exception) -> float | None:

@@ -66,6 +66,57 @@ class InvalidOutputHandlingTests(unittest.TestCase):
         self.assertEqual(metadata["failure_reason"], "duplicate_ranked_apis_after_retries")
         self.assertTrue(metadata["exclude_from_ranking_eval"])
         self.assertEqual(metadata["duplicate_api_ids"], ["api_a"])
+        self.assertEqual([row["api_id"] for row in metadata["_invalid_ranked_items"]], ["api_a", "api_a"])
+
+    def test_retry_success_is_logged_as_structured_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_log = Path(tmpdir) / "run.log"
+            configure_run_log(run_log)
+            prompt = Path(tmpdir) / "ranker.md"
+            prompt.write_text("{user_query}\n{subtask_json}\n{candidates_json}", encoding="utf-8")
+            calls = 0
+
+            def retry_then_valid_llm(_: str) -> str:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    return json.dumps(
+                        {
+                            "ranked_apis": [
+                                {"api_id": "api_a", "rank": 1},
+                                {"api_id": "api_a", "rank": 2},
+                            ]
+                        }
+                    )
+                return json.dumps(
+                    {
+                        "ranked_apis": [
+                            {"api_id": "api_a", "rank": 1},
+                            {"api_id": "api_b", "rank": 2},
+                        ]
+                    }
+                )
+
+            try:
+                ranked = rank_subtask(
+                    retry_then_valid_llm,
+                    user_query="find weather data",
+                    subtask={"id": "1", "description": "weather"},
+                    candidates=[{"api_id": "api_a"}, {"api_id": "api_b"}],
+                    prompt_path=str(prompt),
+                    max_validation_retries=1,
+                )
+            finally:
+                clear_run_log()
+
+            retry_log = Path(tmpdir) / "retry_outcomes.log"
+            event = json.loads(retry_log.read_text(encoding="utf-8").strip())
+
+        self.assertEqual([row["api_id"] for row in ranked], ["api_a", "api_b"])
+        self.assertEqual(event["event_type"], "llm_validation_retry_outcome")
+        self.assertEqual(event["outcome"], "success")
+        self.assertEqual(event["stage"], "llm_ranking")
+        self.assertEqual(event["invalid_attempts"], 1)
 
     def test_incomplete_ranking_output_raises_invalid_metadata_after_retries(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -116,6 +167,131 @@ class InvalidOutputHandlingTests(unittest.TestCase):
         self.assertEqual(metadata["failure_reason"], "incomplete_qos_scores_after_retries")
         self.assertTrue(metadata["exclude_from_ranking_eval"])
         self.assertEqual(metadata["missing_api_ids"], ["api_b"])
+
+    def test_candidate_id_ranking_output_maps_to_api_ids(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "ranker.md"
+            prompt.write_text("{user_query}\n{subtask_json}\n{candidates_json}", encoding="utf-8")
+
+            def candidate_id_llm(_: str) -> str:
+                return json.dumps(
+                    {
+                        "ranked_apis": [
+                            {"candidate_id": "C02", "rank": 2},
+                            {"candidate_id": "C01", "rank": 1},
+                        ]
+                    }
+                )
+
+            ranked = rank_subtask(
+                candidate_id_llm,
+                user_query="find weather data",
+                subtask={"id": "1", "description": "weather"},
+                candidates=[{"api_id": "api_a"}, {"api_id": "api_b"}],
+                prompt_path=str(prompt),
+                max_validation_retries=0,
+            )
+
+        self.assertEqual([row["candidate_id"] for row in ranked], ["C01", "C02"])
+        self.assertEqual([row["api_id"] for row in ranked], ["api_a", "api_b"])
+        self.assertEqual([row["llm_reported_rank"] for row in ranked], [1, 2])
+
+    def test_duplicate_candidate_id_ranking_output_raises_candidate_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "ranker.md"
+            prompt.write_text("{user_query}\n{subtask_json}\n{candidates_json}", encoding="utf-8")
+
+            def duplicate_candidate_llm(_: str) -> str:
+                return json.dumps(
+                    {
+                        "ranked_apis": [
+                            {"candidate_id": "C01", "rank": 1},
+                            {"candidate_id": "C01", "rank": 2},
+                        ]
+                    }
+                )
+
+            with self.assertRaises(InvalidRankingOutput) as raised:
+                rank_subtask(
+                    duplicate_candidate_llm,
+                    user_query="find weather data",
+                    subtask={"id": "1", "description": "weather"},
+                    candidates=[{"api_id": "api_a"}, {"api_id": "api_b"}],
+                    prompt_path=str(prompt),
+                    max_validation_retries=1,
+                )
+
+        metadata = raised.exception.metadata
+        self.assertEqual(metadata["failure_reason"], "duplicate_candidate_ids_after_retries")
+        self.assertEqual(metadata["duplicate_candidate_ids"], ["C01"])
+        self.assertEqual(metadata["duplicate_api_ids"], ["api_a"])
+        self.assertEqual([row["candidate_id"] for row in metadata["_invalid_ranked_items"]], ["C01", "C01"])
+        self.assertEqual([row["api_id"] for row in metadata["_invalid_ranked_items"]], ["api_a", "api_a"])
+
+    def test_duplicate_rank_output_raises_invalid_metadata_after_retries(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "ranker.md"
+            prompt.write_text("{user_query}\n{subtask_json}\n{candidates_json}", encoding="utf-8")
+
+            def duplicate_rank_llm(_: str) -> str:
+                return json.dumps(
+                    {
+                        "ranked_apis": [
+                            {"candidate_id": "C01", "rank": 1},
+                            {"candidate_id": "C02", "rank": 1},
+                        ]
+                    }
+                )
+
+            with self.assertRaises(InvalidRankingOutput) as raised:
+                rank_subtask(
+                    duplicate_rank_llm,
+                    user_query="find weather data",
+                    subtask={"id": "1", "description": "weather"},
+                    candidates=[{"api_id": "api_a"}, {"api_id": "api_b"}],
+                    prompt_path=str(prompt),
+                    max_validation_retries=1,
+                )
+
+        metadata = raised.exception.metadata
+        self.assertEqual(metadata["failure_stage"], "llm_ranking")
+        self.assertEqual(metadata["failure_reason"], "duplicate_rank_values_after_retries")
+        self.assertEqual(metadata["expected_rank_count"], 2)
+        self.assertEqual(metadata["actual_rank_count"], 1)
+        self.assertTrue(metadata["exclude_from_ranking_eval"])
+
+    def test_qos_scorer_prompts_candidate_id_only_and_maps_scores(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{candidates_json}", encoding="utf-8")
+            seen_prompts: list[str] = []
+
+            def candidate_qos_llm(prompt_text: str) -> str:
+                seen_prompts.append(prompt_text)
+                return json.dumps(
+                    {
+                        "qos_scored": [
+                            {"candidate_id": "C01", "qos_score": 0.8},
+                            {"candidate_id": "C02", "qos_score": 0.5},
+                        ]
+                    }
+                )
+
+            scores = score_qos_llm(
+                candidate_qos_llm,
+                candidates=[
+                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                ],
+                prompt_path=str(prompt),
+                batch_size=0,
+                max_validation_retries=0,
+            )
+
+        self.assertNotIn('"api_id"', seen_prompts[0])
+        self.assertIn('"candidate_id": "C01"', seen_prompts[0])
+        self.assertEqual(scores["api_a"]["qos_llm_rank"], 1)
+        self.assertEqual(scores["api_b"]["qos_llm_rank"], 2)
 
 
 if __name__ == "__main__":

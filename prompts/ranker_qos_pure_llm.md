@@ -9,7 +9,9 @@ Functional guidance:
 - Prefer APIs that directly accomplish the subtask.
 - Prefer APIs that can satisfy the subtask with minimal extra assumptions.
 - If no API directly fulfills the subtask, prefer APIs that provide the essential data or capability needed to support completing that subtask.
+- Each candidate has candidate_id, the short ID used only for your output, and api_id, the real API identifier provided only as context.
 - Candidate fields contain compact functional API evidence plus qos_llm_rank only.
+- Candidate fields are: candidate_id, api_id, name, category, tool_name, tool_description, description, method, parameters, qos_llm_rank.
 
 QoS meanings:
 - qos_llm_rank = QoS rank from a separate QoS-only scoring step.
@@ -31,7 +33,9 @@ Rules:
 - If qos_llm_rank is missing, treat that API as weak or uncertain from an operational perspective among similarly suitable APIs.
 - Use tool description as supporting domain context, but keep endpoint purpose primary.
 - Use parameter descriptions as supporting evidence for what the endpoint can actually do.
-- Return every candidate exactly once.
+- Return every candidate_id exactly once.
+- Use candidate_id in your output.
+- Do not output api_id.
 
 User query:
 {user_query}
@@ -46,8 +50,12 @@ Return JSON only:
 {
   "ranked_apis": [
     {
-      "api_id": "...",
+      "candidate_id": "C01",
       "rank": 1
+    },
+    {
+      "candidate_id": "C02",
+      "rank": 2
     }
   ]
 }

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import json
+import os
+import re
+import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 import sys
+import time
 
 import pandas as pd
 import plotly.express as px
@@ -24,10 +30,22 @@ from src.eval.ranking_metrics import (  # noqa: E402
     top_lists_to_wide_frame,
 )
 
-DEFAULT_PARENT = (
-    PROJECT_ROOT
-    / "results/logs/RUNS_Fireworks_AI/fireworks_accounts/fireworks/models/deepseek-v3p1"
-)
+DEFAULT_RUN_EXPLORER_PARENT = PROJECT_ROOT / "results/logs"
+DEFAULT_PARENT = DEFAULT_RUN_EXPLORER_PARENT
+DEFAULT_EXPERIMENT_RUN_TAG = "STREAMLIT_RUNS"
+QUERIES_PATH = PROJECT_ROOT / "data/queries/all_user_query.jsonl"
+
+PROVIDER_MODELS = {
+    "mistral": ["mistral-small-latest", "mistral-large-latest"],
+    "fireworks": ["accounts/fireworks/models/deepseek-v3p1", "accounts/fireworks/models/llama-v3p1-8b-instruct"],
+    "groq": ["multi", "llama-3.3-70b-versatile"],
+    "lmstudio": ["meta-llama-3.1-8b-instruct"],
+    "lmstudio_qwen": ["qwen2.5-3b-instruct.gguf"],
+    "azure": ["gpt-4o-dspy"],
+    "azure_foundry": ["DeepSeek-R1-0528"],
+    "gemini": ["gemini-2.5-flash"],
+    "together": ["meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo"],
+}
 
 METRIC_LABELS = {
     "spearman": "Spearman (All Candidates)",
@@ -48,6 +66,780 @@ K_HELP = (
     "count because qos_hybrid is the functional-refinement mode used to define the meaningful valid "
     "selection depth. This keeps AO, RBO, and Jaccard comparisons at the same cutoff across all modes."
 )
+
+STAGE_LABELS = [
+    ("Decomposition", ("decomposer",)),
+    ("Retrieval", ("retrieval", "retrieval_functional_match_evaluation")),
+    ("Ranking", ("ranking", "ranker_no_qos", "ranker_qos_pure_llm", "qos_scorer", "qos_topsis", "qos_hybrid")),
+    ("Selection", ("selection", "selector")),
+    ("Planning", ("planner",)),
+    ("Reports", ("evaluation_outputs",)),
+]
+
+LOG_FILENAMES = [
+    ("Run Log", "run.log"),
+    ("Errors Log", "errors.log"),
+    ("Invalid Cases Log", "invalid_cases.log"),
+    ("Warnings Log", "warnings.log"),
+]
+
+
+@dataclass(frozen=True)
+class QueryRun:
+    run_dir: Path
+    query_id: str
+    run_name: str
+    model_label: str
+    provider: str | None
+    timestamp: str | None
+
+
+def _read_json_file(path: Path) -> dict:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+@st.cache_data(show_spinner=False)
+def _load_query_options(path_text: str) -> list[dict]:
+    path = Path(path_text)
+    rows: list[dict] = []
+    if not path.exists():
+        return rows
+    try:
+        for idx, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            line = line.strip().lstrip("\ufeff")
+            if not line:
+                continue
+            payload = json.loads(line)
+            if isinstance(payload, dict):
+                query_id = str(payload.get("id") or f"q{idx:02d}")
+                rows.append(
+                    {
+                        "id": query_id,
+                        "title": str(payload.get("title") or ""),
+                        "goal": str(payload.get("goal") or ""),
+                    }
+                )
+    except Exception:
+        return []
+    return rows
+
+
+def _query_option_label(query: dict) -> str:
+    title = query.get("title") or ""
+    return f"{query['id']} | {title}" if title else str(query["id"])
+
+
+def _is_process_running(process: subprocess.Popen | None, pid: int | None) -> bool:
+    if process is not None:
+        return process.poll() is None
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _launch_experiment(query_ids: list[str], provider: str, model: str, run_tag: str) -> dict:
+    launch_dir = PROJECT_ROOT / "results/logs/streamlit_launches"
+    launch_dir.mkdir(parents=True, exist_ok=True)
+    run_parent = PROJECT_ROOT / "results/logs" / run_tag
+    run_parent.mkdir(parents=True, exist_ok=True)
+    launch_log = launch_dir / f"launch_{time.strftime('%Y%m%dT%H%M%S')}.log"
+    cmd = [
+        sys.executable,
+        "-m",
+        "src.driver.run_autogen_pipeline",
+        "--query-ids",
+        ",".join(query_ids),
+        "--provider",
+        provider,
+        "--run-tag",
+        run_tag,
+    ]
+    if model.strip():
+        cmd.extend(["--model", model.strip()])
+    handle = launch_log.open("w", encoding="utf-8")
+    process = subprocess.Popen(
+        cmd,
+        cwd=str(PROJECT_ROOT),
+        stdout=handle,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    handle.close()
+    return {
+        "process": process,
+        "pid": process.pid,
+        "cmd": cmd,
+        "query_ids": query_ids,
+        "provider": provider,
+        "model": model,
+        "run_tag": run_tag,
+        "run_parent": str(run_parent),
+        "launch_log": str(launch_log),
+        "started_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+def _format_command(cmd: list[str]) -> str:
+    return " ".join(f"'{part}'" if " " in part else part for part in cmd)
+
+
+def _path_for_input(text: str) -> Path:
+    raw = Path((text or "").strip()).expanduser()
+    if raw.is_absolute():
+        return raw
+    return (PROJECT_ROOT / raw).resolve()
+
+
+def _safe_relative_to_root(path: Path, root: Path) -> str:
+    try:
+        return str(path.resolve().relative_to(root.resolve())) or "."
+    except Exception:
+        return str(path)
+
+
+def _choose_directory_with_native_dialog(initial_dir: Path, prompt: str) -> Path | None:
+    initial_dir = initial_dir if initial_dir.exists() and initial_dir.is_dir() else DEFAULT_RUN_EXPLORER_PARENT
+    script = "\n".join(
+        [
+            f"set defaultFolder to POSIX file {json.dumps(str(initial_dir))} as alias",
+            f"set selectedFolder to choose folder with prompt {json.dumps(prompt)} default location defaultFolder",
+            "POSIX path of selectedFolder",
+        ]
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script],
+            capture_output=True,
+            text=True,
+            timeout=300,
+            check=False,
+        )
+    except Exception as exc:
+        st.error(f"Could not open macOS folder picker: {exc}")
+        return None
+    if result.returncode != 0:
+        if result.stderr and "User canceled" not in result.stderr:
+            st.warning(f"Folder picker did not return a directory: {result.stderr.strip()}")
+        return None
+    selected = Path(result.stdout.strip()).expanduser()
+    return selected if selected.exists() and selected.is_dir() else None
+
+
+def _render_directory_selector(label: str, default_path: Path, key: str, root: Path | None = None) -> str:
+    root = root or DEFAULT_RUN_EXPLORER_PARENT
+    state_key = f"{key}_path"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = str(default_path)
+
+    current = _path_for_input(st.session_state[state_key])
+    if not current.exists() or not current.is_dir():
+        current = default_path
+        st.session_state[state_key] = str(current)
+
+    st.caption(f"{label}: `{current}`")
+    if st.button("Choose folder...", key=f"{key}_choose"):
+        selected = _choose_directory_with_native_dialog(root.resolve(), f"Select {label.lower()}")
+        if selected is not None:
+            st.session_state[state_key] = str(selected)
+            _discover_query_runs.clear()
+            _load_excel_sheet.clear()
+        st.rerun()
+    return st.session_state[state_key]
+
+
+def _query_id_from_name(name: str) -> str | None:
+    match = re.match(r"^(q\d{1,3})(?:[_-]|$)", name.strip(), flags=re.IGNORECASE)
+    return match.group(1).lower() if match else None
+
+
+def _timestamp_from_name(name: str) -> str | None:
+    match = re.search(r"(20\d{6}T\d{6})", name)
+    return match.group(1) if match else None
+
+
+def _looks_like_run_dir(path: Path) -> bool:
+    if not path.is_dir() or path.name.startswith("."):
+        return False
+    if _query_id_from_name(path.name) is None:
+        return False
+    markers = [
+        "meta.json",
+        "run_config.json",
+        "run.log",
+        "errors.log",
+        "warnings.log",
+        "invalid_cases.log",
+        "0_decomposer.json",
+        "evaluation_result.json",
+    ]
+    return any((path / marker).exists() for marker in markers) or any(path.glob("*.xlsx")) or any((path / "evaluation").glob("*.xlsx"))
+
+
+def _model_label_for_run(run_dir: Path, parent_dir: Path, meta: dict) -> str:
+    model_tag = str(meta.get("model_tag") or "").strip()
+    active_model = str(meta.get("active_model") or "").strip()
+    provider = str(meta.get("provider") or "").strip()
+    if model_tag:
+        return model_tag.split(":", 1)[1] if ":" in model_tag else model_tag
+    if active_model:
+        return active_model
+    if provider:
+        return provider
+    try:
+        relative_parts = run_dir.relative_to(parent_dir).parts
+    except ValueError:
+        relative_parts = run_dir.parts
+    if len(relative_parts) >= 2:
+        return relative_parts[-2]
+    return run_dir.parent.name if run_dir.parent != run_dir else "unknown"
+
+
+@st.cache_data(show_spinner=False)
+def _discover_query_runs(parent_dir_text: str) -> tuple[list[dict], list[str]]:
+    parent_dir = _path_for_input(parent_dir_text)
+    warnings: list[str] = []
+    if not parent_dir.exists():
+        return [], [f"Parent runs directory not found: {parent_dir}"]
+    if not parent_dir.is_dir():
+        return [], [f"Parent runs path is not a directory: {parent_dir}"]
+
+    discovered: list[QueryRun] = []
+    candidates = [parent_dir] + [path for path in parent_dir.rglob("*") if path.is_dir() and not path.name.startswith(".")]
+    for path in candidates:
+        if not _looks_like_run_dir(path):
+            continue
+        meta = _read_json_file(path / "meta.json")
+        query_id = str(meta.get("query_id") or _query_id_from_name(path.name) or "").lower()
+        if not query_id:
+            continue
+        discovered.append(
+            QueryRun(
+                run_dir=path,
+                query_id=query_id,
+                run_name=path.name,
+                model_label=_model_label_for_run(path, parent_dir, meta),
+                provider=str(meta.get("provider") or "").strip() or None,
+                timestamp=_timestamp_from_name(path.name),
+            )
+        )
+
+    deduped = {str(run.run_dir.resolve()): run for run in discovered}
+    runs = sorted(
+        deduped.values(),
+        key=lambda run: (run.query_id, run.model_label.lower(), run.timestamp or "", run.run_name),
+    )
+    rows = [
+        {
+            "run_dir": str(run.run_dir),
+            "query_id": run.query_id,
+            "run_name": run.run_name,
+            "model_label": run.model_label,
+            "provider": run.provider,
+            "timestamp": run.timestamp,
+        }
+        for run in runs
+    ]
+    return rows, warnings
+
+
+def _selected_run_from_row(row: dict) -> QueryRun:
+    return QueryRun(
+        run_dir=Path(row["run_dir"]),
+        query_id=str(row["query_id"]),
+        run_name=str(row["run_name"]),
+        model_label=str(row["model_label"]),
+        provider=row.get("provider"),
+        timestamp=row.get("timestamp"),
+    )
+
+
+def _run_label(row: dict) -> str:
+    timestamp = row.get("timestamp") or "no timestamp"
+    return f"{row['run_name']} | {timestamp}"
+
+
+def _list_excel_files(run_dir: Path) -> list[Path]:
+    files = [path for path in run_dir.rglob("*") if path.is_file() and path.suffix.lower() in {".xlsx", ".xls"}]
+    return sorted(files, key=lambda path: (0 if "evaluation" in path.parts else 1, path.name.lower()))
+
+
+def _find_excel_target(run_dir: Path, token: str) -> tuple[Path | None, str | None, list[str], str | None]:
+    token_lower = token.lower()
+    sheet_aliases = {
+        "candidate_api_rankings": ("candidate_api_rankings", "ranked apis", "rankings", "query"),
+        "mode_anomalies": ("mode_anomalies", "mode anomalies", "anomalies"),
+    }
+    preferred_sheet_tokens = sheet_aliases.get(token_lower, (token_lower,))
+    excel_files = _list_excel_files(run_dir)
+    preferred_files = sorted(
+        excel_files,
+        key=lambda path: (0 if token_lower in path.name.lower() else 1, path.name.lower()),
+    )
+    errors: list[str] = []
+
+    fallback: tuple[Path | None, str | None, list[str], str | None] = (None, None, [], None)
+    for path in preferred_files:
+        try:
+            workbook = pd.ExcelFile(path)
+        except Exception as exc:
+            errors.append(f"{path.name}: {exc}")
+            continue
+        sheets = workbook.sheet_names
+        matched_sheet = next(
+            (sheet for token_part in preferred_sheet_tokens for sheet in sheets if token_part in sheet.lower()),
+            None,
+        )
+        if matched_sheet:
+            return path, matched_sheet, sheets, None
+        if token_lower in path.name.lower() and sheets:
+            return path, sheets[0], sheets, None
+        if fallback[0] is None and sheets:
+            fallback = (path, sheets[0], sheets, None)
+
+    if errors:
+        return None, None, [], "; ".join(errors)
+    if token_lower == "candidate_api_rankings":
+        return fallback
+    return None, None, [], None
+
+
+@st.cache_data(show_spinner=False)
+def _load_excel_sheet(path_text: str, sheet_name: str) -> tuple[pd.DataFrame | None, str | None]:
+    try:
+        df = pd.read_excel(path_text, sheet_name=sheet_name)
+    except Exception as exc:
+        return None, str(exc)
+    return df, None
+
+
+def _matching_column(df: pd.DataFrame, desired: str) -> str | None:
+    aliases = {
+        "Subtask ID": ("Subtask ID", "Sub Task", "subtask_id", "Subtask"),
+        "Functional Match Label": ("Functional Match Label", "Functional Match (0/1)", "functional_match"),
+    }
+    desired_options = aliases.get(desired, (desired,))
+    normalized_columns = [(str(col), str(col).strip().lower()) for col in df.columns]
+    for option in desired_options:
+        desired_lower = option.lower()
+        for col, col_lower in normalized_columns:
+            if col_lower == desired_lower:
+                return col
+    desired_lower = desired.lower()
+    for col in df.columns:
+        if str(col).strip().lower() == desired_lower:
+            return str(col)
+    compact_options = [re.sub(r"[^a-z0-9]+", "", option.lower()) for option in desired_options]
+    for col in df.columns:
+        col_compact = re.sub(r"[^a-z0-9]+", "", str(col).lower())
+        if any(compact and compact in col_compact for compact in compact_options):
+            return str(col)
+    return None
+
+
+def _render_dataframe_filters(df: pd.DataFrame, key_prefix: str) -> pd.DataFrame:
+    filter_specs = [
+        "Mode",
+        "Subtask ID",
+        "Selected for Planner",
+        "Functional Match Label",
+    ]
+    selected_filters: dict[str, list] = {}
+    cols = st.columns(4)
+    for idx, label in enumerate(filter_specs):
+        col_name = _matching_column(df, label)
+        if not col_name:
+            continue
+        values = sorted([value for value in df[col_name].dropna().unique().tolist()], key=lambda value: str(value))
+        if not values or len(values) > 200:
+            continue
+        selected_filters[col_name] = cols[idx].multiselect(label, values, default=values, key=f"{key_prefix}_{idx}_{col_name}")
+
+    filtered = df
+    for col_name, values in selected_filters.items():
+        filtered = filtered[filtered[col_name].isin(values)]
+    return filtered
+
+
+def _render_excel_viewer(run_dir: Path, token: str, title: str, missing_message: str, key_prefix: str) -> None:
+    st.subheader(title)
+    path, sheet_name, sheets, error = _find_excel_target(run_dir, token)
+    if error:
+        st.warning(f"Could not read Excel report: {error}")
+        return
+    if path is None or sheet_name is None:
+        st.info(missing_message)
+        return
+    st.caption(f"{path.relative_to(run_dir)} | sheet: {sheet_name}")
+    if len(sheets) > 1:
+        sheet_name = st.selectbox("Sheet", sheets, index=sheets.index(sheet_name), key=f"{key_prefix}_sheet")
+    df, load_error = _load_excel_sheet(str(path), sheet_name)
+    if load_error:
+        st.warning(f"Could not load sheet `{sheet_name}`: {load_error}")
+        return
+    if df is None or df.empty:
+        st.info("The selected sheet is empty.")
+        return
+    view = _render_dataframe_filters(df, key_prefix) if token == "candidate_api_rankings" else df
+    st.dataframe(view, width="stretch", hide_index=True)
+
+
+def _tail_text(path: Path, line_count: int) -> tuple[str | None, str | None]:
+    if not path.exists():
+        return None, "Log file not found."
+    try:
+        lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+    except Exception as exc:
+        return None, f"Could not read log file: {exc}"
+    clipped = lines[-line_count:] if line_count > 0 else lines
+    prefix = f"Showing last {len(clipped)} of {len(lines)} lines.\n\n" if len(lines) > len(clipped) else ""
+    return prefix + "\n".join(clipped), None
+
+
+def _stage_status_from_meta(run_dir: Path, stage_keys: tuple[str, ...], label: str) -> tuple[str, str]:
+    meta = _read_json_file(run_dir / "meta.json")
+    stages = meta.get("timing", {}).get("stages", {}) if isinstance(meta.get("timing"), dict) else {}
+    statuses = []
+    details = []
+    for key in stage_keys:
+        stage = stages.get(key)
+        if isinstance(stage, dict) and stage.get("status"):
+            statuses.append(str(stage["status"]))
+            if stage.get("duration_seconds") is not None:
+                details.append(f"{key}: {stage['duration_seconds']}s")
+
+    if label == "Reports":
+        return ("available", "Excel report files found") if _list_excel_files(run_dir) else ("missing", "No Excel files found")
+    if label == "Selection" and not statuses:
+        planner_stage = stages.get("planner")
+        if isinstance(planner_stage, dict) and planner_stage.get("status") == "skipped":
+            return "skipped", str(planner_stage.get("reason") or "")
+        return ("completed", "Selection files found") if list(run_dir.glob("*/3_selected_s*.json")) else ("unknown", "")
+    if label == "Planning" and not statuses:
+        if list(run_dir.glob("*/4_planner.json")):
+            return "completed", "Planner output files found"
+        return "unknown", ""
+    if not statuses:
+        return "unknown", ""
+    if "failed" in statuses:
+        if label == "Ranking" and "completed" in statuses and (run_dir / "invalid_cases.log").exists():
+            return "completed with invalid cases", "; ".join(details)
+        return "invalid", "; ".join(details)
+    if any(status == "running" for status in statuses):
+        return "running", "; ".join(details)
+    if label == "Ranking" and ((run_dir / "invalid_cases.log").exists() or (run_dir / "ranking_anomalies.log").exists()):
+        return "completed with invalid cases", "; ".join(details)
+    if all(status in {"completed", "skipped"} for status in statuses):
+        return statuses[0] if len(set(statuses)) == 1 else "completed", "; ".join(details)
+    return statuses[0], "; ".join(details)
+
+
+def _stage_rows_for_run(run_dir: Path) -> list[dict]:
+    rows = []
+    for label, keys in STAGE_LABELS:
+        status, detail = _stage_status_from_meta(run_dir, keys, label)
+        rows.append({"Stage": label, "Status": status, "Detail": detail})
+    return rows
+
+
+def _display_status(raw_status: str, *, is_run_status: bool = False) -> str:
+    normalized = str(raw_status or "unknown").strip().lower().replace("_", " ")
+    if is_run_status:
+        if normalized in {"completed", "completed with warnings"}:
+            return "Success"
+        if normalized in {"failed", "invalid"}:
+            return "Failed"
+        if normalized == "running":
+            return "Running"
+        return "Unknown"
+    if normalized in {"completed", "completed with invalid cases", "available"}:
+        return "Done"
+    if normalized == "running":
+        return "Running"
+    if normalized == "skipped":
+        return "Skipped"
+    if normalized in {"failed", "invalid"}:
+        return "Failed"
+    if normalized == "missing":
+        return "Missing"
+    return "Pending"
+
+
+def _run_progress_info(run_dir: Path) -> dict:
+    rows = _stage_rows_for_run(run_dir)
+    status_scores = {
+        "completed": 1.0,
+        "completed with invalid cases": 1.0,
+        "available": 1.0,
+        "skipped": 1.0,
+        "running": 0.5,
+        "invalid": 1.0,
+        "failed": 1.0,
+    }
+    total = len(rows) or 1
+    score = sum(status_scores.get(str(row["Status"]), 0.0) for row in rows)
+    percent = min(100, int(round((score / total) * 100)))
+    active = next((row["Stage"] for row in rows if row["Status"] == "running"), None)
+    if active is None:
+        active = next((row["Stage"] for row in rows if row["Status"] in {"unknown", "missing"}), rows[-1]["Stage"] if rows else "Unknown")
+    meta = _read_json_file(run_dir / "meta.json")
+    raw_run_status = str(meta.get("status") or "unknown")
+    return {
+        "percent": percent,
+        "active_stage": active,
+        "run_status": _display_status(raw_run_status, is_run_status=True),
+        "raw_run_status": raw_run_status,
+        "rows": rows,
+    }
+
+
+def _render_process_tracker(run_dir: Path) -> None:
+    st.subheader("Process Tracker")
+    rows = _stage_rows_for_run(run_dir)
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+
+
+def _render_run_progress_panel(run_dir: Path) -> None:
+    info = _run_progress_info(run_dir)
+    st.subheader("Live Run Progress")
+    cols = st.columns(3)
+    cols[0].metric("Run status", info["run_status"])
+    cols[1].metric("Current stage", info["active_stage"])
+    cols[2].metric("Progress", f"{info['percent']}%")
+    st.progress(info["percent"] / 100.0, text=f"{info['active_stage']} - {info['run_status']}")
+    stage_cols = st.columns(len(info["rows"]))
+    for idx, row in enumerate(info["rows"]):
+        stage_cols[idx].markdown(
+            f"**{row['Stage']}**  \n"
+            f"`{_display_status(str(row['Status']))}`"
+        )
+    with st.expander("Stage details", expanded=True):
+        st.dataframe(pd.DataFrame(info["rows"]), width="stretch", hide_index=True)
+
+
+def _render_run_output_tabs(run_dir: Path, key_prefix: str) -> None:
+    report_tab, logs_tab = st.tabs(["Excel Reports", "Logs"])
+    with report_tab:
+        _render_excel_viewer(
+            run_dir,
+            "candidate_api_rankings",
+            "Candidate API Rankings",
+            "No candidate API rankings sheet found for this run yet.",
+            f"{key_prefix}_candidate_api_rankings",
+        )
+        _render_excel_viewer(
+            run_dir,
+            "mode_anomalies",
+            "Mode Anomalies",
+            "No mode anomalies sheet found for this run yet.",
+            f"{key_prefix}_mode_anomalies",
+        )
+    with logs_tab:
+        _render_logs(run_dir, key_prefix=f"{key_prefix}_logs")
+
+
+def _render_completed_run_selector(parent_dir: str, key_prefix: str) -> QueryRun | None:
+    rows, warnings = _discover_query_runs(parent_dir)
+    for warning in warnings:
+        st.warning(warning)
+    if not rows:
+        st.info("No query run folders were discovered under the selected directory.")
+        return None
+
+    runs_df = pd.DataFrame(rows)
+    with st.sidebar:
+        model_options = ["All"] + sorted(runs_df["model_label"].dropna().unique().tolist(), key=str.lower)
+        selected_model = st.selectbox("Model/provider filter", model_options, key=f"{key_prefix}_model")
+        model_filtered = runs_df if selected_model == "All" else runs_df[runs_df["model_label"] == selected_model]
+
+        query_options = sorted(model_filtered["query_id"].dropna().unique().tolist())
+        selected_query = st.selectbox("Query ID", query_options, key=f"{key_prefix}_query")
+        query_filtered = model_filtered[model_filtered["query_id"] == selected_query].copy()
+
+        run_options = query_filtered.sort_values(["timestamp", "run_name"]).to_dict(orient="records")
+        labels = [_run_label(row) for row in run_options]
+        selected_label = st.selectbox("Run", labels, index=max(0, len(labels) - 1), key=f"{key_prefix}_run")
+
+    selected_row = next(row for row in run_options if _run_label(row) == selected_label)
+    return _selected_run_from_row(selected_row)
+
+
+def _render_run_inspection(run: QueryRun, key_prefix: str) -> None:
+    st.write(f"**Run folder:** `{run.run_dir}`")
+    _render_run_progress_panel(run.run_dir)
+    _render_run_output_tabs(run.run_dir, key_prefix=key_prefix)
+
+
+def _render_logs(run_dir: Path, key_prefix: str = "logs") -> None:
+    st.subheader("Logs")
+    tail_lines = st.slider("Tail lines", min_value=50, max_value=1000, value=50, step=50, key=f"{key_prefix}_tail")
+    for label, filename in LOG_FILENAMES:
+        with st.expander(label, expanded=filename == "run.log"):
+            text, error = _tail_text(run_dir / filename, tail_lines)
+            if error:
+                st.info(error)
+            else:
+                st.code(text or "", language="text")
+
+
+def render_query_run_explorer() -> None:
+    st.title("Run Experiments")
+    st.caption("Launch MAOF query-level runs, watch stage progress, then inspect the generated reports and logs.")
+
+    queries = _load_query_options(str(QUERIES_PATH))
+    if not queries:
+        st.error(f"No queries could be loaded from `{QUERIES_PATH}`.")
+        return
+
+    with st.sidebar:
+        st.header("Experiment")
+        query_labels = [_query_option_label(query) for query in queries]
+        selected_labels = st.multiselect("Queries", query_labels, default=query_labels[:1])
+        selected_queries = [query for query in queries if _query_option_label(query) in selected_labels]
+        selected_query_ids = [str(query["id"]) for query in selected_queries]
+
+        provider = st.selectbox("Provider", list(PROVIDER_MODELS.keys()), index=0)
+        model_options = PROVIDER_MODELS[provider] + ["Custom..."]
+        model_choice = st.selectbox("Model", model_options)
+        model = st.text_input("Custom model", value="") if model_choice == "Custom..." else model_choice
+        run_tag = st.text_input("Run tag", value=DEFAULT_EXPERIMENT_RUN_TAG)
+
+        start_disabled = not selected_query_ids or not provider or _is_process_running(
+            st.session_state.get("experiment_process"),
+            st.session_state.get("experiment_pid"),
+        )
+        if st.button("Start Experiment", disabled=start_disabled):
+            try:
+                st.session_state["experiment"] = _launch_experiment(selected_query_ids, provider, model, run_tag)
+                st.session_state["experiment_process"] = st.session_state["experiment"]["process"]
+                st.session_state["experiment_pid"] = st.session_state["experiment"]["pid"]
+                _discover_query_runs.clear()
+                _load_excel_sheet.clear()
+                st.rerun()
+            except Exception as exc:
+                st.error(f"Could not start experiment: {exc}")
+
+        active_process = st.session_state.get("experiment_process")
+        if _is_process_running(active_process, st.session_state.get("experiment_pid")):
+            if st.button("Stop Running Experiment"):
+                active_process.terminate()
+                st.warning("Stop signal sent to the running experiment.")
+
+    experiment = st.session_state.get("experiment")
+    if not experiment:
+        st.info("Choose one or more queries, select a provider/model, then start an experiment.")
+        st.code(
+            "python -m src.driver.run_autogen_pipeline --query-ids q01 --provider mistral --model mistral-small-latest --run-tag STREAMLIT_RUNS",
+            language="bash",
+        )
+        return
+
+    process = st.session_state.get("experiment_process")
+    is_running = _is_process_running(process, experiment.get("pid"))
+    if process is not None and process.poll() is not None:
+        experiment["returncode"] = process.returncode
+
+    status_cols = st.columns(4)
+    status_cols[0].metric("Status", "running" if is_running else "finished")
+    status_cols[1].metric("PID", experiment.get("pid", ""))
+    status_cols[2].metric("Queries", len(experiment.get("query_ids", [])))
+    status_cols[3].metric("Provider", experiment.get("provider", ""))
+    st.code(_format_command(experiment.get("cmd", [])), language="bash")
+
+    rows, warnings = _discover_query_runs(experiment["run_parent"])
+    for warning in warnings:
+        st.warning(warning)
+    query_ids = set(experiment.get("query_ids", []))
+    rows = [row for row in rows if row["query_id"] in query_ids]
+    runs_df = pd.DataFrame(rows)
+
+    if rows:
+        progress_rows = []
+        for row in rows:
+            run = _selected_run_from_row(row)
+            meta = _read_json_file(run.run_dir / "meta.json")
+            progress = _run_progress_info(run.run_dir)
+            stage_statuses = {
+                label: _stage_status_from_meta(run.run_dir, keys, label)[0]
+                for label, keys in STAGE_LABELS
+            }
+            progress_rows.append(
+                {
+                    "Query": run.query_id,
+                    "Run": run.run_name,
+                    "Model": run.model_label,
+                    "Run Status": _display_status(str(meta.get("status") or "unknown"), is_run_status=True),
+                    "Current Stage": progress["active_stage"],
+                    "Progress": f"{progress['percent']}%",
+                    **{stage: _display_status(status) for stage, status in stage_statuses.items()},
+                }
+            )
+        st.subheader("Current Batch Progress")
+        st.dataframe(pd.DataFrame(progress_rows), width="stretch", hide_index=True)
+    else:
+        st.info("Waiting for the first query run folder to appear.")
+
+    launch_log = Path(experiment["launch_log"])
+    with st.expander("Process Launcher Log (stdout/stderr)", expanded=not rows):
+        text, error = _tail_text(launch_log, 200)
+        if error:
+            st.info(error)
+        else:
+            st.code(text or "", language="text")
+
+    if rows:
+        st.subheader("Inspect Run Output")
+        run_options = runs_df.sort_values(["query_id", "timestamp", "run_name"]).to_dict(orient="records")
+        default_index = max(0, len(run_options) - 1)
+        selected_label = st.selectbox(
+            "Generated run",
+            [_run_label(row) for row in run_options],
+            index=default_index,
+        )
+        selected_row = next(row for row in run_options if _run_label(row) == selected_label)
+        selected_run = _selected_run_from_row(selected_row)
+        st.write(f"**Run folder:** `{selected_run.run_dir}`")
+
+        _render_run_progress_panel(selected_run.run_dir)
+        with st.expander("Live Run Log", expanded=is_running):
+            text, error = _tail_text(selected_run.run_dir / "run.log", 80)
+            if error:
+                st.info(error)
+            else:
+                st.code(text or "", language="text")
+        _render_run_output_tabs(selected_run.run_dir, key_prefix="current_run")
+
+    if is_running:
+        time.sleep(2)
+        st.rerun()
+
+
+def render_completed_runs() -> None:
+    st.title("Completed Runs")
+    st.caption("Browse completed MAOF query runs and inspect the same reports and logs shown after an experiment finishes.")
+
+    with st.sidebar:
+        st.header("Completed Run Directory")
+        parent_dir = _render_directory_selector(
+            "Runs directory",
+            default_path=DEFAULT_RUN_EXPLORER_PARENT,
+            key="completed_runs_dir",
+        )
+        if st.button("Reload completed runs"):
+            _discover_query_runs.clear()
+            _load_excel_sheet.clear()
+
+    selected_run = _render_completed_run_selector(parent_dir, key_prefix="completed_runs")
+    if selected_run is None:
+        return
+    _render_run_inspection(selected_run, key_prefix="completed_runs_output")
 
 
 @st.cache_data(show_spinner=False)
@@ -88,13 +880,16 @@ def _filter_pairwise(pairwise: pd.DataFrame, metrics: list[str], modes: list[str
     ].copy()
 
 
-def main() -> None:
-    st.set_page_config(page_title="MAOF Ranking Evaluation", layout="wide")
+def render_ranking_evaluation() -> None:
     st.title("MAOF Ranking Evaluation")
 
     with st.sidebar:
         st.header("Input")
-        parent_dir = st.text_input("Parent runs directory", value=str(DEFAULT_PARENT))
+        parent_dir = _render_directory_selector(
+            "Parent runs directory",
+            default_path=DEFAULT_PARENT,
+            key="ranking_eval_dir",
+        )
         rbo_p = st.slider(
             "RBO p",
             min_value=0.5,
@@ -296,6 +1091,23 @@ def main() -> None:
     )
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=320)
     st.plotly_chart(fig, width="stretch")
+
+
+def main() -> None:
+    st.set_page_config(page_title="MAOF Dashboard", layout="wide")
+    with st.sidebar:
+        page = st.radio(
+            "Page",
+            ["Ranking Evaluation", "Run Experiments", "Completed Runs"],
+            index=0,
+        )
+
+    if page == "Ranking Evaluation":
+        render_ranking_evaluation()
+    elif page == "Run Experiments":
+        render_query_run_explorer()
+    else:
+        render_completed_runs()
 
 
 if __name__ == "__main__":

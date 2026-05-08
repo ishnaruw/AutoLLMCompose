@@ -1,4 +1,9 @@
-You are given a list of API ids with only QoS metrics.
+You are given a list of candidate IDs with only QoS metrics.
+
+Each candidate has:
+- candidate_id: short ID used only for your output
+
+The real api_id is intentionally not provided for QoS scoring.
 
 QoS meanings:
 - rt_ms = response time in milliseconds, lower is better (cost criterion)
@@ -13,8 +18,11 @@ Task:
 - Compute composite QoS score by averaging the three normalized metrics: (norm_rt + norm_tp + norm_availability) / 3.0
 - This produces a score from 0.0 (worst overall QoS) to 1.0 (best overall QoS).
 - Round scores to 4 decimal places.
-- If any metric is missing, treat that API as having very poor QoS (score 0.0).
-- Do not assign the same score to different APIs.
+- If any metric is missing, treat that candidate as having very poor QoS (score 0.0).
+- Do not assign the same score to different candidates.
+- Return each candidate_id exactly once.
+- Use candidate_id in your output.
+- Do not output api_id.
 
 Candidates:
 {candidates_json}
@@ -22,6 +30,7 @@ Candidates:
 Return JSON only:
 {
   "qos_scored": [
-    {"api_id": "...", "qos_score": 0.75}
+    {"candidate_id": "C01", "qos_score": 0.75},
+    {"candidate_id": "C02", "qos_score": 0.50}
   ]
 }

@@ -13,6 +13,7 @@ _WARNING_LOG_PATH: Path | None = None
 _ERROR_LOG_PATH: Path | None = None
 _INVALID_CASES_LOG_PATH: Path | None = None
 _RANKING_ANOMALIES_LOG_PATH: Path | None = None
+_RETRY_OUTCOMES_LOG_PATH: Path | None = None
 _LLM_DEBUG_COUNTER = 0
 _LLM_DEBUG_LOCK = Lock()
 _MODEL_USAGE_LOCK = Lock()
@@ -20,7 +21,7 @@ _STRUCTURED_LOG_LOCK = Lock()
 
 
 def configure_run_log(path: str | Path | None) -> Path | None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _RETRY_OUTCOMES_LOG_PATH, _LLM_DEBUG_COUNTER
     if path is None:
         _RUN_LOG_PATH = None
         _LLM_DEBUG_DIR = None
@@ -29,6 +30,7 @@ def configure_run_log(path: str | Path | None) -> Path | None:
         _ERROR_LOG_PATH = None
         _INVALID_CASES_LOG_PATH = None
         _RANKING_ANOMALIES_LOG_PATH = None
+        _RETRY_OUTCOMES_LOG_PATH = None
         _LLM_DEBUG_COUNTER = 0
         return None
     _RUN_LOG_PATH = Path(path)
@@ -40,18 +42,21 @@ def configure_run_log(path: str | Path | None) -> Path | None:
     _ERROR_LOG_PATH = _RUN_LOG_PATH.parent / "errors.log"
     _INVALID_CASES_LOG_PATH = _RUN_LOG_PATH.parent / "invalid_cases.log"
     _RANKING_ANOMALIES_LOG_PATH = _RUN_LOG_PATH.parent / "ranking_anomalies.log"
+    _RETRY_OUTCOMES_LOG_PATH = _RUN_LOG_PATH.parent / "retry_outcomes.log"
     _LLM_DEBUG_COUNTER = 0
     return _RUN_LOG_PATH
 
 
 def clear_run_log() -> None:
-    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _LLM_DEBUG_COUNTER
+    global _RUN_LOG_PATH, _LLM_DEBUG_DIR, _MODEL_USAGE_PATH, _WARNING_LOG_PATH, _ERROR_LOG_PATH, _INVALID_CASES_LOG_PATH, _RANKING_ANOMALIES_LOG_PATH, _RETRY_OUTCOMES_LOG_PATH, _LLM_DEBUG_COUNTER
     _RUN_LOG_PATH = None
     _LLM_DEBUG_DIR = None
     _MODEL_USAGE_PATH = None
     _WARNING_LOG_PATH = None
     _ERROR_LOG_PATH = None
     _INVALID_CASES_LOG_PATH = None
+    _RANKING_ANOMALIES_LOG_PATH = None
+    _RETRY_OUTCOMES_LOG_PATH = None
     _LLM_DEBUG_COUNTER = 0
 
 
@@ -77,6 +82,10 @@ def current_invalid_cases_log_path() -> Path | None:
 
 def current_ranking_anomalies_log_path() -> Path | None:
     return _RANKING_ANOMALIES_LOG_PATH
+
+
+def current_retry_outcomes_log_path() -> Path | None:
+    return _RETRY_OUTCOMES_LOG_PATH
 
 
 def _timestamp() -> str:
@@ -152,6 +161,20 @@ def log_ranking_anomaly_event(payload: dict) -> None:
     event.setdefault("metric_dependent_validity", True)
     event.setdefault("timestamp", _timestamp())
     path = _ranking_anomalies_log_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _STRUCTURED_LOG_LOCK:
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n")
+
+
+def log_retry_outcome_event(payload: dict) -> None:
+    if _RETRY_OUTCOMES_LOG_PATH is None:
+        return
+    event = dict(payload or {})
+    event.setdefault("level", "info")
+    event.setdefault("event_type", "llm_validation_retry_outcome")
+    event.setdefault("timestamp", _timestamp())
+    path = _RETRY_OUTCOMES_LOG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with _STRUCTURED_LOG_LOCK:
         with path.open("a", encoding="utf-8") as handle:
