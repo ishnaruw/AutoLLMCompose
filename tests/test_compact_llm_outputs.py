@@ -22,7 +22,23 @@ class CompactLlmOutputTests(unittest.TestCase):
         _, issue = _parse_qos_score_output(raw, ["api_a", "api_b"])
 
         self.assertIsNotNone(issue)
-        self.assertEqual(issue["reason"], "parse_error")
+        self.assertEqual(issue["reason"], "invalid_score_range")
+
+    def test_qos_scorer_rejects_missing_score(self) -> None:
+        raw = json.dumps({"scores": [{"api_id": "api_a"}, {"api_id": "api_b", "score": 0.41}]})
+
+        _, issue = _parse_qos_score_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNotNone(issue)
+        self.assertEqual(issue["reason"], "missing_score")
+
+    def test_qos_scorer_rejects_unknown_api_id(self) -> None:
+        raw = json.dumps({"scores": [{"api_id": "api_a", "score": 0.8}, {"api_id": "api_x", "score": 0.41}]})
+
+        _, issue = _parse_qos_score_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNotNone(issue)
+        self.assertEqual(issue["reason"], "unknown_api_ids")
 
     def test_functional_match_accepts_compact_matches_schema(self) -> None:
         raw = json.dumps({"matches": [{"api_id": "api_a", "label": 1}, {"api_id": "api_b", "label": 0}]})
@@ -56,7 +72,15 @@ class CompactLlmOutputTests(unittest.TestCase):
         _, issue = _parse_results_with_issue(raw, ["api_a", "api_b"])
 
         self.assertIsNotNone(issue)
-        self.assertEqual(issue["reason"], "parse_error")
+        self.assertEqual(issue["reason"], "invalid_label_value")
+
+    def test_functional_match_rejects_missing_label(self) -> None:
+        raw = json.dumps({"matches": [{"api_id": "api_a"}, {"api_id": "api_b", "label": 0}]})
+
+        _, issue = _parse_results_with_issue(raw, ["api_a", "api_b"])
+
+        self.assertIsNotNone(issue)
+        self.assertEqual(issue["reason"], "missing_label")
 
 
 if __name__ == "__main__":

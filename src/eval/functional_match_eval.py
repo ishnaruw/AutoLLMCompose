@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from src.config import CONFIG
 from src.core.api_formatting import normalize_api_for_ranking
 from src.core.candidate_ids import assign_candidate_ids
+from src.core.json_parsing import normalize_binary_label, normalize_llm_payload, parse_llm_json, validate_expected_ids
 from src.core.run_logging import log_line, log_warning_event
 from src.core.retry import call_with_backoff
 from src.eval.candidate_api_rankings_excel import write_candidate_api_rankings_excel
@@ -283,17 +284,8 @@ def _chunk_list(items: List[Dict[str, Any]], size: int) -> Iterable[List[Dict[st
 
 
 def _normalize_functional_match(val: Any) -> Optional[int]:
-    if isinstance(val, bool):
-        return 1 if val else 0
-    if val in (0, 1):
-        return int(val)
-    if isinstance(val, str):
-        s = val.strip().lower()
-        if s in {"1", "true", "yes", "relevant"}:
-            return 1
-        if s in {"0", "false", "no", "irrelevant", "not relevant"}:
-            return 0
-    return None
+    label, _error = normalize_binary_label(val)
+    return label
 
 
 def _functional_match_value(info: Dict[str, Any]) -> int:
@@ -322,21 +314,6 @@ def _format_list_field(value: Any) -> str:
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
-
-
-def _extract_json_text(raw: str) -> Tuple[str, str | None]:
-    text = (raw or "").strip()
-    if not text:
-        return "", "empty_response"
-    try:
-        json.loads(text)
-        return text, None
-    except Exception:
-        pass
-    match = re.search(r"(\{.*\}|\[.*\])", text, flags=re.DOTALL)
-    if not match:
-        return "", "invalid_json"
-    return match.group(1), None
 
 
 def _functional_match_label_value(item: Dict[str, Any]) -> Any:
@@ -399,40 +376,29 @@ def _parse_results_with_issue(
         api_id_to_candidate_id.setdefault(api_id, candidate_id)
     expected_candidate_ids = list(candidate_id_to_api_id.keys())
 
-    json_text, json_error = _extract_json_text(text)
-    if json_error:
+    parsed_json = parse_llm_json(text)
+    if parsed_json.error:
         return {}, {
-            "reason": json_error,
+            **parsed_json.error,
             "expected_api_count": len(expected_ids),
             "expected_candidate_count": len(expected_candidate_ids),
             "actual_api_count": 0,
             "actual_candidate_count": 0,
         }
 
-    try:
-        data = json.loads(json_text)
-    except Exception as exc:
+    results, key_issue = normalize_llm_payload(
+        parsed_json.value,
+        "matches",
+        aliases={"results": "matches"},
+        allow_list=True,
+    )
+    if key_issue:
         return {}, {
-            "reason": "invalid_json",
+            **key_issue,
             "expected_api_count": len(expected_ids),
             "expected_candidate_count": len(expected_candidate_ids),
             "actual_api_count": 0,
             "actual_candidate_count": 0,
-            "parse_error": str(exc),
-        }
-    results = None
-    if isinstance(data, dict):
-        results = data.get("matches")
-        if not isinstance(results, list):
-            results = data.get("results")
-    if not isinstance(results, list):
-        return {}, {
-            "reason": "parse_error",
-            "expected_api_count": len(expected_ids),
-            "expected_candidate_count": len(expected_candidate_ids),
-            "actual_api_count": 0,
-            "actual_candidate_count": 0,
-            "detail": "missing_matches_or_results_list",
         }
     contains_candidate_ids = any(
         isinstance(item, dict) and str(item.get("candidate_id") or "").strip()
@@ -453,6 +419,8 @@ def _parse_results_by_api_id(
     out: Dict[str, Dict[str, Any]] = {}
     returned_ids: List[str] = []
     malformed_items = 0
+    label_errors: List[str] = []
+    label_error_api_ids: List[str] = []
     for r in results:
         if not isinstance(r, dict):
             malformed_items += 1
@@ -465,15 +433,13 @@ def _parse_results_by_api_id(
         returned_ids.append(api_id)
         if api_id not in expected_set:
             continue
-        functional_match = _normalize_functional_match(_functional_match_label_value(r))
-        if functional_match is None:
-            malformed_items += 1
+        functional_match, label_error = normalize_binary_label(_functional_match_label_value(r))
+        if label_error:
+            label_errors.append(label_error)
+            label_error_api_ids.append(api_id)
             continue
         out[api_id] = {"functional_match": functional_match, "comment": _functional_match_comment_value(r)}
 
-    returned_counts = Counter(returned_ids)
-    duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
-    unknown_ids = sorted(api_id for api_id in returned_counts if api_id not in expected_set)
     missing_ids = [api_id for api_id in expected_ids if api_id not in out]
     issue_base = {
         "expected_api_count": len(expected_ids),
@@ -489,10 +455,23 @@ def _parse_results_by_api_id(
         )
     if malformed_items:
         return out, {**issue_base, "reason": "parse_error", "malformed_result_count": malformed_items}
-    if duplicate_ids:
-        return out, {**issue_base, "reason": "duplicate_api_ids", "duplicate_api_ids": duplicate_ids}
-    if unknown_ids:
-        return out, {**issue_base, "reason": "unknown_api_ids", "unknown_api_ids": unknown_ids, "missing_api_ids": missing_ids}
+    id_issue = validate_expected_ids(
+        returned_ids,
+        expected_ids,
+        duplicate_reason="duplicate_api_ids",
+        unknown_reason="unknown_api_ids",
+        missing_reason="incomplete_functional_match_results",
+        id_label="api",
+    )
+    if id_issue:
+        return out, {**issue_base, **id_issue}
+    if label_errors:
+        return out, {
+            **issue_base,
+            "reason": label_errors[0],
+            "invalid_label_api_ids": label_error_api_ids,
+            "missing_api_ids": missing_ids,
+        }
     if missing_ids:
         return out, {**issue_base, "reason": "incomplete_functional_match_results", "missing_api_ids": missing_ids}
     return out, None
@@ -510,6 +489,8 @@ def _parse_results_by_candidate_id(
     returned_candidate_ids: List[str] = []
     unknown_legacy_api_ids: List[str] = []
     malformed_items = 0
+    label_errors: List[str] = []
+    label_error_candidate_ids: List[str] = []
     for r in results:
         if not isinstance(r, dict):
             malformed_items += 1
@@ -531,9 +512,10 @@ def _parse_results_by_candidate_id(
             continue
         if candidate_id not in expected_candidate_set:
             continue
-        functional_match = _normalize_functional_match(_functional_match_label_value(r))
-        if functional_match is None:
-            malformed_items += 1
+        functional_match, label_error = normalize_binary_label(_functional_match_label_value(r))
+        if label_error:
+            label_errors.append(label_error)
+            label_error_candidate_ids.append(candidate_id)
             continue
         out[api_id] = {
             "candidate_id": candidate_id,
@@ -588,6 +570,14 @@ def _parse_results_by_candidate_id(
             **issue_base,
             "reason": "unknown_api_ids",
             "unknown_api_ids": unknown_api_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if label_errors:
+        return out, {
+            **issue_base,
+            "reason": label_errors[0],
+            "invalid_label_candidate_ids": label_error_candidate_ids,
             "missing_candidate_ids": missing_candidate_ids,
             "missing_api_ids": missing_api_ids,
         }

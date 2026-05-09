@@ -48,6 +48,46 @@ class RankerParserTests(unittest.TestCase):
         self.assertEqual([item["llm_reported_rank"] for item in ranked], [1, 2])
         self.assertEqual([item["reason"] for item in ranked], ["", ""])
 
+    def test_accepts_markdown_fenced_compact_ranked_output(self) -> None:
+        raw = '```json\n{"ranked": [{"api_id": "api_b"}, {"api_id": "api_a"}]}\n```'
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["api_id"] for item in ranked], ["api_b", "api_a"])
+
+    def test_accepts_text_around_compact_ranked_output(self) -> None:
+        raw = 'Here is the JSON:\n{"ranked": [{"api_id": "api_b"}, {"api_id": "api_a"}]}\nDone.'
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["api_id"] for item in ranked], ["api_b", "api_a"])
+
+    def test_accepts_list_only_ranked_output(self) -> None:
+        raw = json.dumps([{"api_id": "api_b"}, {"api_id": "api_a"}])
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["api_id"] for item in ranked], ["api_b", "api_a"])
+
+    def test_accepts_ranking_alias(self) -> None:
+        raw = json.dumps({"ranking": [{"api_id": "api_a"}, {"api_id": "api_b"}]})
+
+        ranked, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNone(issue)
+        self.assertEqual([item["api_id"] for item in ranked], ["api_a", "api_b"])
+
+    def test_missing_ranked_key_is_clear_error(self) -> None:
+        raw = json.dumps({"items": [{"api_id": "api_a"}, {"api_id": "api_b"}]})
+
+        _, issue = _parse_ranked_output(raw, ["api_a", "api_b"])
+
+        self.assertIsNotNone(issue)
+        self.assertEqual(issue["reason"], "missing_required_key")
+
     def test_accepts_compact_ranked_candidate_ids_without_rank_or_reason(self) -> None:
         raw = json.dumps({"ranked": [{"candidate_id": "C02"}, {"candidate_id": "C01"}]})
 

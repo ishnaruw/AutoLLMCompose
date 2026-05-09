@@ -1,28 +1,12 @@
 # src/agents/decomposer.py
-import json
-import re
 from typing import Callable, Dict, List, Any
 
-
-def _coerce_json(s: str) -> str:
-    s = (s or "").strip()
-    if not s:
-        return "{}"
-    try:
-        json.loads(s)
-        return s
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", s, flags=re.DOTALL)
-    return m.group(0) if m else "{}"
+from src.core.json_parsing import parse_llm_json
 
 
 def _parse_subtasks(resp: str, fallback_goal: str) -> List[Dict[str, Any]]:
-    resp = _coerce_json(resp)
-    try:
-        data = json.loads(resp)
-    except Exception:
-        data = {}
+    parsed = parse_llm_json(resp)
+    data = parsed.value if isinstance(parsed.value, dict) and parsed.error is None else {}
 
     subtasks_raw = data.get("subtasks", [])
     subtasks: List[Dict[str, Any]] = []

@@ -781,6 +781,8 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
         "empty_response",
         "parse_error",
         "invalid_json",
+        "missing_required_key",
+        "wrong_json_type",
         "timeout",
         "duplicate_candidate_ids",
         "duplicate_ranked_apis",
@@ -800,6 +802,11 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
         "groq_prompt_too_large",
         "incomplete_qos_scores",
         "missing_api_scores",
+        "missing_score",
+        "invalid_score_range",
+        "invalid_score_value",
+        "missing_label",
+        "invalid_label_value",
     }
     return stage in {"llm_ranking", "qos_llm_scoring"} and reason in expected_reasons
 

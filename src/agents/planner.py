@@ -1,19 +1,7 @@
 # src/agents/planner.py
 import json
-import re
 
-
-def _coerce_json(s: str) -> str:
-    s = (s or "").strip()
-    if not s:
-        return "{}"
-    try:
-        json.loads(s)
-        return s
-    except Exception:
-        pass
-    m = re.search(r"\{.*\}", s, flags=re.DOTALL)
-    return m.group(0) if m else "{}"
+from src.core.json_parsing import parse_llm_json
 
 
 def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner.md"):
@@ -114,8 +102,12 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
     )
 
     def _parse_plan(text: str):
-        text = _coerce_json(text)
-        return json.loads(text)
+        parsed = parse_llm_json(text)
+        if parsed.error:
+            raise ValueError(parsed.error)
+        if not isinstance(parsed.value, dict):
+            raise ValueError({"reason": "wrong_json_type", "expected_type": "object", "actual_type": type(parsed.value).__name__})
+        return parsed.value
 
     resp = llm_call(prompt)
     plan = _parse_plan(resp)

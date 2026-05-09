@@ -8,6 +8,7 @@ from typing import Any, Callable, Dict, List
 
 from src.core.candidate_ids import assign_candidate_ids
 from src.core.api_formatting import normalize_api_for_ranking
+from src.core.json_parsing import normalize_llm_payload, parse_llm_json, validate_expected_ids
 from src.core.run_logging import log_line, log_retry_outcome_event, log_warning_event
 
 
@@ -142,34 +143,6 @@ def _warn_api_id_quality(candidates: List[Dict[str, Any]], *, context: str) -> N
         )
 
 
-def _coerce_json(s: str) -> str:
-    s = (s or "").strip()
-    if not s:
-        return "{}"
-    try:
-        json.loads(s)
-        return s
-    except Exception:
-        pass
-    m = re.search(r"(\{.*\}|\[.*\])", s, flags=re.DOTALL)
-    return m.group(1) if m else "{}"
-
-
-def _extract_json_text(s: str) -> tuple[str, str | None]:
-    text = (s or "").strip()
-    if not text:
-        return "", "empty_response"
-    try:
-        json.loads(text)
-        return text, None
-    except Exception:
-        pass
-    m = re.search(r"(\{.*\}|\[.*\])", text, flags=re.DOTALL)
-    if not m:
-        return "", "invalid_json"
-    return m.group(1), None
-
-
 def _write_ranker_debug(debug_raw_path: str | None, raw: str, attempt: int) -> None:
     if not debug_raw_path:
         return
@@ -196,7 +169,6 @@ def _parse_ranked_output(
     expected_ids: List[str],
     candidate_id_to_api_id: Dict[str, str] | None = None,
 ) -> tuple[List[Dict[str, Any]], Dict[str, Any] | None]:
-    json_text, json_error = _extract_json_text(raw)
     candidate_id_to_api_id = {
         str(candidate_id).strip(): str(api_id).strip()
         for candidate_id, api_id in (candidate_id_to_api_id or {}).items()
@@ -207,9 +179,10 @@ def _parse_ranked_output(
         api_id_to_candidate_id.setdefault(api_id, candidate_id)
     expected_candidate_ids = list(candidate_id_to_api_id.keys())
 
-    if json_error:
+    parsed_json = parse_llm_json(raw)
+    if parsed_json.error:
         issue = {
-            "reason": json_error,
+            **parsed_json.error,
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
         }
@@ -217,31 +190,17 @@ def _parse_ranked_output(
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
         return [], issue
 
-    try:
-        data = json.loads(json_text)
-    except Exception as exc:
+    ranked_raw, key_issue = normalize_llm_payload(
+        parsed_json.value,
+        "ranked",
+        aliases={"ranked_apis": "ranked", "ranking": "ranked"},
+        allow_list=True,
+    )
+    if key_issue:
         issue = {
-            "reason": "invalid_json",
+            **key_issue,
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
-            "parse_error": str(exc),
-        }
-        if expected_candidate_ids:
-            issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
-        return [], issue
-
-    if isinstance(data, dict):
-        ranked_raw = data.get("ranked_apis")
-        if not isinstance(ranked_raw, list):
-            ranked_raw = data.get("ranked")
-    else:
-        ranked_raw = None
-    if not isinstance(ranked_raw, list):
-        issue = {
-            "reason": "parse_error",
-            "expected_api_count": len(expected_ids),
-            "actual_api_count": 0,
-            "detail": "missing_ranked_or_ranked_apis_list",
         }
         if expected_candidate_ids:
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
@@ -483,11 +442,7 @@ def _parse_ranked_output_by_api_id(
         _ranked_item_reason_fields(item, parsed_item)
         ranked.append(parsed_item)
 
-    returned_counts = Counter(returned_ids)
-    duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
-    unknown_ids = sorted(api_id for api_id in returned_counts if api_id not in expected_set)
     returned_expected_ids = {api_id for api_id in returned_ids if api_id in expected_set}
-    missing_ids = [api_id for api_id in expected_ids if api_id not in returned_expected_ids]
     issue_base = {
         "expected_api_count": len(expected_ids),
         "actual_api_count": len(returned_expected_ids),
@@ -507,30 +462,16 @@ def _parse_ranked_output_by_api_id(
             "reason": "parse_error",
             "malformed_ranked_item_count": malformed_items,
         }
-    if duplicate_ids:
-        return ranked, {
-            **issue_base,
-            "reason": "duplicate_ranked_apis",
-            "duplicate_api_ids": duplicate_ids,
-        }
-    if unknown_ids:
-        return ranked, {
-            **issue_base,
-            "reason": "unknown_api_ids",
-            "unknown_api_ids": unknown_ids,
-            "missing_api_ids": missing_ids,
-        }
-    if missing_ids:
-        return ranked, {
-            **issue_base,
-            "reason": "incomplete_ranked_api_list",
-            "missing_api_ids": missing_ids,
-        }
-    if len(returned_ids) != len(expected_ids):
-        return ranked, {
-            **issue_base,
-            "reason": "missing_ranked_apis",
-        }
+    id_issue = validate_expected_ids(
+        returned_ids,
+        expected_ids,
+        duplicate_reason="duplicate_ranked_apis",
+        unknown_reason="unknown_api_ids",
+        missing_reason="incomplete_ranked_api_list",
+        id_label="api",
+    )
+    if id_issue:
+        return ranked, {**issue_base, **id_issue}
 
     return ranked, None
 

@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import json
-import math
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from src.core.candidate_ids import assign_candidate_ids
+from src.core.json_parsing import coerce_finite_score, normalize_llm_payload, parse_llm_json, validate_expected_ids
 from src.core.run_logging import log_line, log_retry_outcome_event
 
 
@@ -15,21 +14,6 @@ class InvalidQosScoringOutput(RuntimeError):
     def __init__(self, metadata: Dict[str, Any]) -> None:
         self.metadata = metadata
         super().__init__(str(metadata.get("failure_reason") or "invalid_qos_scoring_output"))
-
-
-def _extract_json_text(raw: str) -> tuple[str, str | None]:
-    text = (raw or "").strip()
-    if not text:
-        return "", "empty_response"
-    try:
-        json.loads(text)
-        return text, None
-    except Exception:
-        pass
-    match = re.search(r"(\{.*\}|\[.*\])", text, flags=re.DOTALL)
-    if not match:
-        return "", "invalid_json"
-    return match.group(1), None
 
 
 def _parse_llm_qos_scores_no_rank(raw: str, expected_ids: List[str] | None = None) -> Dict[str, float]:
@@ -60,7 +44,6 @@ def _parse_qos_score_output(
     expected_ids: List[str],
     candidate_id_to_api_id: Dict[str, str] | None = None,
 ) -> tuple[Dict[str, float], Dict[str, Any] | None]:
-    json_text, json_error = _extract_json_text(raw)
     candidate_id_to_api_id = {
         str(candidate_id).strip(): str(api_id).strip()
         for candidate_id, api_id in (candidate_id_to_api_id or {}).items()
@@ -71,9 +54,10 @@ def _parse_qos_score_output(
         api_id_to_candidate_id.setdefault(api_id, candidate_id)
     expected_candidate_ids = list(candidate_id_to_api_id.keys())
 
-    if json_error:
+    parsed_json = parse_llm_json(raw)
+    if parsed_json.error:
         issue = {
-            "reason": json_error,
+            **parsed_json.error,
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
         }
@@ -81,30 +65,17 @@ def _parse_qos_score_output(
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
         return {}, issue
 
-    try:
-        data = json.loads(json_text)
-    except Exception as exc:
+    items, key_issue = normalize_llm_payload(
+        parsed_json.value,
+        "scores",
+        aliases={"qos_scored": "scores", "qos_scores": "scores"},
+        allow_list=True,
+    )
+    if key_issue:
         issue = {
-            "reason": "invalid_json",
+            **key_issue,
             "expected_api_count": len(expected_ids),
             "actual_api_count": 0,
-            "parse_error": str(exc),
-        }
-        if expected_candidate_ids:
-            issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
-        return {}, issue
-
-    items = None
-    if isinstance(data, dict):
-        items = data.get("scores")
-        if not isinstance(items, list):
-            items = data.get("qos_scored")
-    if not isinstance(items, list):
-        issue = {
-            "reason": "parse_error",
-            "expected_api_count": len(expected_ids),
-            "actual_api_count": 0,
-            "detail": "missing_scores_or_qos_scored_list",
         }
         if expected_candidate_ids:
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
@@ -124,18 +95,6 @@ def _score_value(item: Dict[str, Any]) -> Any:
     if "score" in item:
         return item.get("score")
     return item.get("qos_score")
-
-
-def _coerce_valid_score(value: Any) -> float | None:
-    if isinstance(value, bool) or value is None:
-        return None
-    try:
-        score = float(value)
-    except Exception:
-        return None
-    if not math.isfinite(score) or score < 0.0 or score > 1.0:
-        return None
-    return score
 
 
 def _qos_output_contract(include_reasons: bool) -> str:
@@ -166,28 +125,32 @@ def _parse_qos_score_output_by_api_id(
 ) -> tuple[Dict[str, float], Dict[str, Any] | None]:
     expected_candidate_ids = expected_candidate_ids or []
     expected_set = set(expected_ids)
-    validate_expected_ids = bool(expected_ids)
+    should_validate_expected_ids = bool(expected_ids)
     returned_ids: List[str] = []
     scores: Dict[str, float] = {}
     malformed_items = 0
+    score_errors: List[str] = []
+    score_error_api_ids: List[str] = []
     for item in items:
         if not isinstance(item, dict):
             malformed_items += 1
             continue
         api_id = str(item.get("api_id") or "").strip()
-        score = _coerce_valid_score(_score_value(item))
-        if not api_id or score is None:
+        if not api_id:
             malformed_items += 1
             continue
+        score, score_error = coerce_finite_score(_score_value(item))
+        if score_error:
+            score_errors.append(score_error)
+            score_error_api_ids.append(api_id)
+            returned_ids.append(api_id)
+            continue
         returned_ids.append(api_id)
-        if validate_expected_ids and api_id not in expected_set:
+        if should_validate_expected_ids and api_id not in expected_set:
             continue
         scores[api_id] = score
 
-    returned_counts = Counter(returned_ids)
-    duplicate_ids = sorted(api_id for api_id, count in returned_counts.items() if count > 1)
-    unknown_ids = sorted(api_id for api_id in returned_counts if validate_expected_ids and api_id not in expected_set)
-    missing_ids = [api_id for api_id in expected_ids if api_id not in scores] if validate_expected_ids else []
+    missing_ids = [api_id for api_id in expected_ids if api_id not in scores] if should_validate_expected_ids else []
     issue_base = {
         "expected_api_count": len(expected_ids),
         "actual_api_count": len(scores),
@@ -207,18 +170,22 @@ def _parse_qos_score_output_by_api_id(
             "reason": "parse_error",
             "malformed_qos_item_count": malformed_items,
         }
-    if duplicate_ids:
+    id_issue = validate_expected_ids(
+        returned_ids,
+        expected_ids,
+        duplicate_reason="duplicate_api_ids",
+        unknown_reason="unknown_api_ids",
+        missing_reason="incomplete_qos_scores",
+        id_label="api",
+    ) if should_validate_expected_ids else None
+    if id_issue:
+        return scores, {**issue_base, **id_issue}
+    if score_errors:
+        reason = score_errors[0]
         return scores, {
             **issue_base,
-            "reason": "duplicate_api_ids",
-            "duplicate_api_ids": duplicate_ids,
-        }
-    if unknown_ids:
-        return scores, {
-            **issue_base,
-            "reason": "unknown_api_ids",
-            "unknown_api_ids": unknown_ids,
-            "missing_api_ids": missing_ids,
+            "reason": reason,
+            "invalid_score_api_ids": score_error_api_ids,
         }
     if missing_ids:
         reason = "missing_api_scores" if not scores else "incomplete_qos_scores"
@@ -243,6 +210,8 @@ def _parse_qos_score_output_by_candidate_id(
     unknown_legacy_api_ids: List[str] = []
     scores: Dict[str, float] = {}
     malformed_items = 0
+    score_errors: List[str] = []
+    score_error_candidate_ids: List[str] = []
     for item in items:
         if not isinstance(item, dict):
             malformed_items += 1
@@ -250,10 +219,6 @@ def _parse_qos_score_output_by_candidate_id(
         candidate_id = str(item.get("candidate_id") or "").strip()
         raw_api_id = str(item.get("api_id") or "").strip()
         if not candidate_id and not raw_api_id:
-            malformed_items += 1
-            continue
-        score = _coerce_valid_score(_score_value(item))
-        if score is None:
             malformed_items += 1
             continue
 
@@ -268,6 +233,11 @@ def _parse_qos_score_output_by_candidate_id(
             else:
                 unknown_legacy_api_ids.append(raw_api_id)
 
+        score, score_error = coerce_finite_score(_score_value(item))
+        if score_error:
+            score_errors.append(score_error)
+            score_error_candidate_ids.append(candidate_id or raw_api_id)
+            continue
         if candidate_id not in expected_candidate_set:
             continue
         scores[api_id] = score
@@ -329,6 +299,14 @@ def _parse_qos_score_output_by_candidate_id(
             **issue_base,
             "reason": "unknown_api_ids",
             "unknown_api_ids": unknown_api_ids,
+            "missing_candidate_ids": missing_candidate_ids,
+            "missing_api_ids": missing_api_ids,
+        }
+    if score_errors:
+        return scores, {
+            **issue_base,
+            "reason": score_errors[0],
+            "invalid_score_candidate_ids": score_error_candidate_ids,
             "missing_candidate_ids": missing_candidate_ids,
             "missing_api_ids": missing_api_ids,
         }
