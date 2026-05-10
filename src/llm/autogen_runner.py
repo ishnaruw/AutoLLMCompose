@@ -260,11 +260,12 @@ def run_autogen_agent(
     force_json: bool = True,
     max_tokens: int | None = None,
     timeout_seconds: float | None = None,
+    trace_enabled: bool = True,
 ) -> str:
     _require_autogen()
     trace_id: str | None = None
     started_at = time.perf_counter()
-    if CONFIG.llm_debug_enabled:
+    if trace_enabled and CONFIG.llm_debug_enabled:
         trace_id = start_llm_trace(
             role_name=role_name,
             provider=getattr(backend, "provider", ""),
@@ -294,7 +295,7 @@ def run_autogen_agent(
     try:
         task_result = _run_coro_sync(agent.run(task=prompt, output_task_messages=False))
         response_text = _extract_task_result_text(task_result)
-        if CONFIG.llm_debug_enabled:
+        if trace_enabled and CONFIG.llm_debug_enabled:
             finish_llm_trace(
                 trace_id,
                 response_text=response_text,
@@ -302,7 +303,7 @@ def run_autogen_agent(
             )
         return response_text
     except Exception as exc:
-        if CONFIG.llm_debug_enabled:
+        if trace_enabled and CONFIG.llm_debug_enabled:
             finish_llm_trace(
                 trace_id,
                 error=str(exc),

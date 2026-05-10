@@ -30,6 +30,16 @@ GROQ_MODEL_REQUEST_TOKEN_LIMITS = {
     "llama-3.1-8b-instant": 6000,
     "qwen/qwen3-32b": 6000,
 }
+DEFAULT_FIREWORKS_MODELS = [
+    "accounts/fireworks/models/deepseek-v3p1",
+    "accounts/fireworks/models/gpt-oss-120b",
+    "accounts/fireworks/models/llama-v3p1-8b-instruct",
+]
+_FIREWORKS_MODEL_ALIASES = {
+    "deepseek-v3p1": "accounts/fireworks/models/deepseek-v3p1",
+    "gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
+    "llama-v3p1-8b-instruct": "accounts/fireworks/models/llama-v3p1-8b-instruct",
+}
 
 
 def _load_local_dotenv() -> None:
@@ -222,6 +232,11 @@ def _resolve_groq_model_name(model_name: str) -> str:
     return resolved
 
 
+def _resolve_fireworks_model_name(model_name: str) -> str:
+    name = (model_name or "").strip()
+    return _FIREWORKS_MODEL_ALIASES.get(name, name)
+
+
 class BaseBackend:
     provider: str
     model_name: str
@@ -344,6 +359,21 @@ def groq_experiment_model_pool() -> list[str]:
         if normalized and normalized not in resolved:
             resolved.append(normalized)
     return _prioritize_groq_models(resolved)[:MAX_GROQ_MULTI_MODELS]
+
+
+def fireworks_model_options() -> list[str]:
+    configured = _parse_model_list(os.getenv("FIREWORKS_MODELS"))
+    primary_model = (os.getenv("FIREWORKS_MODEL") or "").strip()
+    models = configured or list(DEFAULT_FIREWORKS_MODELS)
+    if primary_model:
+        models = [primary_model, *models]
+
+    resolved: list[str] = []
+    for model_name in models:
+        normalized = _resolve_fireworks_model_name(model_name)
+        if normalized and normalized not in resolved:
+            resolved.append(normalized)
+    return resolved
 
 
 def use_groq_multi_model_mode(model: Optional[str]) -> bool:
@@ -709,7 +739,8 @@ class FireworksBackend(BaseBackend):
             raise RuntimeError("FIREWORKS_API_KEY missing")
 
         base_url = os.getenv("FIREWORKS_BASE_URL", "https://api.fireworks.ai/inference/v1").rstrip("/")
-        self.model_name = model or os.getenv("FIREWORKS_MODEL", "accounts/fireworks/models/llama-v3p1-8b-instruct")
+        configured_model = model or os.getenv("FIREWORKS_MODEL", DEFAULT_FIREWORKS_MODELS[0])
+        self.model_name = _resolve_fireworks_model_name(configured_model)
         self._client = OpenAI(
             api_key=api_key,
             base_url=base_url,

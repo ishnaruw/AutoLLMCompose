@@ -11,11 +11,12 @@ from src.config import CONFIG
 from src.core.api_formatting import normalize_api_for_ranking
 from src.core.candidate_ids import assign_candidate_ids
 from src.core.json_parsing import normalize_binary_label, normalize_llm_payload, parse_llm_json, validate_expected_ids
+from src.core.output_schemas import FunctionalMatchOutput, validate_output_schema
 from src.core.run_logging import log_line, log_warning_event
 from src.core.retry import call_with_backoff
 from src.eval.candidate_api_rankings_excel import write_candidate_api_rankings_excel
 from src.eval.functional_match_prompt import build_llm_prompt
-from src.llm.autogen_runner import run_autogen_agent
+from src.llm.autogen_gateway import call_autogen_gateway
 from src.llm.backends import make_backend
 
 CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.jsonl")
@@ -400,6 +401,17 @@ def _parse_results_with_issue(
             "actual_api_count": 0,
             "actual_candidate_count": 0,
         }
+    _schema, schema_issue = validate_output_schema(FunctionalMatchOutput, {"matches": results})
+    if schema_issue:
+        return {}, {
+            **schema_issue,
+            "expected_api_count": len(expected_ids),
+            "expected_candidate_count": len(expected_candidate_ids),
+            "actual_api_count": 0,
+            "actual_candidate_count": 0,
+            "returned_api_count": len(results) if isinstance(results, list) else 0,
+            "returned_candidate_count": len(results) if isinstance(results, list) else 0,
+        }
     contains_candidate_ids = any(
         isinstance(item, dict) and str(item.get("candidate_id") or "").strip()
         for item in results
@@ -671,22 +683,21 @@ def _evaluate_batches(
                         if getattr(backend, "provider", "") in {"lmstudio", "lmstudio_qwen"}
                         else None
                     )
-                    if CONFIG.use_autogen_agents:
-                        return run_autogen_agent(
-                            backend=backend,
-                            role_name=f"{stage_name}_evaluator",
-                            system_message=EVAL_SYS,
-                            prompt=prompt,
-                            temperature=0.0,
-                            force_json=True,
-                            timeout_seconds=timeout_seconds,
-                        )
-                    return backend.chat_json(
-                        EVAL_SYS,
-                        prompt,
-                        temperature=0,
+                    return call_autogen_gateway(
+                        backend=backend,
+                        role_name=f"{stage_name}_evaluator",
+                        system_message=EVAL_SYS,
+                        user_prompt=prompt,
+                        temperature=0.0,
                         force_json=True,
-                        timeout_seconds=timeout_seconds,
+                        timeout_s=timeout_seconds,
+                        metadata={
+                            "source": "functional_match_eval",
+                            "stage_name": stage_name,
+                            "query_id": query_id,
+                            "subtask_id": sid,
+                            "chunk_index": chunk_idx,
+                        },
                     )
 
                 raw = _invoke(_call, name=f"functional_match_eval_s{sid}_chunk{chunk_idx}")

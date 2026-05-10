@@ -2,6 +2,7 @@
 import json
 
 from src.core.json_parsing import parse_llm_json
+from src.core.output_schemas import PlannerOutput, validate_output_schema
 
 
 def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner.md"):
@@ -107,6 +108,9 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
             raise ValueError(parsed.error)
         if not isinstance(parsed.value, dict):
             raise ValueError({"reason": "wrong_json_type", "expected_type": "object", "actual_type": type(parsed.value).__name__})
+        _schema, schema_issue = validate_output_schema(PlannerOutput, parsed.value)
+        if schema_issue:
+            raise ValueError(schema_issue)
         return parsed.value
 
     resp = llm_call(prompt)

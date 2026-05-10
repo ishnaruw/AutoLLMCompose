@@ -24,6 +24,7 @@ venv/
 # Local environment files
 .env
 *.env
+PROJECT_CONTEXT.md
 
 # Build & cache directories
 __pycache__/

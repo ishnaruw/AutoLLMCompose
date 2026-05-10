@@ -1,13 +1,23 @@
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Dict, List
 
 from src.core.candidate_ids import assign_candidate_ids
-from src.core.json_parsing import coerce_finite_score, normalize_llm_payload, parse_llm_json, validate_expected_ids
+from src.core.json_parsing import (
+    coerce_finite_score,
+    normalize_llm_payload,
+    parse_llm_json,
+    recover_scores_key_from_single_list,
+    validate_expected_ids,
+)
+from src.core.output_schemas import QoSScoreOutput, validate_output_schema
 from src.core.run_logging import log_line, log_retry_outcome_event
+
+QOS_FORMULA_TOLERANCE = 0.001
 
 
 class InvalidQosScoringOutput(RuntimeError):
@@ -65,12 +75,31 @@ def _parse_qos_score_output(
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
         return {}, issue
 
+    payload_value = parsed_json.value
     items, key_issue = normalize_llm_payload(
-        parsed_json.value,
+        payload_value,
         "scores",
         aliases={"qos_scored": "scores", "qos_scores": "scores"},
-        allow_list=True,
+        allow_list=False,
     )
+    if key_issue:
+        recovered_payload, recovery_issue = recover_scores_key_from_single_list(payload_value)
+        if recovered_payload is not None:
+            payload_value = recovered_payload
+            items, key_issue = normalize_llm_payload(
+                payload_value,
+                "scores",
+                aliases={"qos_scored": "scores", "qos_scores": "scores"},
+                allow_list=False,
+            )
+            if key_issue is None:
+                log_line(
+                    "[qos_scorer] normalized unexpected QoS scores key "
+                    f"original_key={recovery_issue.get('original_key') if recovery_issue else ''}"
+                )
+        elif recovery_issue is not None:
+            key_issue = recovery_issue
+
     if key_issue:
         issue = {
             **key_issue,
@@ -79,6 +108,24 @@ def _parse_qos_score_output(
         }
         if expected_candidate_ids:
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
+        return {}, issue
+
+    _schema, schema_issue = validate_output_schema(QoSScoreOutput, {"scores": items})
+    if schema_issue:
+        issue = {
+            **schema_issue,
+            "expected_api_count": len(expected_ids),
+            "actual_api_count": 0,
+            "returned_api_count": len(items) if isinstance(items, list) else 0,
+        }
+        if expected_candidate_ids:
+            issue.update(
+                {
+                    "expected_candidate_count": len(expected_candidate_ids),
+                    "actual_candidate_count": 0,
+                    "returned_candidate_count": len(items) if isinstance(items, list) else 0,
+                }
+            )
         return {}, issue
 
     contains_candidate_ids = any(
@@ -100,8 +147,9 @@ def _score_value(item: Dict[str, Any]) -> Any:
 def _qos_output_contract(include_reasons: bool) -> str:
     base = (
         "LLM output contract:\n"
-        "- Return one compact JSON object only.\n"
+        '- Return one compact JSON object only, with exactly one top-level key: "scores".\n'
         '- Preferred compact schema: {"scores": [{"candidate_id": "C01", "score": 0.75}]}.\n'
+        '- Never return a bare candidate object like {"candidate_id": "C01", "score": 0.75}.\n'
         "- score must be a finite number from 0.0 to 1.0.\n"
         "- Return one item for every input candidate_id exactly once.\n"
         "- Use candidate_id in output and do not output api_id."
@@ -323,7 +371,7 @@ def _parse_qos_score_output_by_candidate_id(
 
 
 def _rank_qos_scores(scores: Dict[str, float]) -> Dict[str, Dict[str, Any]]:
-    sorted_items = sorted(scores.items(), key=lambda item: float(item[1]), reverse=True)
+    sorted_items = sorted(scores.items(), key=lambda item: (-float(item[1]), item[0]))
     return {
         api_id: {
             "qos_llm_score": score,
@@ -358,21 +406,172 @@ def _exception_reason(exc: Exception) -> str:
     return "parse_error"
 
 
-def _qos_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
+def _finite_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        numeric = float(value)
+    except Exception:
+        return None
+    if not math.isfinite(numeric):
+        return None
+    return numeric
+
+
+def _qos_preference_context() -> Dict[str, Any]:
+    return {
+        "weights_provided": False,
+        "preference": "Treat response time, throughput, and availability as equally important.",
+        "weights": None,
+        "fixed_formula": None,
+    }
+
+
+def _qos_formula_context(payload: List[Dict[str, Any]]) -> Dict[str, Any]:
+    rt_values = [
+        value
+        for value in (_finite_float(item.get("rt_ms")) for item in payload)
+        if value is not None
+    ]
+    tp_values = [
+        value
+        for value in (_finite_float(item.get("tp_rps")) for item in payload)
+        if value is not None
+    ]
+    return {
+        "max_rt_ms": max(rt_values) if rt_values else 0.0,
+        "max_tp_rps": max(tp_values) if tp_values else 0.0,
+        "total_candidate_count": len(payload),
+    }
+
+
+def _apply_normalization_context(prompt: str, context: Dict[str, Any]) -> str:
+    context_json = json.dumps(context, ensure_ascii=False)
+    if "{normalization_context}" in prompt:
+        return prompt.replace("{normalization_context}", context_json)
+    return prompt
+
+
+def _score_from_formula(item: Dict[str, Any], context: Dict[str, Any]) -> float:
+    rt_ms = _finite_float(item.get("rt_ms"))
+    tp_rps = _finite_float(item.get("tp_rps"))
+    availability = _finite_float(item.get("availability"))
+    if rt_ms is None or tp_rps is None or availability is None:
+        return 0.0
+
+    max_rt = _finite_float(context.get("max_rt_ms")) or 0.0
+    max_tp = _finite_float(context.get("max_tp_rps")) or 0.0
+    norm_rt = 0.0 if max_rt <= 0 else max(0.0, min(1.0, 1.0 - (rt_ms / max_rt)))
+    norm_tp = 0.0 if max_tp <= 0 else max(0.0, min(1.0, tp_rps / max_tp))
+    norm_availability = max(0.0, min(1.0, availability))
+    return round((norm_rt + norm_tp + norm_availability) / 3.0, 4)
+
+
+def _expected_formula_scores_by_api_id(
+    payload: List[Dict[str, Any]],
+    candidate_id_to_api_id: Dict[str, str],
+    context: Dict[str, Any],
+) -> Dict[str, float]:
+    expected: Dict[str, float] = {}
+    for item in payload:
+        candidate_id = str(item.get("candidate_id") or "").strip()
+        api_id = candidate_id_to_api_id.get(candidate_id) or str(item.get("api_id") or "").strip()
+        if not api_id:
+            continue
+        expected[api_id] = _score_from_formula(item, context)
+    return expected
+
+
+def _validate_qos_formula_scores(
+    scores: Dict[str, float],
+    payload: List[Dict[str, Any]],
+    candidate_id_to_api_id: Dict[str, str],
+    context: Dict[str, Any],
+) -> Dict[str, Any] | None:
+    expected_scores = _expected_formula_scores_by_api_id(payload, candidate_id_to_api_id, context)
+    mismatches = []
+    for api_id, expected_score in expected_scores.items():
+        if api_id not in scores:
+            continue
+        actual_score = round(float(scores[api_id]), 4)
+        delta = abs(actual_score - expected_score)
+        if delta > QOS_FORMULA_TOLERANCE:
+            mismatches.append((api_id, expected_score, actual_score, delta))
+
+    if not mismatches:
+        return None
+
+    api_id_to_candidate_id = {api_id: candidate_id for candidate_id, api_id in candidate_id_to_api_id.items()}
+    mismatches.sort(key=lambda item: item[3], reverse=True)
+    issue = {
+        "reason": "qos_score_formula_mismatch",
+        "expected_api_count": len(expected_scores),
+        "actual_api_count": len(scores),
+        "mismatched_api_ids": [api_id for api_id, _expected, _actual, _delta in mismatches],
+        "mismatched_candidate_ids": [
+            api_id_to_candidate_id.get(api_id, "")
+            for api_id, _expected, _actual, _delta in mismatches
+            if api_id_to_candidate_id.get(api_id, "")
+        ],
+        "max_score_delta": round(mismatches[0][3], 6),
+        "score_mismatches": [
+            {
+                "api_id": api_id,
+                "candidate_id": api_id_to_candidate_id.get(api_id),
+                "expected_score": expected_score,
+                "actual_score": actual_score,
+                "delta": round(delta, 6),
+            }
+            for api_id, expected_score, actual_score, delta in mismatches[:10]
+        ],
+    }
+    if candidate_id_to_api_id:
+        issue.update(
+            {
+                "expected_candidate_count": len(expected_scores),
+                "actual_candidate_count": len(scores),
+            }
+        )
+    return issue
+
+
+def _log_qos_formula_audit(issue: Dict[str, Any], *, batch_idx: int | None) -> None:
+    mismatch_count = len(issue.get("mismatched_api_ids") or [])
+    if not mismatch_count:
+        return
+    batch_label = "all" if batch_idx is None else str(batch_idx)
+    log_line(
+        "[qos_scorer] formula audit mismatch "
+        f"batch={batch_label} mismatched={mismatch_count} max_delta={issue.get('max_score_delta')}"
+    )
+
+
+def _qos_retry_prompt(prompt: str, issue: Dict[str, Any], payload: List[Dict[str, Any]] | None = None) -> str:
     reason = issue.get("reason", "invalid_qos_scores")
     expected = issue.get("expected_candidate_count") or issue.get("expected_api_count", "")
+    candidate_ids = [
+        str(item.get("candidate_id") or "").strip()
+        for item in (payload or [])
+        if str(item.get("candidate_id") or "").strip()
+    ]
+    candidate_list = ""
+    if candidate_ids:
+        candidate_list = "\nRequired candidate_id values for this attempt: " + json.dumps(candidate_ids, ensure_ascii=False)
     if issue.get("expected_candidate_count"):
         return (
             prompt
             + "\n\nIMPORTANT: The previous QoS scoring output was invalid "
             + f"({reason}). Return JSON only with scores containing every one of the {expected} input candidate_id values exactly once. "
             + "Use candidate_id only. Do not output api_id. Do not omit APIs, duplicate APIs, or invent candidate_id values."
+            + ' The top-level object must be {"scores": [...]}; never return a bare {"candidate_id": ..., "score": ...} object.'
+            + candidate_list
         )
     return (
         prompt
         + "\n\nIMPORTANT: The previous QoS scoring output was invalid "
         + f"({reason}). Return JSON only with scores containing every one of the {expected} input api_id values exactly once. "
         + "Do not omit APIs, duplicate APIs, or invent api_id values."
+        + ' The top-level object must be {"scores": [...]}.'
     )
 
 
@@ -397,6 +596,10 @@ def _score_payload_with_retries(
     debug_raw_path: str | None,
     batch_idx: int | None,
     max_validation_retries: int,
+    preference_context: Dict[str, Any] | None = None,
+    formula_context: Dict[str, Any] | None = None,
+    validate_formula: bool = False,
+    formula_audit: bool = False,
 ) -> Dict[str, float]:
     candidate_id_to_api_id = candidate_id_to_api_id or {}
     expected_ids = list(candidate_id_to_api_id.values()) if candidate_id_to_api_id else [
@@ -407,7 +610,10 @@ def _score_payload_with_retries(
 
     from src.config import CONFIG
 
+    preference_context = preference_context or _qos_preference_context()
+    formula_context = formula_context or _qos_formula_context(payload)
     prompt = template.replace("{candidates_json}", json.dumps(payload, ensure_ascii=False))
+    prompt = _apply_normalization_context(prompt, preference_context)
     prompt = _apply_qos_output_contract(prompt, bool(CONFIG.include_llm_reasons))
     attempts = max(0, int(max_validation_retries or 0)) + 1
     last_issue: Dict[str, Any] = {
@@ -425,7 +631,7 @@ def _score_payload_with_retries(
 
     invalid_attempts = 0
     for attempt in range(1, attempts + 1):
-        prompt_for_attempt = prompt if attempt == 1 else _qos_retry_prompt(prompt, last_issue)
+        prompt_for_attempt = prompt if attempt == 1 else _qos_retry_prompt(prompt, last_issue, payload)
         try:
             raw = llm_call(prompt_for_attempt)
         except Exception as exc:
@@ -440,6 +646,12 @@ def _score_payload_with_retries(
         _write_qos_debug(debug_raw_path, raw, attempt, batch_idx)
         scores, issue = _parse_qos_score_output(raw, expected_ids, candidate_id_to_api_id)
         if issue is None:
+            if validate_formula or formula_audit:
+                formula_issue = _validate_qos_formula_scores(scores, payload, candidate_id_to_api_id, formula_context)
+                if formula_issue and formula_audit:
+                    _log_qos_formula_audit(formula_issue, batch_idx=batch_idx)
+                if formula_issue and validate_formula:
+                    raise InvalidQosScoringOutput(_failure_metadata(formula_issue, after_retries=False))
             if invalid_attempts:
                 log_line(
                     f"[qos_scorer] retry validation succeeded after {invalid_attempts} invalid attempt(s); "
@@ -498,8 +710,10 @@ def score_qos_llm(
     candidates: List[Dict[str, Any]],
     prompt_path: str = "prompts/qos_score_llm.md",
     debug_raw_path: str | None = None,
-    batch_size: int | None = 15,
+    batch_size: int | None = 0,
     max_validation_retries: int = 2,
+    validate_formula: bool = False,
+    formula_audit: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """
     LLM-only QoS scoring with optional adaptive batching.
@@ -541,6 +755,8 @@ def score_qos_llm(
         }
         for item in candidate_rows_with_ids
     ]
+    preference_context = _qos_preference_context()
+    formula_context = _qos_formula_context(prompt_payload)
 
     if effective_batch_size <= 0:
         scores = _score_payload_with_retries(
@@ -551,6 +767,10 @@ def score_qos_llm(
             debug_raw_path=debug_raw_path,
             batch_idx=None,
             max_validation_retries=max_validation_retries,
+            preference_context=preference_context,
+            formula_context=formula_context,
+            validate_formula=validate_formula,
+            formula_audit=formula_audit,
         )
         return _rank_qos_scores(scores)
 
@@ -570,6 +790,10 @@ def score_qos_llm(
             debug_raw_path=debug_raw_path,
             batch_idx=batch_idx,
             max_validation_retries=max_validation_retries,
+            preference_context=preference_context,
+            formula_context=formula_context,
+            validate_formula=validate_formula,
+            formula_audit=formula_audit,
         )
         all_scores.update(scores)
 

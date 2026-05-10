@@ -101,6 +101,59 @@ def normalize_llm_payload(
     }
 
 
+def _has_supported_score_identifier(item: Mapping[str, Any]) -> bool:
+    return any(str(item.get(key) or "").strip() for key in ("candidate_id", "api_id"))
+
+
+def _has_supported_score_field(item: Mapping[str, Any]) -> bool:
+    return any(key in item for key in ("score", "qos_score"))
+
+
+def recover_scores_key_from_single_list(
+    payload: Any,
+    *,
+    expected_key: str = "scores",
+) -> tuple[Dict[str, Any] | None, Dict[str, Any] | None]:
+    """
+    Recover QoS score rows when a model uses one unexpected top-level list key.
+
+    This is intentionally narrow: it only rewrites object payloads with exactly
+    one list-valued field, and only when the list is shaped like QoS score rows.
+    The caller should still run schema and candidate-id validation afterwards.
+    """
+    if not isinstance(payload, dict) or expected_key in payload:
+        return None, None
+
+    list_fields = [(str(key), value) for key, value in payload.items() if isinstance(value, list)]
+    if not list_fields:
+        return None, None
+    if len(list_fields) > 1:
+        return None, {
+            "reason": "ambiguous_score_list_key",
+            "expected_key": expected_key,
+            "candidate_keys": sorted(key for key, _value in list_fields),
+        }
+
+    original_key, items = list_fields[0]
+    if not items:
+        return None, None
+    if not all(isinstance(item, Mapping) for item in items):
+        return None, None
+    if not all(_has_supported_score_identifier(item) for item in items):
+        return None, None
+    if not any(_has_supported_score_field(item) for item in items):
+        return None, None
+
+    normalized = dict(payload)
+    normalized[expected_key] = items
+    normalized.pop(original_key, None)
+    return normalized, {
+        "reason": "normalized_unexpected_scores_key",
+        "expected_key": expected_key,
+        "original_key": original_key,
+    }
+
+
 def validate_expected_ids(
     returned_ids: Sequence[str],
     expected_ids: Sequence[str],

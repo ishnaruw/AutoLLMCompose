@@ -29,6 +29,7 @@ from src.eval.ranking_metrics import (  # noqa: E402
     overlap_by_depth,
     top_lists_to_wide_frame,
 )
+from src.llm.backends import fireworks_model_options  # noqa: E402
 
 DEFAULT_RUN_EXPLORER_PARENT = PROJECT_ROOT / "results/logs"
 DEFAULT_PARENT = DEFAULT_RUN_EXPLORER_PARENT
@@ -37,7 +38,7 @@ QUERIES_PATH = PROJECT_ROOT / "data/queries/all_user_query.jsonl"
 
 PROVIDER_MODELS = {
     "mistral": ["mistral-small-latest", "mistral-large-latest"],
-    "fireworks": ["accounts/fireworks/models/deepseek-v3p1", "accounts/fireworks/models/llama-v3p1-8b-instruct"],
+    "fireworks": fireworks_model_options(),
     "groq": ["multi", "llama-3.3-70b-versatile"],
     "lmstudio": ["meta-llama-3.1-8b-instruct"],
     "lmstudio_qwen": ["qwen2.5-3b-instruct.gguf"],
@@ -624,6 +625,18 @@ def _render_run_progress_panel(run_dir: Path) -> None:
         st.dataframe(pd.DataFrame(info["rows"]), width="stretch", hide_index=True)
 
 
+def _is_run_live(run_dir: Path) -> bool:
+    info = _run_progress_info(run_dir)
+    if info["run_status"] == "Running":
+        return True
+    return any(str(row["Status"]) == "running" for row in info["rows"])
+
+
+def _clear_run_view_caches() -> None:
+    _discover_query_runs.clear()
+    _load_excel_sheet.clear()
+
+
 def _render_run_output_tabs(run_dir: Path, key_prefix: str) -> None:
     report_tab, logs_tab = st.tabs(["Excel Reports", "Logs"])
     with report_tab:
@@ -671,10 +684,37 @@ def _render_completed_run_selector(parent_dir: str, key_prefix: str) -> QueryRun
     return _selected_run_from_row(selected_row)
 
 
-def _render_run_inspection(run: QueryRun, key_prefix: str) -> None:
+def _render_run_inspection(run: QueryRun, key_prefix: str, *, force_live: bool = False) -> None:
     st.write(f"**Run folder:** `{run.run_dir}`")
+    is_live = force_live or _is_run_live(run.run_dir)
+    refresh_cols = st.columns([1.1, 1.3, 4.6])
+    with refresh_cols[0]:
+        if st.button("Refresh", key=f"{key_prefix}_refresh", use_container_width=True):
+            _clear_run_view_caches()
+            st.rerun()
+    with refresh_cols[1]:
+        auto_refresh = st.toggle(
+            "Auto-refresh",
+            value=True,
+            key=f"{key_prefix}_auto_refresh",
+            help="Refreshes every 2 seconds while this run is still active.",
+        )
+    with refresh_cols[2]:
+        if is_live:
+            st.caption("Live monitor: updates every 2 seconds when auto-refresh is on.")
+        else:
+            st.caption("Snapshot view: use Refresh to check for newer files.")
     _render_run_progress_panel(run.run_dir)
+    with st.expander("Live Run Log", expanded=is_live):
+        text, error = _tail_text(run.run_dir / "run.log", 80)
+        if error:
+            st.info(error)
+        else:
+            st.code(text or "", language="text")
     _render_run_output_tabs(run.run_dir, key_prefix=key_prefix)
+    if is_live and auto_refresh:
+        time.sleep(2)
+        st.rerun()
 
 
 def _render_logs(run_dir: Path, key_prefix: str = "logs") -> None:
@@ -720,8 +760,7 @@ def render_query_run_explorer() -> None:
                 st.session_state["experiment"] = _launch_experiment(selected_query_ids, provider, model, run_tag)
                 st.session_state["experiment_process"] = st.session_state["experiment"]["process"]
                 st.session_state["experiment_pid"] = st.session_state["experiment"]["pid"]
-                _discover_query_runs.clear()
-                _load_excel_sheet.clear()
+                _clear_run_view_caches()
                 st.rerun()
             except Exception as exc:
                 st.error(f"Could not start experiment: {exc}")
@@ -794,6 +833,10 @@ def render_query_run_explorer() -> None:
         else:
             st.code(text or "", language="text")
 
+    if not rows and is_running:
+        time.sleep(2)
+        st.rerun()
+
     if rows:
         st.subheader("Inspect Run Output")
         run_options = runs_df.sort_values(["query_id", "timestamp", "run_name"]).to_dict(orient="records")
@@ -805,25 +848,12 @@ def render_query_run_explorer() -> None:
         )
         selected_row = next(row for row in run_options if _run_label(row) == selected_label)
         selected_run = _selected_run_from_row(selected_row)
-        st.write(f"**Run folder:** `{selected_run.run_dir}`")
-
-        _render_run_progress_panel(selected_run.run_dir)
-        with st.expander("Live Run Log", expanded=is_running):
-            text, error = _tail_text(selected_run.run_dir / "run.log", 80)
-            if error:
-                st.info(error)
-            else:
-                st.code(text or "", language="text")
-        _render_run_output_tabs(selected_run.run_dir, key_prefix="current_run")
-
-    if is_running:
-        time.sleep(2)
-        st.rerun()
+        _render_run_inspection(selected_run, key_prefix="current_run", force_live=is_running)
 
 
 def render_completed_runs() -> None:
     st.title("Completed Runs")
-    st.caption("Browse completed MAOF query runs and inspect the same reports and logs shown after an experiment finishes.")
+    st.caption("Browse MAOF query runs, including still-running experiments, with the same live progress and report view used by Run Experiments.")
 
     with st.sidebar:
         st.header("Completed Run Directory")
@@ -833,8 +863,8 @@ def render_completed_runs() -> None:
             key="completed_runs_dir",
         )
         if st.button("Reload completed runs"):
-            _discover_query_runs.clear()
-            _load_excel_sheet.clear()
+            _clear_run_view_caches()
+            st.rerun()
 
     selected_run = _render_completed_run_selector(parent_dir, key_prefix="completed_runs")
     if selected_run is None:

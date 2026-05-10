@@ -2,11 +2,16 @@
 from typing import Callable, Dict, List, Any
 
 from src.core.json_parsing import parse_llm_json
+from src.core.output_schemas import DecompositionOutput, validate_output_schema
 
 
 def _parse_subtasks(resp: str, fallback_goal: str) -> List[Dict[str, Any]]:
     parsed = parse_llm_json(resp)
     data = parsed.value if isinstance(parsed.value, dict) and parsed.error is None else {}
+    if data:
+        _schema, schema_issue = validate_output_schema(DecompositionOutput, data)
+        if schema_issue:
+            data = {}
 
     subtasks_raw = data.get("subtasks", [])
     subtasks: List[Dict[str, Any]] = []

@@ -28,8 +28,13 @@ from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
 from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
-from src.llm.autogen_runner import run_autogen_agent
-from src.llm.backends import GROQ_MULTI_MODEL_SENTINEL, groq_experiment_model_pool, make_backend
+from src.llm.autogen_gateway import call_autogen_gateway
+from src.llm.backends import (
+    GROQ_MULTI_MODEL_SENTINEL,
+    fireworks_model_options,
+    groq_experiment_model_pool,
+    make_backend,
+)
 from src.tools.fetch_services import fetch_services
 
 DECOMPOSER_SYS = (
@@ -47,7 +52,7 @@ RANKER_SYS = (
 
 QOS_SCORER_SYS = (
     "You are a QoS scoring agent. Given only candidate IDs and QoS metrics, produce a relative QoS-only ranking and score. "
-    "Return strict JSON only."
+    "Return strict JSON only with one top-level scores array."
 )
 
 PLANNER_SYS = (
@@ -207,10 +212,26 @@ def choose_groq_model_interactive() -> str:
         print("Invalid choice. Try again.")
 
 
+def choose_fireworks_model_interactive() -> str:
+    models = fireworks_model_options()
+    print("Select Fireworks model:")
+    for idx, model_name in enumerate(models, start=1):
+        print(f"  {idx}) {model_name}")
+    while True:
+        choice = input("Enter choice number: ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(models):
+            model_name = models[int(choice) - 1]
+            print(f"Selected: Fireworks model {model_name}\n")
+            return model_name
+        print("Invalid choice. Try again.")
+
+
 def choose_provider_and_model_interactive() -> tuple[str, str | None]:
     provider = choose_provider_interactive()
     if provider == "groq":
         return provider, choose_groq_model_interactive()
+    if provider in {"fireworks", "fireworks_ai"}:
+        return provider, choose_fireworks_model_interactive()
     return provider, None
 
 
@@ -326,7 +347,7 @@ def _build_llm_call(backend):
         if provider not in {"lmstudio", "lmstudio_qwen"}:
             return limits
         limits["timeout_seconds"] = CONFIG.lmstudio_timeout_seconds
-        if role_name == "ranker" and provider == "lmstudio":
+        if role_name.startswith("ranker") and provider == "lmstudio":
             limits["max_tokens"] = CONFIG.lmstudio_ranker_max_tokens
         return limits
 
@@ -338,28 +359,17 @@ def _build_llm_call(backend):
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
         temp = 0.2 if role_name == "planner" else 0.0
         limits = _lmstudio_limits(role_name)
-        if CONFIG.use_autogen_agents:
-            return _invoke(
-                lambda: run_autogen_agent(
-                    backend=backend,
-                    role_name=role_name,
-                    system_message=system_msg,
-                    prompt=prompt,
-                    temperature=temp,
-                    force_json=True,
-                    max_tokens=limits.get("max_tokens"),
-                    timeout_seconds=limits.get("timeout_seconds"),
-                ),
-                name=role_name,
-            )
         return _invoke(
-            lambda: backend.chat_json(
-                system_msg,
-                prompt,
+            lambda: call_autogen_gateway(
+                backend=backend,
+                role_name=role_name,
+                system_message=system_msg,
+                user_prompt=prompt,
                 temperature=temp,
                 force_json=True,
                 max_tokens=limits.get("max_tokens"),
-                timeout_seconds=limits.get("timeout_seconds"),
+                timeout_s=limits.get("timeout_seconds"),
+                metadata={"source": "run_autogen_pipeline"},
             ),
             name=role_name,
         )
@@ -805,6 +815,7 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
         "missing_score",
         "invalid_score_range",
         "invalid_score_value",
+        "qos_score_formula_mismatch",
         "missing_label",
         "invalid_label_value",
     }
@@ -1128,7 +1139,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         meta_tracker,
                         "ranker_no_qos",
                         lambda: rank_subtask(
-                            llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                            llm_call=lambda p: llm_call("ranker_no_qos", RANKER_SYS, p),
                             user_query=user_goal,
                             subtask=sub,
                             candidates=no_qos_candidates,
@@ -1174,8 +1185,10 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             candidates=pure_qos_candidates,
                             prompt_path="prompts/qos_score_llm.md",
                             debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
-                            batch_size=0,
+                            batch_size=CONFIG.qos_llm_batch_size,
                             max_validation_retries=CONFIG.llm_validation_max_retries,
+                            validate_formula=CONFIG.qos_llm_validate_formula,
+                            formula_audit=CONFIG.qos_llm_formula_audit,
                         ),
                     )
                     _write_json(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_s{sub_id}.json", pure_qos_meta)
@@ -1194,7 +1207,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             meta_tracker,
                             "ranker_qos_pure_llm",
                             lambda: rank_subtask(
-                                llm_call=lambda p: llm_call("ranker", RANKER_SYS, p),
+                                llm_call=lambda p: llm_call("ranker_qos_pure_llm", RANKER_SYS, p),
                                 user_query=user_goal,
                                 subtask=sub,
                                 candidates=pure_candidates,

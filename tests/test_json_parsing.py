@@ -8,6 +8,7 @@ from src.core.json_parsing import (
     normalize_binary_label,
     normalize_llm_payload,
     parse_llm_json,
+    recover_scores_key_from_single_list,
     strip_markdown_fences,
     validate_expected_ids,
 )
@@ -63,6 +64,35 @@ class JsonParsingUtilityTests(unittest.TestCase):
         _, issue = normalize_llm_payload({"items": []}, "ranked", aliases={"ranked_apis": "ranked"})
 
         self.assertEqual(issue["reason"], "missing_required_key")
+
+    def test_recovers_scores_from_single_unexpected_list_key(self) -> None:
+        payload = {"scorers": [{"candidate_id": "C01", "score": 0.8}]}
+
+        recovered, issue = recover_scores_key_from_single_list(payload)
+
+        self.assertIsNotNone(recovered)
+        self.assertEqual(recovered["scores"], payload["scorers"])
+        self.assertEqual(issue["reason"], "normalized_unexpected_scores_key")
+        self.assertEqual(issue["original_key"], "scorers")
+
+    def test_score_recovery_rejects_multiple_list_keys(self) -> None:
+        payload = {
+            "scorers": [{"candidate_id": "C01", "score": 0.8}],
+            "candidates": [{"candidate_id": "C02", "score": 0.6}],
+        }
+
+        recovered, issue = recover_scores_key_from_single_list(payload)
+
+        self.assertIsNone(recovered)
+        self.assertEqual(issue["reason"], "ambiguous_score_list_key")
+
+    def test_score_recovery_ignores_non_score_like_single_list(self) -> None:
+        payload = {"notes": [{"candidate_id": "C01", "label": 1}]}
+
+        recovered, issue = recover_scores_key_from_single_list(payload)
+
+        self.assertIsNone(recovered)
+        self.assertIsNone(issue)
 
     def test_wrong_json_type_error(self) -> None:
         _, issue = normalize_llm_payload("not an object", "ranked")

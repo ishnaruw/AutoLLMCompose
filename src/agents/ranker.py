@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List
 from src.core.candidate_ids import assign_candidate_ids
 from src.core.api_formatting import normalize_api_for_ranking
 from src.core.json_parsing import normalize_llm_payload, parse_llm_json, validate_expected_ids
+from src.core.output_schemas import RankedCandidatesOutput, validate_output_schema
 from src.core.run_logging import log_line, log_retry_outcome_event, log_warning_event
 
 
@@ -204,6 +205,24 @@ def _parse_ranked_output(
         }
         if expected_candidate_ids:
             issue.update({"expected_candidate_count": len(expected_candidate_ids), "actual_candidate_count": 0})
+        return [], issue
+
+    _schema, schema_issue = validate_output_schema(RankedCandidatesOutput, {"ranked": ranked_raw})
+    if schema_issue:
+        issue = {
+            **schema_issue,
+            "expected_api_count": len(expected_ids),
+            "actual_api_count": 0,
+            "returned_api_count": len(ranked_raw) if isinstance(ranked_raw, list) else 0,
+        }
+        if expected_candidate_ids:
+            issue.update(
+                {
+                    "expected_candidate_count": len(expected_candidate_ids),
+                    "actual_candidate_count": 0,
+                    "returned_candidate_count": len(ranked_raw) if isinstance(ranked_raw, list) else 0,
+                }
+            )
         return [], issue
 
     contains_candidate_ids = any(

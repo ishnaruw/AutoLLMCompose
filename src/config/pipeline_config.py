@@ -24,6 +24,9 @@ class PipelineConfig:
     llm_debug_enabled: bool = True
     llm_validation_max_retries: int = 2
     include_llm_reasons: bool = False
+    qos_llm_batch_size: int = 0
+    qos_llm_validate_formula: bool = False
+    qos_llm_formula_audit: bool = False
 
     def as_dict(self) -> Dict[str, Any]:
         data = asdict(self)

@@ -293,6 +293,182 @@ class InvalidOutputHandlingTests(unittest.TestCase):
         self.assertEqual(scores["api_a"]["qos_llm_rank"], 1)
         self.assertEqual(scores["api_b"]["qos_llm_rank"], 2)
 
+    def test_qos_scorer_accepts_judgment_scores_that_do_not_match_formula_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{normalization_context}\n{candidates_json}", encoding="utf-8")
+            seen_prompts: list[str] = []
+
+            def judgment_qos_llm(prompt_text: str) -> str:
+                seen_prompts.append(prompt_text)
+                return json.dumps(
+                    {
+                        "scores": [
+                            {"candidate_id": "C01", "score": 0.1},
+                            {"candidate_id": "C02", "score": 0.2},
+                        ]
+                    }
+                )
+
+            scores = score_qos_llm(
+                judgment_qos_llm,
+                candidates=[
+                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                ],
+                prompt_path=str(prompt),
+                batch_size=0,
+                max_validation_retries=0,
+            )
+
+        self.assertEqual(len(seen_prompts), 1)
+        self.assertIn('"weights_provided": false', seen_prompts[0])
+        self.assertNotIn('"max_rt_ms"', seen_prompts[0])
+        self.assertEqual(scores["api_b"]["qos_llm_rank"], 1)
+        self.assertEqual(scores["api_a"]["qos_llm_score"], 0.1)
+
+    def test_qos_scorer_retry_rejects_bare_candidate_object(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{normalization_context}\n{candidates_json}", encoding="utf-8")
+            seen_prompts: list[str] = []
+
+            def retry_qos_llm(prompt_text: str) -> str:
+                seen_prompts.append(prompt_text)
+                if len(seen_prompts) == 1:
+                    return json.dumps({"candidate_id": "C01", "score": 0.83})
+                return json.dumps(
+                    {
+                        "scores": [
+                            {"candidate_id": "C01", "score": 0.83},
+                            {"candidate_id": "C02", "score": 0.4833},
+                        ]
+                    }
+                )
+
+            scores = score_qos_llm(
+                retry_qos_llm,
+                candidates=[
+                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                ],
+                prompt_path=str(prompt),
+                batch_size=0,
+                max_validation_retries=1,
+            )
+
+        self.assertEqual(len(seen_prompts), 2)
+        self.assertIn('"weights_provided": false', seen_prompts[0])
+        self.assertIn('never return a bare {"candidate_id": ..., "score": ...} object', seen_prompts[1])
+        self.assertIn('["C01", "C02"]', seen_prompts[1])
+        self.assertEqual(scores["api_a"]["qos_llm_rank"], 1)
+        self.assertEqual(scores["api_b"]["qos_llm_rank"], 2)
+
+    def test_qos_scorer_formula_mismatch_raises_invalid_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{normalization_context}\n{candidates_json}", encoding="utf-8")
+
+            def mismatched_qos_llm(_: str) -> str:
+                return json.dumps(
+                    {
+                        "scores": [
+                            {"candidate_id": "C01", "score": 0.1},
+                            {"candidate_id": "C02", "score": 0.2},
+                        ]
+                    }
+                )
+
+            with self.assertRaises(InvalidQosScoringOutput) as raised:
+                score_qos_llm(
+                    mismatched_qos_llm,
+                    candidates=[
+                        {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                        {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    ],
+                    prompt_path=str(prompt),
+                    batch_size=0,
+                    max_validation_retries=0,
+                    validate_formula=True,
+                )
+
+        metadata = raised.exception.metadata
+        self.assertEqual(metadata["failure_stage"], "qos_llm_scoring")
+        self.assertEqual(metadata["failure_reason"], "qos_score_formula_mismatch")
+        self.assertEqual(metadata["mismatched_candidate_ids"], ["C01", "C02"])
+        self.assertEqual(metadata["expected_candidate_count"], 2)
+
+    def test_qos_scorer_formula_audit_logs_mismatch_without_rejecting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_log = Path(tmpdir) / "run.log"
+            configure_run_log(run_log)
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{normalization_context}\n{candidates_json}", encoding="utf-8")
+
+            def mismatched_qos_llm(_: str) -> str:
+                return json.dumps(
+                    {
+                        "scores": [
+                            {"candidate_id": "C01", "score": 0.1},
+                            {"candidate_id": "C02", "score": 0.2},
+                        ]
+                    }
+                )
+
+            try:
+                scores = score_qos_llm(
+                    mismatched_qos_llm,
+                    candidates=[
+                        {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                        {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    ],
+                    prompt_path=str(prompt),
+                    batch_size=0,
+                    max_validation_retries=0,
+                    formula_audit=True,
+                )
+            finally:
+                clear_run_log()
+
+            audit_log_text = run_log.read_text(encoding="utf-8")
+
+        self.assertEqual(scores["api_b"]["qos_llm_rank"], 1)
+        self.assertIn("formula audit mismatch", audit_log_text)
+
+    def test_qos_scorer_none_batch_size_scores_all_candidates_together(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompt = Path(tmpdir) / "qos.md"
+            prompt.write_text("{candidates_json}", encoding="utf-8")
+            seen_prompts: list[str] = []
+
+            def batched_qos_llm(prompt_text: str) -> str:
+                seen_prompts.append(prompt_text)
+                return json.dumps(
+                    {
+                        "scores": [
+                            {"candidate_id": "C01", "score": 0.3},
+                            {"candidate_id": "C02", "score": 0.2},
+                            {"candidate_id": "C03", "score": 0.1},
+                        ]
+                    }
+                )
+
+            scores = score_qos_llm(
+                batched_qos_llm,
+                candidates=[
+                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    {"api_id": "api_c", "rt_ms": 30, "tp_rps": 4, "availability": 0.9},
+                ],
+                prompt_path=str(prompt),
+                batch_size=None,
+                max_validation_retries=0,
+            )
+
+        self.assertEqual(len(seen_prompts), 1)
+        self.assertIn('"candidate_id": "C03"', seen_prompts[0])
+        self.assertEqual(scores["api_a"]["qos_llm_rank"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

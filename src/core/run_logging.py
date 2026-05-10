@@ -329,6 +329,7 @@ def start_llm_trace(
     force_json: bool,
     max_tokens: int | None,
     timeout_seconds: float | None,
+    metadata: dict | None = None,
 ) -> str | None:
     global _LLM_DEBUG_COUNTER
     if _LLM_DEBUG_DIR is None:
@@ -352,6 +353,8 @@ def start_llm_trace(
         "system_chars": len(system_message or ""),
         "prompt_chars": len(prompt or ""),
     }
+    if metadata:
+        meta["metadata"] = metadata
     meta_path = _debug_path(call_id, "meta.json")
     system_path = _debug_path(call_id, "system.txt")
     prompt_path = _debug_path(call_id, "prompt.txt")
