@@ -10,12 +10,12 @@ class PipelineConfig:
     run_tag: str | None = "RUNS_MAY_13"
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
-    catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl")
+    catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.tooldesc.jsonl")
 
     rag_top_k: int = 40
     ranker_max_candidates: int = 40
     ranker_pool_n: int = 40
-    functional_match_chunk_size: int = 40
+    functional_match_chunk_size: int = 20
     selector_top_n: int = 5
     planner_enabled: bool = True
     composition_qos_eval_enabled: bool = True

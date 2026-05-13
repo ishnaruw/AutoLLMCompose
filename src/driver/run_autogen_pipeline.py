@@ -8,10 +8,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 from src.agents.decomposer import decompose_goal
+from src.agents.evaluator import EvaluationAgent
 from src.agents.planner import planner_call
 from src.agents.ranker import InvalidRankingOutput, rank_subtask
 from src.agents.qos_scorer_llm import InvalidQosScoringOutput, score_qos_llm
-from src.agents.retriever import collect_candidates
+from src.agents.retriever import RagRetrieverAgent
 from src.config import CONFIG
 from src.core.run_logging import (
     clear_run_log,
@@ -23,11 +24,6 @@ from src.core.run_logging import (
     log_line,
 )
 from src.core.retry import call_with_backoff
-from src.eval.functional_match_eval import evaluate_query, evaluate_retrieval_functional_match
-from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
-from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
-from src.eval.composition_qos_eval import evaluate_composition_qos
-from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.autogen_gateway import call_autogen_gateway
 from src.llm.backends import (
@@ -514,9 +510,10 @@ def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_
     retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
     pick_ids: List[str] = []
     seen = set()
+    retriever_agent = RagRetrieverAgent(index_dir=str(CONFIG.shared_index_dir))
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
-        retrieved = collect_candidates(subtask_goal=str(sub.get("description", "")), index_dir=str(CONFIG.shared_index_dir), top_k=CONFIG.rag_top_k)
+        retrieved = retriever_agent.retrieve(str(sub.get("description", "")), top_k=CONFIG.rag_top_k)
         for idx, item in enumerate(retrieved, start=1):
             item["retrieved_rank"] = idx
         retrieved_by_subtask[sub_id] = retrieved
@@ -1123,6 +1120,10 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 "query_id": query_id,
                 "query_title": query_title,
                 "modes": MODE_ORDER,
+                "retrieval_agent": "RagRetrieverAgent",
+                "retrieval_agent_mode": "deterministic_faiss",
+                "evaluation_agent": "EvaluationAgent",
+                "evaluation_agent_mode": "deterministic_adapter",
                 "model_usage_file": _to_run_relative(current_model_usage_path(), out_dir),
             }
         )
@@ -1133,7 +1134,13 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         try:
             retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
             total_retrieved = sum(len(items) for items in retrieved_by_subtask.values())
-            meta_tracker.finish_stage("retrieval", subtask_count=len(subtasks), retrieved_candidate_count=total_retrieved)
+            meta_tracker.finish_stage(
+                "retrieval",
+                subtask_count=len(subtasks),
+                retrieved_candidate_count=total_retrieved,
+                retrieval_agent="RagRetrieverAgent",
+                retrieval_agent_mode="deterministic_faiss",
+            )
             log_line(f"[{run_label}] finished shared retrieval ({total_retrieved} retrieved candidates)")
         except Exception:
             meta_tracker.finish_stage("retrieval", status="failed")
@@ -1142,10 +1149,11 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         eval_dir = out_dir / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "functional_match_cache.json"
+        evaluation_agent = EvaluationAgent(catalog_no_qos_path=CONFIG.catalog_no_qos_path)
         meta_tracker.start_stage("retrieval_functional_match_evaluation")
         log_line(f"[{run_label}] starting Functional Candidate Refinement labeling")
         try:
-            retrieval_functional_match_rows_path = evaluate_retrieval_functional_match(
+            retrieval_functional_match_rows_path = evaluation_agent.evaluate_retrieval_functional_match(
                 query_dir=out_dir,
                 query_id=query_id,
                 output_dir=eval_dir,
@@ -1157,6 +1165,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             meta_tracker.finish_stage(
                 "retrieval_functional_match_evaluation",
                 rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
+                evaluation_agent="EvaluationAgent",
+                evaluation_agent_mode="deterministic_adapter",
             )
             log_line(f"[{run_label}] finished Functional Candidate Refinement labeling")
         except Exception as e:
@@ -1313,42 +1323,43 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         meta_tracker.start_stage("evaluation_outputs")
         log_line(f"[{run_label}] building final functional match report outputs from retrieval cache")
         try:
-            eval_out = evaluate_query(query_dir=out_dir, query_id=query_id, output_dir=eval_dir, cache_path=eval_cache, provider=provider or "azure", model=model)
+            evaluation_outputs = evaluation_agent.build_evaluation_outputs(
+                query_dir=out_dir,
+                query_id=query_id,
+                output_dir=eval_dir,
+                cache_path=eval_cache,
+                provider=provider or "azure",
+                model=model,
+                retrieval_functional_match_rows_path=retrieval_functional_match_rows_path,
+            )
+            eval_out = evaluation_outputs["candidate_api_rankings_excel"]
             log_line(f"[{run_label}] finished building final functional match report outputs")
-            candidate_api_rankings_rows_path = eval_dir / f"query_{query_id}_candidate_api_rankings_rows.json"
+            candidate_api_rankings_rows_path = evaluation_outputs["candidate_api_rankings_rows_json"]
             if candidate_api_rankings_rows_path.exists():
                 planner_top_n = _load_planner_top_n(candidate_api_rankings_rows_path)
-
-            duplicate_audit = collect_duplicate_audit_for_run(out_dir)
-            duplicate_audit_json = eval_dir / f"query_{query_id}_duplicate_audit.json"
-            _write_json(duplicate_audit_json, duplicate_audit)
-
-            hallucination_audit = collect_hallucination_audit_for_run(out_dir, CONFIG.catalog_no_qos_path)
-            hallucination_audit_json = eval_dir / f"query_{query_id}_hallucination_audit.json"
-            _write_json(hallucination_audit_json, hallucination_audit)
-
-            ranking_anomaly_audit = collect_ranking_anomaly_audit_for_run(out_dir, query_id=query_id)
-            ranking_anomaly_audit_json = eval_dir / f"query_{query_id}_ranking_anomaly_audit.json"
-            _write_json(ranking_anomaly_audit_json, ranking_anomaly_audit)
-
-            mode_anomaly_xlsx = eval_dir / f"query_{query_id}_mode_anomalies.xlsx"
-            write_mode_anomaly_excel(duplicate_audit, hallucination_audit, mode_anomaly_xlsx, ranking_anomaly_audit)
 
             _write_json(
                 out_dir / "evaluation_result.json",
                 {
-                    "evaluation_dir": _to_run_relative(eval_dir, out_dir),
-                    "candidate_api_rankings_excel": _to_run_relative(eval_out, out_dir),
-                    "candidate_api_rankings_rows_json": _to_run_relative(candidate_api_rankings_rows_path, out_dir),
-                    "retrieval_functional_match_rows_json": _to_run_relative(retrieval_functional_match_rows_path, out_dir),
-                    "duplicate_audit_json": _to_run_relative(duplicate_audit_json, out_dir),
-                    "hallucination_audit_json": _to_run_relative(hallucination_audit_json, out_dir),
-                    "ranking_anomaly_audit_json": _to_run_relative(ranking_anomaly_audit_json, out_dir),
-                    "mode_anomaly_excel": _to_run_relative(mode_anomaly_xlsx, out_dir),
-                    "cache_path": _to_run_relative(eval_cache, out_dir),
+                    "evaluation_dir": _to_run_relative(evaluation_outputs["evaluation_dir"], out_dir),
+                    "candidate_api_rankings_excel": _to_run_relative(evaluation_outputs["candidate_api_rankings_excel"], out_dir),
+                    "candidate_api_rankings_rows_json": _to_run_relative(evaluation_outputs["candidate_api_rankings_rows_json"], out_dir),
+                    "retrieval_functional_match_rows_json": _to_run_relative(evaluation_outputs["retrieval_functional_match_rows_json"], out_dir),
+                    "duplicate_audit_json": _to_run_relative(evaluation_outputs["duplicate_audit_json"], out_dir),
+                    "hallucination_audit_json": _to_run_relative(evaluation_outputs["hallucination_audit_json"], out_dir),
+                    "ranking_anomaly_audit_json": _to_run_relative(evaluation_outputs["ranking_anomaly_audit_json"], out_dir),
+                    "mode_anomaly_excel": _to_run_relative(evaluation_outputs["mode_anomaly_excel"], out_dir),
+                    "cache_path": _to_run_relative(evaluation_outputs["cache_path"], out_dir),
+                    "evaluation_agent": "EvaluationAgent",
+                    "evaluation_agent_mode": "deterministic_adapter",
                 },
             )
-            meta_tracker.finish_stage("evaluation_outputs", status="completed")
+            meta_tracker.finish_stage(
+                "evaluation_outputs",
+                status="completed",
+                evaluation_agent="EvaluationAgent",
+                evaluation_agent_mode="deterministic_adapter",
+            )
         except Exception as e:
             (out_dir / "evaluation_error.txt").write_text(str(e), encoding="utf-8")
             meta_tracker.finish_stage("evaluation_outputs", status="failed", error_file="evaluation_error.txt")
@@ -1426,7 +1437,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             meta_tracker.start_stage("composition_qos_evaluation")
             log_line(f"[{run_label}] starting composition QoS evaluation")
             try:
-                composition_result = evaluate_composition_qos(query_dir=out_dir, query_id=query_id, output_dir=out_dir / "evaluation")
+                composition_result = evaluation_agent.evaluate_composition_qos(query_dir=out_dir, query_id=query_id, output_dir=out_dir / "evaluation")
                 composition_qos_rows_json = composition_result.get("rows_json")
                 composition_qos_summary_json = composition_result.get("summary_json")
                 composition_qos_excel = composition_result.get("excel")
@@ -1442,6 +1453,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         "composition_validity_issues_json": _to_run_relative(composition_validity_issues_json, out_dir),
                         "composition_validity_issues_log": _to_run_relative(composition_validity_issues_log, out_dir),
                         "composition_validity_summary": composition_validity_summary,
+                        "evaluation_agent": "EvaluationAgent",
+                        "evaluation_agent_mode": "deterministic_adapter",
                     },
                 )
                 meta_tracker.finish_stage(
@@ -1453,6 +1466,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     issues_json=_to_run_relative(composition_validity_issues_json, out_dir),
                     issues_log=_to_run_relative(composition_validity_issues_log, out_dir),
                     composition_validity_summary=composition_validity_summary,
+                    evaluation_agent="EvaluationAgent",
+                    evaluation_agent_mode="deterministic_adapter",
                 )
                 log_line(f"[{run_label}] finished composition QoS evaluation")
             except Exception as e:

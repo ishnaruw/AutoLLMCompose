@@ -11,6 +11,7 @@ def build_llm_prompt(
     subtask_id: str,
     subtask_description: str,
     api_entries: List[Dict[str, Any]],
+    zero_match_retry: bool = False,
 ) -> str:
     compact_entries = []
     for a in api_entries:
@@ -27,34 +28,27 @@ def build_llm_prompt(
         }
         compact_entries.append(entry)
 
-    from src.config import CONFIG
-
-    if CONFIG.include_llm_reasons:
-        output_contract = (
-            "Output format:\n"
-            "{\n"
-            '  "matches": [\n'
-            '    {"candidate_id": "C01", "label": 0, "reason": "..."},\n'
-            '    {"candidate_id": "C02", "label": 1, "reason": "..."}\n'
-            "  ]\n"
-            "}\n"
-            "reason is optional and must be short when included."
-        )
-    else:
-        output_contract = (
-            "Output format:\n"
-            "{\n"
-            '  "matches": [\n'
-            '    {"candidate_id": "C01", "label": 0},\n'
-            '    {"candidate_id": "C02", "label": 1}\n'
-            "  ]\n"
-            "}\n"
-            "Do not include reason, explanation, comments, or prose."
-        )
+    output_contract = (
+        "Output format:\n"
+        "{\n"
+        '  "matches": [\n'
+        '    {"candidate_id": "C01", "label": 0, "reason": "wrong domain"},\n'
+        '    {"candidate_id": "C02", "label": 1, "reason": "directly retrieves needed data"}\n'
+        "  ]\n"
+        "}\n"
+        "reason is required for every item, must be short, and must not exceed 20 words."
+    )
+    retry_guidance = (
+        "\nThis is a zero-match recheck. The first pass found no matching API for this subtask.\n"
+        "Re-evaluate carefully for direct or necessary supporting APIs before returning all zeros again.\n"
+        "Do not force a match if every API is genuinely wrong-domain or irrelevant.\n"
+        if zero_match_retry
+        else ""
+    )
 
     return (
         "You are evaluating whether APIs are functionally suitable for one subtask in an API-selection experiment.\n"
-        "Your job is to judge whether each API is a good functional match for the subtask, not whether it is loosely related by topic words.\n"
+        "Your job is to judge whether each API is a direct or necessary supporting match for the subtask, not whether it is loosely related by topic words.\n"
         "Return ONLY one JSON object.\n"
         "Do not omit any API.\n"
         "Each candidate has candidate_id, the short ID used only for your output, and api_id, the real API identifier provided only as context.\n"
@@ -64,12 +58,16 @@ def build_llm_prompt(
         "Do not add markdown.\n"
         "Do not add explanation outside JSON.\n"
         "Judge only functional suitability for the subtask.\n"
-        "Use endpoint name, description, method, compact parameter descriptions, and tool-level context when available.\n"
-        "If the API belongs to the wrong domain or dataset, set relevant to 0 even if some keywords overlap.\n"
+        "Use endpoint name, endpoint description, method, compact parameter descriptions, and tool-level context when available.\n"
+        "Treat endpoint-level fields as primary evidence; use tool_description as context, not a replacement for endpoint function.\n"
+        "If the API belongs to the wrong domain or dataset, set label to 0 even if some keywords overlap.\n"
+        "Set label to 1 when the API directly performs the subtask OR provides essential data/capability needed to complete it.\n"
+        "Set label to 0 when the API only performs local/UI/configuration work unrelated to the subtask outcome.\n"
         f"Query ID: {query_id}\n"
         f"Main Task: {main_task}\n"
         f"Subtask ID: {subtask_id}\n"
         f"Subtask Description: {subtask_description}\n"
+        f"{retry_guidance}"
         f"{output_contract}\n\n"
         "Important rules:\n"
         "- label must be 0 or 1\n"
@@ -78,6 +76,9 @@ def build_llm_prompt(
         "- prioritize actual function and domain fit over keyword overlap\n"
         "- tool_description can reveal the true purpose of the API and should be used\n"
         "- parameters contain only compact name/description pairs and should be used as functional evidence\n"
+        "- weather forecast/current-weather APIs are functional matches for displaying weather information\n"
+        "- domain validation APIs are functional matches for checking whether a URL/domain target is valid\n"
+        "- notification sound/configuration APIs are not functional matches for sending push notifications\n"
         "- subject lists, topic lists, scripture topics, generic education content, or unrelated datasets are not course suggestion APIs unless they explicitly support retrieving or recommending real courses\n\n"
         f"APIs:\n{json.dumps(compact_entries, ensure_ascii=False)}"
     )

@@ -19,10 +19,13 @@ from src.eval.functional_match_prompt import build_llm_prompt
 from src.llm.autogen_gateway import call_autogen_gateway
 from src.llm.backends import make_backend
 
-CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.jsonl")
+CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.tooldesc.jsonl")
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
-EVAL_SYS = "You are a strict functional-match evaluator. Decide only whether an API is functionally suitable for a subtask. Return strict JSON only."
+EVAL_SYS = (
+    "You are a strict but fair functional-match evaluator. Decide only whether an API is functionally "
+    "suitable or essential supporting capability for a subtask. Return strict JSON only."
+)
 
 
 def _chunk_size() -> int:
@@ -297,6 +300,22 @@ def _functional_match_value(info: Dict[str, Any]) -> int:
         )
         or 0
     )
+
+
+def _has_positive_functional_match(results: Dict[str, Dict[str, Any]]) -> bool:
+    return any(_functional_match_value(info) == 1 for info in results.values())
+
+
+def _zero_match_retry_attempted(results: Dict[str, Dict[str, Any]], apis: List[Dict[str, Any]]) -> bool:
+    if not apis:
+        return True
+    for api in apis:
+        api_id = str(api.get("api_id") or "").strip()
+        if not api_id:
+            continue
+        if not _truthy(results.get(api_id, {}).get("zero_match_retry_attempted")):
+            return False
+    return True
 
 
 def _truthy(value: Any) -> bool:
@@ -625,6 +644,75 @@ def _evaluate_batches(
             return fn()
         return call_with_backoff(fn, name=name)
 
+    def _evaluate_chunk(
+        *,
+        batch: Dict[str, Any],
+        chunk: List[Dict[str, Any]],
+        chunk_idx: int,
+        total_chunks: int,
+        zero_match_retry: bool = False,
+    ) -> Tuple[Dict[str, Dict[str, Any]], List[str], List[str]]:
+        sid = batch["subtask_id"]
+        prompt = build_llm_prompt(
+            query_id=query_id,
+            main_task=batch["main_task"],
+            subtask_id=sid,
+            subtask_description=batch["subtask_description"],
+            api_entries=chunk,
+            zero_match_retry=zero_match_retry,
+        )
+        expected_ids = [a["api_id"] for a in chunk]
+        candidate_id_to_api_id = {
+            str(a.get("candidate_id")): str(a.get("api_id"))
+            for a in chunk
+            if str(a.get("candidate_id") or "").strip() and str(a.get("api_id") or "").strip()
+        }
+        expected_candidate_ids = list(candidate_id_to_api_id.keys())
+        role_suffix = "zero_match_retry_evaluator" if zero_match_retry else "evaluator"
+        call_name = (
+            f"functional_match_eval_zero_match_retry_s{sid}_chunk{chunk_idx}"
+            if zero_match_retry
+            else f"functional_match_eval_s{sid}_chunk{chunk_idx}"
+        )
+
+        def _call() -> str:
+            timeout_seconds = (
+                CONFIG.lmstudio_timeout_seconds
+                if getattr(backend, "provider", "") in {"lmstudio", "lmstudio_qwen"}
+                else None
+            )
+            return call_autogen_gateway(
+                backend=backend,
+                role_name=f"{stage_name}_{role_suffix}",
+                system_message=EVAL_SYS,
+                user_prompt=prompt,
+                temperature=0.0,
+                force_json=True,
+                timeout_s=timeout_seconds,
+                metadata={
+                    "source": "functional_match_eval",
+                    "stage_name": stage_name,
+                    "query_id": query_id,
+                    "subtask_id": sid,
+                    "chunk_index": chunk_idx,
+                    "zero_match_retry": zero_match_retry,
+                },
+            )
+
+        raw = _invoke(_call, name=call_name)
+        parsed, issue = _parse_results_with_issue(raw, expected_ids, candidate_id_to_api_id)
+        if issue is not None:
+            log_line(
+                f"[{stage_name}] invalid functional-match output ({issue.get('reason')}) "
+                f"chunk={chunk_idx}/{total_chunks}; expected={issue.get('expected_candidate_count', issue.get('expected_api_count'))} "
+                f"actual={issue.get('actual_candidate_count', issue.get('actual_api_count'))}"
+            )
+            retry_raw = _invoke(_call, name=f"{call_name}_schema_retry")
+            retry_parsed, retry_issue = _parse_results_with_issue(retry_raw, expected_ids, candidate_id_to_api_id)
+            if retry_issue is None or len(retry_parsed) >= len(parsed):
+                parsed = retry_parsed
+        return parsed, expected_ids, expected_candidate_ids
+
     _save_progress(
         progress_path,
         {
@@ -662,56 +750,12 @@ def _evaluate_batches(
                     f"[{stage_name}] query={query_id} subtask={sid} "
                     f"chunk={chunk_idx}/{total_chunks} completed={completed_api_items}/{total_api_items}"
                 )
-                prompt = build_llm_prompt(
-                    query_id=query_id,
-                    main_task=batch["main_task"],
-                    subtask_id=sid,
-                    subtask_description=batch["subtask_description"],
-                    api_entries=chunk,
+                parsed, expected_ids, expected_candidate_ids = _evaluate_chunk(
+                    batch=batch,
+                    chunk=chunk,
+                    chunk_idx=chunk_idx,
+                    total_chunks=total_chunks,
                 )
-                expected_ids = [a["api_id"] for a in chunk]
-                candidate_id_to_api_id = {
-                    str(a.get("candidate_id")): str(a.get("api_id"))
-                    for a in chunk
-                    if str(a.get("candidate_id") or "").strip() and str(a.get("api_id") or "").strip()
-                }
-                expected_candidate_ids = list(candidate_id_to_api_id.keys())
-
-                def _call() -> str:
-                    timeout_seconds = (
-                        CONFIG.lmstudio_timeout_seconds
-                        if getattr(backend, "provider", "") in {"lmstudio", "lmstudio_qwen"}
-                        else None
-                    )
-                    return call_autogen_gateway(
-                        backend=backend,
-                        role_name=f"{stage_name}_evaluator",
-                        system_message=EVAL_SYS,
-                        user_prompt=prompt,
-                        temperature=0.0,
-                        force_json=True,
-                        timeout_s=timeout_seconds,
-                        metadata={
-                            "source": "functional_match_eval",
-                            "stage_name": stage_name,
-                            "query_id": query_id,
-                            "subtask_id": sid,
-                            "chunk_index": chunk_idx,
-                        },
-                    )
-
-                raw = _invoke(_call, name=f"functional_match_eval_s{sid}_chunk{chunk_idx}")
-                parsed, issue = _parse_results_with_issue(raw, expected_ids, candidate_id_to_api_id)
-                if issue is not None:
-                    log_line(
-                        f"[{stage_name}] invalid functional-match output ({issue.get('reason')}) "
-                        f"chunk={chunk_idx}/{total_chunks}; expected={issue.get('expected_candidate_count', issue.get('expected_api_count'))} "
-                        f"actual={issue.get('actual_candidate_count', issue.get('actual_api_count'))}"
-                    )
-                    retry_raw = _invoke(_call, name=f"functional_match_eval_retry_s{sid}_chunk{chunk_idx}")
-                    retry_parsed, retry_issue = _parse_results_with_issue(retry_raw, expected_ids, candidate_id_to_api_id)
-                    if retry_issue is None or len(retry_parsed) >= len(parsed):
-                        parsed = retry_parsed
 
                 for api in chunk:
                     api_id = api["api_id"]
@@ -739,6 +783,53 @@ def _evaluate_batches(
                         "total_chunks_in_subtask": total_chunks,
                         "last_chunk_api_ids": expected_ids,
                         "last_chunk_candidate_ids": expected_candidate_ids,
+                        "completed_api_items": completed_api_items,
+                        "total_api_items": total_api_items,
+                    },
+                )
+
+        if apis and not _has_positive_functional_match(sub_results) and not _zero_match_retry_attempted(sub_results, apis):
+            total_chunks = math.ceil(len(apis) / float(chunk_size))
+            log_line(
+                f"[{stage_name}] query={query_id} subtask={sid} had zero positive functional matches; "
+                f"running one zero-match recheck across {len(apis)} APIs."
+            )
+            for chunk_idx, chunk in enumerate(_chunk_list(apis, chunk_size), start=1):
+                parsed, expected_ids, expected_candidate_ids = _evaluate_chunk(
+                    batch=batch,
+                    chunk=chunk,
+                    chunk_idx=chunk_idx,
+                    total_chunks=total_chunks,
+                    zero_match_retry=True,
+                )
+                for api in chunk:
+                    api_id = api["api_id"]
+                    key = f"{query_id}_{sid}_{api_id}"
+                    val = parsed.get(api_id, sub_results.get(api_id, {"functional_match": 0, "comment": "Missing from zero-match retry"}))
+                    val = dict(val)
+                    val["zero_match_retry_attempted"] = True
+                    cache[key] = val
+                    sub_results[api_id] = val
+
+                _save_cache(cache, cache_path)
+                _save_progress(
+                    progress_path,
+                    {
+                        "stage": stage_name,
+                        "query_id": query_id,
+                        "provider": provider,
+                        "model": backend.name(),
+                        "active_model": backend.active_model_name(),
+                        "multi_model_mode": backend.multi_model_mode(),
+                        "model_pool": backend.model_pool(),
+                        "chunk_size": chunk_size,
+                        "status": "running",
+                        "current_subtask_id": sid,
+                        "current_chunk_index": chunk_idx,
+                        "total_chunks_in_subtask": total_chunks,
+                        "last_chunk_api_ids": expected_ids,
+                        "last_chunk_candidate_ids": expected_candidate_ids,
+                        "zero_match_retry": True,
                         "completed_api_items": completed_api_items,
                         "total_api_items": total_api_items,
                     },
