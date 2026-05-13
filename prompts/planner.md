@@ -27,6 +27,13 @@ Rules:
 - Preserve subtask order exactly; do not reorder subtasks.
 - Explain how each API connects to the next step.
 - Do not invent APIs or reorder subtasks.
+- Every step must use a non-empty "api_id" copied exactly from the provided Candidate APIs.
+- Never use null, "none", "internal", "local", or invented placeholders for "api_id".
+- Do not create internal-only, UI-only, formatting-only, or local-computation-only steps without an API.
+- If a subtask seems internal, describe the internal transformation inside the "action" of the closest selected API step or choose the closest suitable provided API for that subtask.
+- "input_from_previous_step" and "output_to_next_step" must be strings or null only; do not return objects, arrays, or nested JSON in these fields.
+- The top-level JSON must contain exactly these required fields: "primary_plan", "selected_api_ids", and "overall_rationale".
+- Put "plan_id", "summary", "steps", and "subtask_coverage" inside "primary_plan"; do not put "steps" at the top level.
 - Functional correctness and subtask order come first.
 - Use QoS only when multiple APIs are similarly suitable.
 

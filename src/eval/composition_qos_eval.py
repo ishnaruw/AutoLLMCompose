@@ -20,7 +20,7 @@ EVAL_COLUMNS = [
     "Functional_Coverage",
     "Total_Response_Time",
     "Bottleneck_Throughput",
-    "Average_Workflow_Availability",
+    "Workflow_Availability",
     "Normalized_Response_Time_Score",
     "Normalized_Throughput_Score",
     "Normalized_Availability_Score",
@@ -38,7 +38,7 @@ SUMMARY_COLUMNS = [
     "Rank_By_Response_Time",
     "Bottleneck_Throughput",
     "Rank_By_Throughput",
-    "Average_Workflow_Availability",
+    "Workflow_Availability",
     "Rank_By_Availability",
     "Functional_Coverage",
     "Composition_Completeness",
@@ -76,9 +76,9 @@ DEFINITION_ROWS = [
         "Direction": "Higher is better",
     },
     {
-        "Metric": "Average Workflow Availability",
+        "Metric": "Workflow Availability",
         "Category": "QoS quality",
-        "Definition": "Average availability across planned APIs",
+        "Definition": "Product of availability values across planned APIs",
         "Direction": "Higher is better",
     },
     {
@@ -102,7 +102,7 @@ DEFINITION_ROWS = [
     {
         "Metric": "QoS-Adjusted Composition Score",
         "Category": "Overall comparison",
-        "Definition": "Weighted score combining normalized QoS, functional coverage, completeness, and validity",
+        "Definition": "Validity-gated weighted score: V * (0.4 * normalized QoS + 0.3 * functional coverage + 0.2 * completeness + 0.1)",
         "Direction": "Higher is better",
     },
 ]
@@ -146,6 +146,13 @@ def _as_float(value: Any) -> float | None:
         return float(value)
     except Exception:
         return None
+
+
+def _product(values: List[float]) -> float:
+    out = 1.0
+    for value in values:
+        out *= value
+    return out
 
 
 def _as_int_label(value: Any) -> int:
@@ -388,7 +395,7 @@ def _evaluate_mode(
         "Functional_Coverage": (functional_matches / planned_api_count) if planned_api_count else 0.0,
         "Total_Response_Time": round(sum(rt_values), 6) if qos_available else None,
         "Bottleneck_Throughput": round(min(tp_values), 6) if qos_available else None,
-        "Average_Workflow_Availability": round(sum(av_values) / len(av_values), 6) if qos_available else None,
+        "Workflow_Availability": round(_product(av_values), 6) if qos_available else None,
         "Normalized_Response_Time_Score": 0.0 if valid == 0 or has_missing_qos else None,
         "Normalized_Throughput_Score": 0.0 if valid == 0 or has_missing_qos else None,
         "Normalized_Availability_Score": 0.0 if valid == 0 or has_missing_qos else None,
@@ -403,7 +410,7 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
     metric_specs = [
         ("Total_Response_Time", "Normalized_Response_Time_Score", False),
         ("Bottleneck_Throughput", "Normalized_Throughput_Score", True),
-        ("Average_Workflow_Availability", "Normalized_Availability_Score", True),
+        ("Workflow_Availability", "Normalized_Availability_Score", True),
     ]
     for raw_key, norm_key, higher_better in metric_specs:
         values = [_as_float(row.get(raw_key)) for row in rows if _as_float(row.get(raw_key)) is not None]
@@ -426,7 +433,7 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
                 row[norm_key] = round((max_value - raw) / (max_value - min_value), 6)
 
     for row in rows:
-        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time", "Bottleneck_Throughput", "Average_Workflow_Availability"]):
+        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time", "Bottleneck_Throughput", "Workflow_Availability"]):
             row["Normalized_QoS_Score"] = 0.0
         else:
             row["Normalized_QoS_Score"] = round(
@@ -438,13 +445,20 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
                 / 3.0,
                 6,
             )
-        row["QoS_Adjusted_Composition_Score"] = round(
-            0.4 * float(row.get("Normalized_QoS_Score") or 0.0)
-            + 0.3 * float(row.get("Functional_Coverage") or 0.0)
-            + 0.2 * float(row.get("Composition_Completeness") or 0.0)
-            + 0.1 * float(row.get("Composition_Validity") or 0.0),
-            6,
-        )
+        validity = float(row.get("Composition_Validity") or 0.0)
+        if validity <= 0.0:
+            row["QoS_Adjusted_Composition_Score"] = 0.0
+        else:
+            row["QoS_Adjusted_Composition_Score"] = round(
+                validity
+                * (
+                    0.4 * float(row.get("Normalized_QoS_Score") or 0.0)
+                    + 0.3 * float(row.get("Functional_Coverage") or 0.0)
+                    + 0.2 * float(row.get("Composition_Completeness") or 0.0)
+                    + 0.1
+                ),
+                6,
+            )
 
 
 def _rank(rows: List[Dict[str, Any]], key: str, *, reverse: bool) -> Dict[str, int | None]:
@@ -465,7 +479,7 @@ def _summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     score_ranks = _rank(rows, "QoS_Adjusted_Composition_Score", reverse=True)
     rt_ranks = _rank(rows, "Total_Response_Time", reverse=False)
     tp_ranks = _rank(rows, "Bottleneck_Throughput", reverse=True)
-    av_ranks = _rank(rows, "Average_Workflow_Availability", reverse=True)
+    av_ranks = _rank(rows, "Workflow_Availability", reverse=True)
     best_score = min((rank for rank in score_ranks.values() if rank is not None), default=None)
     best_rt = min((rank for rank in rt_ranks.values() if rank is not None), default=None)
     best_tp = min((rank for rank in tp_ranks.values() if rank is not None), default=None)
@@ -498,7 +512,7 @@ def _summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "Rank_By_Response_Time": rt_ranks.get(mode),
                 "Bottleneck_Throughput": row.get("Bottleneck_Throughput"),
                 "Rank_By_Throughput": tp_ranks.get(mode),
-                "Average_Workflow_Availability": row.get("Average_Workflow_Availability"),
+                "Workflow_Availability": row.get("Workflow_Availability"),
                 "Rank_By_Availability": av_ranks.get(mode),
                 "Functional_Coverage": row.get("Functional_Coverage"),
                 "Composition_Completeness": row.get("Composition_Completeness"),
@@ -615,7 +629,7 @@ def _highlight_main_sheet(ws, rows: List[Dict[str, Any]]) -> None:
     best_specs = [
         ("Total_Response_Time", False),
         ("Bottleneck_Throughput", True),
-        ("Average_Workflow_Availability", True),
+        ("Workflow_Availability", True),
         ("Functional_Coverage", True),
         ("Composition_Completeness", True),
         ("QoS_Adjusted_Composition_Score", True),
@@ -646,7 +660,7 @@ def _write_excel(path: Path, rows: List[Dict[str, Any]], summary: List[Dict[str,
         "Functional_Coverage",
         "Total_Response_Time",
         "Bottleneck_Throughput",
-        "Average_Workflow_Availability",
+        "Workflow_Availability",
         "Normalized_Response_Time_Score",
         "Normalized_Throughput_Score",
         "Normalized_Availability_Score",

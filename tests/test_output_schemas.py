@@ -81,32 +81,31 @@ class OutputSchemaTests(unittest.TestCase):
     def test_planner_accepts_current_structure(self) -> None:
         output = PlannerOutput.model_validate(
             {
-                "paths": [
-                    {
-                        "path_id": 1,
-                        "path_score": 0.8,
-                        "summary": "Use best APIs",
-                        "steps": [
-                            {
-                                "step": 1,
-                                "api_id": "api_a",
-                                "subtask_id": 1,
-                                "action": "Call API",
-                                "why": "Matches subtask",
-                                "qos": None,
-                            }
-                        ],
-                        "subtask_coverage": [
-                            {"subtask_id": 1, "description": "Find route", "steps": [1], "coverage": "full"}
-                        ],
-                    }
-                ],
+                "primary_plan": {
+                    "plan_id": 1,
+                    "summary": "Use best APIs",
+                    "steps": [
+                        {
+                            "step": 1,
+                            "api_id": "api_a",
+                            "subtask_id": 1,
+                            "action": "Call API",
+                            "input_from_previous_step": None,
+                            "output_to_next_step": "api_a result",
+                            "why": "Matches subtask",
+                            "qos": None,
+                        }
+                    ],
+                    "subtask_coverage": [
+                        {"subtask_id": 1, "description": "Find route", "steps": [1], "coverage": "full"}
+                    ],
+                },
                 "selected_api_ids": ["api_a"],
                 "overall_rationale": "Best fit",
             }
         )
 
-        self.assertEqual(output.paths[0].steps[0].api_id, "api_a")
+        self.assertEqual(output.primary_plan.steps[0].api_id, "api_a")
 
     def test_ranked_output_missing_ranked_key_is_invalid(self) -> None:
         with self.assertRaises(ValidationError) as raised:

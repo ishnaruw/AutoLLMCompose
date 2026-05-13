@@ -358,7 +358,7 @@ def _build_llm_call(backend):
         return call_with_backoff(fn, name=name)
 
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
-        temp = 0.2 if role_name == "planner" else 0.0
+        temp = 0.2 if role_name.startswith("planner") else 0.0
         limits = _lmstudio_limits(role_name)
         return _invoke(
             lambda: call_autogen_gateway(
@@ -958,7 +958,8 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             "available_ranked": len(ranked_rows),
             "selected_count": len(selected),
         }
-    planner = planner_call(llm_call=lambda p: llm_call("planner", PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
+    planner_role = f"planner_{mode_name}"
+    planner = planner_call(llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
     _write_json(mode_dir / "4_planner.json", planner)
     return {"selected": selected_all, "planner": planner, "selection_trace": selection_trace}
 

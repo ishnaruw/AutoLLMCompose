@@ -4,12 +4,12 @@
 {"id":"q04","title":"Travel Planner with Tourist Spots","goal":"Design a travel app that books flights, suggests hotels, shows top-rated local attractions, and displays weather info."}
 {"id":"q05","title":"Stock Analyzer + Buy/Sell Alerts","goal":"Build a tool that tracks stock prices, analyzes trends using ML, and emails buy/sell signals to users."}
 {"id":"q06","title":"Event Finder with Calendar Sync","goal":"Build a service that finds local events based on interests and syncs selected ones to the user’s Google Calendar."}
-{"id":"q07","title":"News Summarizer with SMS Briefing","goal":"Create a system that fetches top news, summarizes headlines using LLM, and sends SMS digests every morning."}
+{"id":"q07","title":"News Summarizer with SMS Briefing","goal":"Build a service that fetches top news articles, summarizes them into an SMS-ready digest using an LLM/text-summarization API, and sends the digest via SMS on a daily schedule."}
 {"id":"q08","title":"Price Tracker for eCommerce Products","goal":"Build a bot that tracks product prices across multiple eCommerce platforms and sends alerts when prices drop."}
 {"id":"q09","title":"Online Course Recommendation Assistant","goal":"Create an education bot that suggests courses, checks ratings, and reminds users about enrollment via email."}
-{"id":"q10","title":"Gym Finder with Booking","goal":"Build a service that lists gyms near a user’s location, compares pricing plans, and enables mobile booking."}
-{"id":"q11","title":"Loan Simulator with Email Report","goal":"Create a tool that pulls interest rates, simulates repayment plans, and sends loan summaries to users."}
-{"id":"q12","title":"Content Safety Filter for Web Links","goal":"Design a service that checks whether a given URL is malicious or contains adult content before it opens in-browser."}
+{"id":"q10","title":"Gym Finder with Booking","goal":"Build a service that lists gyms near a user’s location, retrieves available pricing and membership plans for each gym, and enables mobile booking for a selected gym and plan."}
+{"id":"q11","title":"Loan Simulator with Email Report","goal":"Build a service that fetches current interest rates, calculates a repayment schedule and loan summary using a loan/amortization API, and emails the summary to the user."}
+{"id":"q12","title":"Content Safety Filter for Web Links","goal":"Build a service that validates a URL, checks malware reputation, checks adult-content risk, and returns the scan results for downstream blocking."}
 {"id":"q13","title":"Retail Promotions via Geo-Fencing","goal":"Build a mobile app that detects when a user enters a shopping area and sends active retail coupons via push or SMS."}
 {"id":"q14","title":"Social Media Topic Tracker","goal":"Design a system that tracks trending hashtags, top influencers, and returns a daily engagement summary."}
 {"id":"q15","title":"Delivery Status Tracker with Email Updates","goal":"Create a logistics tool that fetches parcel tracking data, predicts ETA, and emails the customer when status changes."}

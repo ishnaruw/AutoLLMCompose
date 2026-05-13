@@ -987,13 +987,14 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         st.info("No composition rows match the selected filters.")
         return
 
+    availability_col = "Workflow_Availability" if "Workflow_Availability" in filtered.columns else "Average_Workflow_Availability"
     numeric_cols = [
         "Composition_Validity",
         "Composition_Completeness",
         "Functional_Coverage",
         "Total_Response_Time",
         "Bottleneck_Throughput",
-        "Average_Workflow_Availability",
+        availability_col,
         "Normalized_Response_Time_Score",
         "Normalized_Throughput_Score",
         "Normalized_Availability_Score",
@@ -1017,7 +1018,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                     "Functional_Coverage",
                     "Total_Response_Time",
                     "Bottleneck_Throughput",
-                    "Average_Workflow_Availability",
+                    availability_col,
                     "Normalized_QoS_Score",
                     "QoS_Adjusted_Composition_Score",
                 ]
@@ -1166,7 +1167,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         raw_cols = [
             "Total_Response_Time",
             "Bottleneck_Throughput",
-            "Average_Workflow_Availability",
+            availability_col,
         ]
         raw_long = filtered.melt(
             id_vars=["Query_ID", "run_name", "Mode"],
@@ -1211,7 +1212,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             "QoS_Adjusted_Composition_Score": False,
             "Total_Response_Time": True,
             "Bottleneck_Throughput": False,
-            "Average_Workflow_Availability": False,
+            availability_col: False,
         }
         rank_rows: list[dict] = []
         for (query_id, run_name), group in filtered.groupby(["Query_ID", "run_name"], dropna=False):
