@@ -7,7 +7,7 @@ from src.core.output_schemas import PlannerOutput, validate_output_schema
 
 def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner.md"):
     """
-    Compose one or more alternative orchestration paths from ranked candidates.
+    Compose one final orchestration plan from ranked candidates.
 
     Inputs:
       - user_goal: the original natural language goal.
@@ -35,35 +35,32 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
 
     Expected LLM output (see prompts/planner.md for schema):
       {
-        "paths": [
-          {
-            "path_id": <int>,
-            "path_score": <number>,
-            "summary": "...",
-            "steps": [
-              {
-                "step": <int>,
-                "api_id": "...",
-                "subtask_id": <int or null>,
-                "action": "...",
-                "why": "...",
-                "score": <number>,
-                "qos": <null or object copied from service.qos>
-              },
-              ...
-            ],
-            "subtask_coverage": [
-              {
-                "subtask_id": <int>,
-                "description": "...",
-                "steps": [<int, ...>],
-                "coverage": "full" | "partial" | "missing"
-              },
-              ...
-            ]
-          },
-          ...
-        ],
+        "primary_plan": {
+          "plan_id": <int>,
+          "summary": "...",
+          "steps": [
+            {
+              "step": <int>,
+              "api_id": "...",
+              "subtask_id": <int or null>,
+              "action": "...",
+              "input_from_previous_step": "...",
+              "output_to_next_step": "...",
+              "why": "...",
+              "qos": <null or object copied from service.qos>
+            },
+            ...
+          ],
+          "subtask_coverage": [
+            {
+              "subtask_id": <int>,
+              "description": "...",
+              "steps": [<int, ...>],
+              "coverage": "full" | "partial" | "missing"
+            },
+            ...
+          ]
+        },
         "selected_api_ids": [...],
         "overall_rationale": "..."
       }
@@ -114,44 +111,4 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
         return parsed.value
 
     resp = llm_call(prompt)
-    plan = _parse_plan(resp)
-
-    # Enforce 3 paths: retry once with a short corrective instruction.
-    try:
-        paths = plan.get("paths") or []
-    except Exception:
-        paths = []
-
-    if not isinstance(paths, list) or len(paths) < 3:
-        retry_prompt = prompt + "\n\nIMPORTANT: Return EXACTLY 3 paths in 'paths' with path_id = 1, 2, 3. Output JSON only."
-        resp2 = llm_call(retry_prompt)
-        plan2 = _parse_plan(resp2)
-        try:
-            paths2 = plan2.get("paths") or []
-        except Exception:
-            paths2 = []
-        plan = plan2 if isinstance(paths2, list) and len(paths2) >= 1 else plan
-
-    # If still fewer than 3 paths, pad by cloning the best path into valid alternatives.
-    try:
-        paths = plan.get("paths") or []
-    except Exception:
-        paths = []
-
-    if not isinstance(paths, list):
-        paths = []
-    if paths and len(paths) < 3:
-        base = paths[0]
-        for pid in range(len(paths) + 1, 4):
-            clone = json.loads(json.dumps(base))  # deep copy
-            clone["path_id"] = pid
-            clone["summary"] = f"Alternative plan {pid} (fallback)"
-            # Slightly lower score to keep ordering deterministic
-            try:
-                clone["path_score"] = float(clone.get("path_score", 0.0)) - (pid * 0.01)
-            except Exception:
-                clone["path_score"] = 0.0
-            paths.append(clone)
-        plan["paths"] = paths[:3]
-
-    return plan
+    return _parse_plan(resp)

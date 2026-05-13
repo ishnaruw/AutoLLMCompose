@@ -147,27 +147,28 @@ class DecompositionOutput(_SchemaModel):
 
 
 class PlannerStepItem(_SchemaModel):
-    step: Any | None = None
-    api_id: str | None = None
-    subtask_id: Any | None = None
-    action: str | None = None
-    why: str | None = None
+    step: Any
+    api_id: str
+    subtask_id: Any
+    action: str
+    input_from_previous_step: str | None
+    output_to_next_step: str | None
+    why: str
     score: Any | None = None
     qos: Any | None = None
 
 
-class PlannerPathItem(_SchemaModel):
-    path_id: Any | None = None
-    path_score: Any | None = None
-    summary: str | None = None
+class PlannerPlanItem(_SchemaModel):
+    plan_id: Any
+    summary: str
     steps: List[PlannerStepItem] = Field(default_factory=list)
     subtask_coverage: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class PlannerOutput(_SchemaModel):
-    paths: List[PlannerPathItem] = Field(default_factory=list)
-    selected_api_ids: List[Any] = Field(default_factory=list)
-    overall_rationale: str | None = None
+    primary_plan: PlannerPlanItem
+    selected_api_ids: List[Any]
+    overall_rationale: str
 
 
 _T = TypeVar("_T", bound=BaseModel)

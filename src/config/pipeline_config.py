@@ -7,7 +7,7 @@ from typing import Dict, Any
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    run_tag: str | None = "RUNS_MAY_8"
+    run_tag: str | None = "RUNS_MAY_12"
 
     shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
     catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl")
@@ -15,9 +15,10 @@ class PipelineConfig:
     rag_top_k: int = 40
     ranker_max_candidates: int = 40
     ranker_pool_n: int = 40
-    functional_match_chunk_size: int = 6
+    functional_match_chunk_size: int = 40
     selector_top_n: int = 5
-    planner_enabled: bool = False
+    planner_enabled: bool = True
+    composition_qos_eval_enabled: bool = True
     use_autogen_agents: bool = True
     lmstudio_timeout_seconds: int = 600
     lmstudio_ranker_max_tokens: int = 2500

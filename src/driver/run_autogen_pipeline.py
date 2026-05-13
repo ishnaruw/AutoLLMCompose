@@ -26,6 +26,7 @@ from src.core.retry import call_with_backoff
 from src.eval.functional_match_eval import evaluate_query, evaluate_retrieval_functional_match
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
+from src.eval.composition_qos_eval import evaluate_composition_qos
 from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
 from src.eval.topsis_eval import _extract_qos, _run_topsis_pydecision
 from src.llm.autogen_gateway import call_autogen_gateway
@@ -379,6 +380,19 @@ def _build_llm_call(backend):
 def _write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _merge_json_file(path: Path, updates: Dict[str, Any]) -> None:
+    payload: Dict[str, Any] = {}
+    if path.exists():
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(loaded, dict):
+                payload = loaded
+        except Exception:
+            payload = {}
+    payload.update(updates)
+    _write_json(path, payload)
 
 
 def _to_run_relative(path: Path | None, run_dir: Path) -> str | None:
@@ -902,6 +916,7 @@ def _summarize_retry_outcomes(run_dir: Path) -> Dict[str, Any]:
 def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], planner_top_n: Dict[str, int], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
     mode_dir = out_dir / mode_name
     selected_all = []
+    selection_trace: Dict[str, Dict[str, Any]] = {}
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         ranked_rows = ranked_full.get(sub_id, [])
@@ -935,9 +950,35 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
                 "selected_count": len(selected),
             },
         )
+        selection_trace[sub_id] = {
+            "planner_top_k": selected_limit,
+            "planner_top_k_source": top_n_source,
+            "dynamic_top_k_from_functional_match": dynamic_top_n,
+            "fallback_used": fallback_used,
+            "available_ranked": len(ranked_rows),
+            "selected_count": len(selected),
+        }
     planner = planner_call(llm_call=lambda p: llm_call("planner", PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
     _write_json(mode_dir / "4_planner.json", planner)
-    return {"selected": selected_all, "planner": planner}
+    return {"selected": selected_all, "planner": planner, "selection_trace": selection_trace}
+
+
+def _planner_selection_k_summary(query_id: str | None, subtasks: List[Dict[str, Any]], by_mode: Dict[str, Dict[str, Dict[str, Any]]]) -> Dict[str, Any]:
+    by_subtask: Dict[str, Dict[str, Any]] = {}
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        by_subtask[sub_id] = {
+            mode: mode_trace.get(sub_id, {})
+            for mode, mode_trace in by_mode.items()
+        }
+    return {
+        "query_id": query_id,
+        "selection_stage": "planner_input_selection",
+        "selection_rule": "For each subtask and mode, select top K ranked APIs for planner input. K is the number of functionally matching retrieved APIs for that subtask when available; otherwise CONFIG.selector_top_n is used.",
+        "fallback_selector_top_n": CONFIG.selector_top_n,
+        "by_mode": by_mode,
+        "by_subtask": by_subtask,
+    }
 
 
 def run_autogen_once(user_goal: str, provider: str | None = None, model: str | None = None, query_id: str | None = None, query_title: str | None = None, run_tag: str | None = None) -> Tuple[Path, Path | None]:
@@ -971,6 +1012,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             "evaluation_triggered": False,
             "evaluation_dir": "evaluation",
             "planner_enabled": CONFIG.planner_enabled,
+            "composition_qos_eval_enabled": CONFIG.composition_qos_eval_enabled,
             "modes": MODE_ORDER,
             "llm_validation_policy": {
                 "max_validation_retries": CONFIG.llm_validation_max_retries,
@@ -1012,6 +1054,9 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     ranking_anomaly_audit_json: Path | None = None
     duplicate_audit_json: Path | None = None
     hallucination_audit_json: Path | None = None
+    composition_qos_rows_json: Path | None = None
+    composition_qos_summary_json: Path | None = None
+    composition_qos_excel: Path | None = None
     summary_selected = {"planner_enabled": CONFIG.planner_enabled}
     ranking_failures: List[Dict[str, Any]] = []
     run_status = "completed"
@@ -1058,7 +1103,6 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         try:
             raw_subtasks = decompose_goal(llm_call=lambda p: llm_call("decomposer", DECOMPOSER_SYS, p), user_goal=user_goal)
             subtasks = raw_subtasks
-            _write_json(out_dir / "debug" / "0_decomposer_raw.json", raw_subtasks)
             _write_json(out_dir / "0_decomposer.json", subtasks)
             meta_tracker.update(num_subtasks=len(subtasks))
             meta_tracker.finish_stage("decomposer", subtask_count=len(subtasks))
@@ -1144,7 +1188,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             subtask=sub,
                             candidates=no_qos_candidates,
                             prompt_path="prompts/ranker_no_qos.md",
-                            debug_raw_path=str(out_dir / "no_qos" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                            debug_raw_path=None,
                             use_compact_api_evidence=True,
                             include_qos_rank=False,
                             max_validation_retries=CONFIG.llm_validation_max_retries,
@@ -1184,7 +1228,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             llm_call=lambda p: llm_call("qos_scorer", QOS_SCORER_SYS, p),
                             candidates=pure_qos_candidates,
                             prompt_path="prompts/qos_score_llm.md",
-                            debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"1_qos_scores_raw_s{sub_id}.txt"),
+                            debug_raw_path=None,
                             batch_size=CONFIG.qos_llm_batch_size,
                             max_validation_retries=CONFIG.llm_validation_max_retries,
                             validate_formula=CONFIG.qos_llm_validate_formula,
@@ -1212,7 +1256,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                                 subtask=sub,
                                 candidates=pure_candidates,
                                 prompt_path="prompts/ranker_qos_pure_llm.md",
-                                debug_raw_path=str(out_dir / "qos_pure_llm" / "debug" / f"2_ranker_raw_s{sub_id}.txt"),
+                                debug_raw_path=None,
                                 use_compact_api_evidence=True,
                                 include_qos_rank=True,
                                 max_validation_retries=CONFIG.llm_validation_max_retries,
@@ -1314,19 +1358,128 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         if CONFIG.planner_enabled:
             meta_tracker.start_stage("planner")
             log_line(f"[{run_label}] starting planner")
-            try:
-                for mode in MODE_ORDER:
+            planner_failures: List[Dict[str, Any]] = []
+            planner_selection_k_by_mode_subtask: Dict[str, Dict[str, Dict[str, Any]]] = {}
+            planner_selection_k_summary_path = eval_dir / f"query_{query_id}_planner_selection_k_summary.json"
+            for mode in MODE_ORDER:
+                try:
                     planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
                     result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
                     summary_selected[f"{mode}_selected"] = len(result["selected"])
-                meta_tracker.finish_stage("planner", status="completed")
-                log_line(f"[{run_label}] finished planner")
-            except Exception:
-                meta_tracker.finish_stage("planner", status="failed")
-                raise
+                    planner_selection_k_by_mode_subtask[mode] = result.get("selection_trace", {})
+                except Exception as exc:
+                    failure = {"mode": mode, "failure_reason": type(exc).__name__, "error": str(exc)}
+                    planner_failures.append(failure)
+                    summary_selected[f"{mode}_planner_status"] = "failed"
+                    summary_selected[f"{mode}_planner_error"] = str(exc)
+                    (out_dir / mode / "planner_error.txt").parent.mkdir(parents=True, exist_ok=True)
+                    (out_dir / mode / "planner_error.txt").write_text(str(exc), encoding="utf-8")
+                    if run_status == "completed":
+                        run_status = "completed_with_warnings"
+                    log_error_event(
+                        {
+                            "event_type": "planner_mode_failure",
+                            "query_id": query_id,
+                            "mode": mode,
+                            "failure_stage": "planner",
+                            **failure,
+                        }
+                    )
+                    log_line(f"[{run_label}] mode={mode} planner failed: {exc}")
+            planner_selection_k_summary = _planner_selection_k_summary(query_id, subtasks, planner_selection_k_by_mode_subtask)
+            _write_json(planner_selection_k_summary_path, planner_selection_k_summary)
+            _merge_json_file(
+                out_dir / "evaluation_result.json",
+                {
+                    "planner_selection_k_summary_json": _to_run_relative(planner_selection_k_summary_path, out_dir),
+                    "planner_selection_k_by_mode_subtask": planner_selection_k_by_mode_subtask,
+                },
+            )
+            summary_selected["planner_selection_k_summary_json"] = _to_run_relative(planner_selection_k_summary_path, out_dir)
+            log_line(
+                f"[{run_label}] planner selection K summary saved to "
+                f"{_to_run_relative(planner_selection_k_summary_path, out_dir)}"
+            )
+            if planner_failures:
+                meta_tracker.finish_stage(
+                    "planner",
+                    status="completed_with_warnings",
+                    failure_count=len(planner_failures),
+                    failures=planner_failures,
+                    planner_selection_k_summary_json=_to_run_relative(planner_selection_k_summary_path, out_dir),
+                    planner_selection_k_by_mode_subtask=planner_selection_k_by_mode_subtask,
+                )
+            else:
+                meta_tracker.finish_stage(
+                    "planner",
+                    status="completed",
+                    planner_selection_k_summary_json=_to_run_relative(planner_selection_k_summary_path, out_dir),
+                    planner_selection_k_by_mode_subtask=planner_selection_k_by_mode_subtask,
+                )
+            log_line(f"[{run_label}] finished planner")
         else:
             summary_selected["planner_skipped_reason"] = "planner disabled in pipeline_config"
             meta_tracker.set_stage("planner", {"status": "skipped", "reason": "planner disabled in pipeline_config"})
+
+        if CONFIG.planner_enabled and CONFIG.composition_qos_eval_enabled:
+            meta_tracker.start_stage("composition_qos_evaluation")
+            log_line(f"[{run_label}] starting composition QoS evaluation")
+            try:
+                composition_result = evaluate_composition_qos(query_dir=out_dir, query_id=query_id, output_dir=out_dir / "evaluation")
+                composition_qos_rows_json = composition_result.get("rows_json")
+                composition_qos_summary_json = composition_result.get("summary_json")
+                composition_qos_excel = composition_result.get("excel")
+                composition_validity_issues_json = composition_result.get("composition_validity_issues_json")
+                composition_validity_issues_log = composition_result.get("composition_validity_issues_log")
+                composition_validity_summary = composition_result.get("composition_validity_summary")
+                _merge_json_file(
+                    out_dir / "evaluation_result.json",
+                    {
+                        "composition_qos_eval_rows_json": _to_run_relative(composition_qos_rows_json, out_dir),
+                        "composition_qos_eval_summary_json": _to_run_relative(composition_qos_summary_json, out_dir),
+                        "composition_qos_eval_excel": _to_run_relative(composition_qos_excel, out_dir),
+                        "composition_validity_issues_json": _to_run_relative(composition_validity_issues_json, out_dir),
+                        "composition_validity_issues_log": _to_run_relative(composition_validity_issues_log, out_dir),
+                        "composition_validity_summary": composition_validity_summary,
+                    },
+                )
+                meta_tracker.finish_stage(
+                    "composition_qos_evaluation",
+                    status="completed",
+                    rows_json=_to_run_relative(composition_qos_rows_json, out_dir),
+                    summary_json=_to_run_relative(composition_qos_summary_json, out_dir),
+                    excel=_to_run_relative(composition_qos_excel, out_dir),
+                    issues_json=_to_run_relative(composition_validity_issues_json, out_dir),
+                    issues_log=_to_run_relative(composition_validity_issues_log, out_dir),
+                    composition_validity_summary=composition_validity_summary,
+                )
+                log_line(f"[{run_label}] finished composition QoS evaluation")
+            except Exception as e:
+                (out_dir / "composition_qos_eval_error.txt").write_text(str(e), encoding="utf-8")
+                _merge_json_file(
+                    out_dir / "evaluation_result.json",
+                    {
+                        "composition_qos_eval_skipped_reason": None,
+                        "composition_qos_eval_error": str(e),
+                    },
+                )
+                meta_tracker.finish_stage("composition_qos_evaluation", status="failed", error_file="composition_qos_eval_error.txt")
+                if run_status == "completed":
+                    run_status = "completed_with_warnings"
+                log_line(f"[{run_label}] composition QoS evaluation failed: {e}")
+        else:
+            if not CONFIG.planner_enabled:
+                skipped_reason = "planner disabled in pipeline_config"
+            else:
+                skipped_reason = "composition_qos_eval disabled in pipeline_config"
+            summary_selected["composition_qos_eval_skipped_reason"] = skipped_reason
+            _merge_json_file(
+                out_dir / "evaluation_result.json",
+                {
+                    "composition_qos_eval_skipped_reason": skipped_reason,
+                },
+            )
+            meta_tracker.set_stage("composition_qos_evaluation", {"status": "skipped", "reason": skipped_reason})
 
         meta_tracker.update(summary=summary_selected)
         log_line(f"Saved run to {out_dir}")

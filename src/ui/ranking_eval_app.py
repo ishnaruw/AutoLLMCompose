@@ -421,6 +421,55 @@ def _load_excel_sheet(path_text: str, sheet_name: str) -> tuple[pd.DataFrame | N
     return df, None
 
 
+@st.cache_data(show_spinner=False)
+def _load_composition_reports(parent_dir_text: str) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
+    parent_dir = _path_for_input(parent_dir_text)
+    warnings: list[str] = []
+    eval_frames: list[pd.DataFrame] = []
+    workflow_frames: list[pd.DataFrame] = []
+    if not parent_dir.exists() or not parent_dir.is_dir():
+        return pd.DataFrame(), pd.DataFrame(), [f"Composition reports directory not found: {parent_dir}"]
+
+    rows_paths = sorted(parent_dir.rglob("evaluation/query_*_composition_qos_eval_rows.json"))
+    for rows_path in rows_paths:
+        run_dir = rows_path.parent.parent
+        try:
+            rows_payload = json.loads(rows_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            warnings.append(f"{rows_path}: {exc}")
+            continue
+        if not isinstance(rows_payload, list):
+            warnings.append(f"{rows_path}: expected a list of rows")
+            continue
+        rows_df = pd.DataFrame(rows_payload)
+        if rows_df.empty:
+            continue
+        rows_df["run_dir"] = str(run_dir)
+        rows_df["run_name"] = run_dir.name
+        rows_df["report_path"] = str(rows_path)
+        eval_frames.append(rows_df)
+
+        query_id = str(rows_df["Query_ID"].dropna().iloc[0]) if "Query_ID" in rows_df and not rows_df["Query_ID"].dropna().empty else "*"
+        xlsx_candidates = sorted(rows_path.parent.glob(f"query_{query_id}_composition_qos_eval.xlsx"))
+        if not xlsx_candidates:
+            xlsx_candidates = sorted(rows_path.parent.glob("query_*_composition_qos_eval.xlsx"))
+        if not xlsx_candidates:
+            continue
+        workflow_df, load_error = _load_excel_sheet(str(xlsx_candidates[0]), "Planned_Workflow")
+        if load_error or workflow_df is None:
+            warnings.append(f"{xlsx_candidates[0]} Planned_Workflow: {load_error}")
+            continue
+        if not workflow_df.empty:
+            workflow_df["run_dir"] = str(run_dir)
+            workflow_df["run_name"] = run_dir.name
+            workflow_df["report_path"] = str(xlsx_candidates[0])
+            workflow_frames.append(workflow_df)
+
+    eval_df = pd.concat(eval_frames, ignore_index=True) if eval_frames else pd.DataFrame()
+    workflow_df = pd.concat(workflow_frames, ignore_index=True) if workflow_frames else pd.DataFrame()
+    return eval_df, workflow_df, warnings
+
+
 def _matching_column(df: pd.DataFrame, desired: str) -> str | None:
     aliases = {
         "Subtask ID": ("Subtask ID", "Sub Task", "subtask_id", "Subtask"),
@@ -910,6 +959,373 @@ def _filter_pairwise(pairwise: pd.DataFrame, metrics: list[str], modes: list[str
     ].copy()
 
 
+def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], selected_queries: list[str]) -> None:
+    st.subheader("Composition Workflow Evaluation")
+    eval_df, workflow_df, warnings = _load_composition_reports(parent_dir)
+    for warning in warnings:
+        st.warning(warning)
+    if eval_df.empty:
+        st.info("No composition QoS evaluation reports found under the selected parent directory.")
+        return
+
+    query_col = "Query_ID"
+    mode_col = "Mode"
+    selected_queries = [str(query) for query in selected_queries]
+    selected_composition_modes = [mode for mode in selected_modes if mode in eval_df[mode_col].dropna().astype(str).unique().tolist()]
+    st.caption(
+        "Using shared sidebar filters: "
+        f"queries={', '.join(selected_queries) if selected_queries else 'all'}; "
+        f"modes={', '.join(selected_composition_modes) if selected_composition_modes else 'all'}"
+    )
+
+    filtered = eval_df.copy()
+    if selected_queries:
+        filtered = filtered[filtered[query_col].astype(str).isin(selected_queries)]
+    if selected_composition_modes:
+        filtered = filtered[filtered[mode_col].astype(str).isin(selected_composition_modes)]
+    if filtered.empty:
+        st.info("No composition rows match the selected filters.")
+        return
+
+    numeric_cols = [
+        "Composition_Validity",
+        "Composition_Completeness",
+        "Functional_Coverage",
+        "Total_Response_Time",
+        "Bottleneck_Throughput",
+        "Average_Workflow_Availability",
+        "Normalized_Response_Time_Score",
+        "Normalized_Throughput_Score",
+        "Normalized_Availability_Score",
+        "Normalized_QoS_Score",
+        "QoS_Adjusted_Composition_Score",
+    ]
+    for col in numeric_cols:
+        if col in filtered:
+            filtered[col] = pd.to_numeric(filtered[col], errors="coerce")
+
+    st.dataframe(
+        filtered[
+            [
+                col
+                for col in [
+                    "Query_ID",
+                    "run_name",
+                    "Mode",
+                    "Composition_Validity",
+                    "Composition_Completeness",
+                    "Functional_Coverage",
+                    "Total_Response_Time",
+                    "Bottleneck_Throughput",
+                    "Average_Workflow_Availability",
+                    "Normalized_QoS_Score",
+                    "QoS_Adjusted_Composition_Score",
+                ]
+                if col in filtered.columns
+            ]
+        ].round(4),
+        width="stretch",
+        hide_index=True,
+    )
+
+    chart_tab, raw_tab, workflow_tab = st.tabs(["Score & QoS Charts", "Ranks & Validity", "Planned Workflow"])
+    with chart_tab:
+        score_overview = filtered.copy()
+        score_overview["Query_ID"] = score_overview["Query_ID"].astype(str)
+        score_overview["QoS_Adjusted_Composition_Score"] = pd.to_numeric(
+            score_overview["QoS_Adjusted_Composition_Score"],
+            errors="coerce",
+        )
+        overall_score = (
+            score_overview.dropna(subset=["QoS_Adjusted_Composition_Score"])
+            .groupby("Mode", as_index=False)
+            .agg(
+                Mean_QoS_Adjusted_Composition_Score=("QoS_Adjusted_Composition_Score", "mean"),
+                Std_QoS_Adjusted_Composition_Score=("QoS_Adjusted_Composition_Score", "std"),
+                Query_Count=("Query_ID", "nunique"),
+                Valid_Composition_Rate=("Composition_Validity", "mean"),
+                Mean_Functional_Coverage=("Functional_Coverage", "mean"),
+                Mean_Normalized_QoS_Score=("Normalized_QoS_Score", "mean"),
+            )
+        )
+        if not overall_score.empty:
+            overall_score["Mode"] = pd.Categorical(overall_score["Mode"], categories=MODE_ORDER, ordered=True)
+            overall_score = overall_score.sort_values("Mode")
+            overall_score["Std_QoS_Adjusted_Composition_Score"] = overall_score["Std_QoS_Adjusted_Composition_Score"].fillna(0.0)
+            overall_fig = px.bar(
+                overall_score,
+                x="Mode",
+                y="Mean_QoS_Adjusted_Composition_Score",
+                color="Mode",
+                error_y="Std_QoS_Adjusted_Composition_Score",
+                text_auto=".3f",
+                title="Overall Mean QoS-Adjusted Composition Score by Mode",
+                range_y=[0, 1],
+                category_orders={"Mode": MODE_ORDER},
+                hover_data=[
+                    "Query_Count",
+                    "Valid_Composition_Rate",
+                    "Mean_Functional_Coverage",
+                    "Mean_Normalized_QoS_Score",
+                ],
+            )
+            overall_fig.update_traces(textposition="outside", cliponaxis=False)
+            overall_fig.update_layout(
+                height=430,
+                margin=dict(l=10, r=10, t=60, b=60),
+                xaxis_title="Mode",
+                yaxis_title="Mean QoS-Adjusted Composition Score",
+                showlegend=False,
+            )
+            st.plotly_chart(overall_fig, width="stretch")
+            st.dataframe(
+                overall_score.round(
+                    {
+                        "Mean_QoS_Adjusted_Composition_Score": 4,
+                        "Std_QoS_Adjusted_Composition_Score": 4,
+                        "Valid_Composition_Rate": 4,
+                        "Mean_Functional_Coverage": 4,
+                        "Mean_Normalized_QoS_Score": 4,
+                    }
+                ),
+                width="stretch",
+                hide_index=True,
+            )
+
+        query_order = sorted(
+            score_overview["Query_ID"].dropna().unique().tolist(),
+            key=lambda value: int(value[1:]) if value.lower().startswith("q") and value[1:].isdigit() else value,
+        )
+        all_query_fig = px.bar(
+            score_overview,
+            x="Query_ID",
+            y="QoS_Adjusted_Composition_Score",
+            color="Mode",
+            barmode="group",
+            text_auto=".3f",
+            title="QoS-Adjusted Composition Score Across Queries",
+            range_y=[0, 1],
+            category_orders={"Query_ID": query_order, "Mode": MODE_ORDER},
+            hover_data=["run_name", "Composition_Validity", "Functional_Coverage", "Normalized_QoS_Score"],
+        )
+        all_query_fig.update_traces(textposition="outside", cliponaxis=False)
+        all_query_fig.update_layout(
+            height=520,
+            margin=dict(l=10, r=10, t=60, b=80),
+            xaxis_title="Query",
+            yaxis_title="QoS-Adjusted Composition Score",
+            legend_title_text="Mode",
+            bargap=0.2,
+            bargroupgap=0.05,
+        )
+        all_query_fig.update_xaxes(tickangle=0)
+        st.plotly_chart(all_query_fig, width="stretch")
+
+        normalized_cols = [
+            "Normalized_Response_Time_Score",
+            "Normalized_Throughput_Score",
+            "Normalized_Availability_Score",
+        ]
+        norm_long = filtered.melt(
+            id_vars=["Query_ID", "run_name", "Mode"],
+            value_vars=[col for col in normalized_cols if col in filtered],
+            var_name="Metric",
+            value_name="Score",
+        )
+        if not norm_long.empty:
+            norm_fig = px.bar(
+                norm_long,
+                x="Mode",
+                y="Score",
+                color="Metric",
+                barmode="group",
+                facet_col="Query_ID" if norm_long["Query_ID"].nunique() > 1 else None,
+                title="Normalized QoS Dimension Scores",
+                range_y=[0, 1],
+            )
+            norm_fig.update_layout(height=400, margin=dict(l=10, r=10, t=55, b=10))
+            st.plotly_chart(norm_fig, width="stretch")
+
+        scatter_fig = px.scatter(
+            filtered,
+            x="Functional_Coverage",
+            y="Normalized_QoS_Score",
+            color="Mode",
+            symbol="Composition_Validity",
+            hover_data=["Query_ID", "run_name", "QoS_Adjusted_Composition_Score"],
+            text="Mode",
+            title="Functional Coverage vs Normalized QoS",
+            range_x=[-0.05, 1.05],
+            range_y=[-0.05, 1.05],
+        )
+        scatter_fig.update_traces(textposition="top center")
+        scatter_fig.update_layout(height=430, margin=dict(l=10, r=10, t=55, b=10))
+        st.plotly_chart(scatter_fig, width="stretch")
+
+    with raw_tab:
+        raw_cols = [
+            "Total_Response_Time",
+            "Bottleneck_Throughput",
+            "Average_Workflow_Availability",
+        ]
+        raw_long = filtered.melt(
+            id_vars=["Query_ID", "run_name", "Mode"],
+            value_vars=[col for col in raw_cols if col in filtered],
+            var_name="Metric",
+            value_name="Value",
+        ).dropna(subset=["Value"])
+        if not raw_long.empty:
+            raw_fig = px.bar(
+                raw_long,
+                x="Mode",
+                y="Value",
+                color="Mode",
+                facet_col="Metric",
+                facet_col_wrap=3,
+                text_auto=".3f",
+                title="Raw Composition-Level QoS Metrics",
+            )
+            raw_fig.update_yaxes(matches=None)
+            raw_fig.update_layout(height=390, margin=dict(l=10, r=10, t=55, b=10), showlegend=False)
+            st.plotly_chart(raw_fig, width="stretch")
+
+        validity_long = filtered.melt(
+            id_vars=["Query_ID", "run_name", "Mode"],
+            value_vars=[col for col in ["Composition_Completeness", "Composition_Validity"] if col in filtered],
+            var_name="Metric",
+            value_name="Score",
+        )
+        validity_fig = px.bar(
+            validity_long,
+            x="Mode",
+            y="Score",
+            color="Metric",
+            barmode="group",
+            title="Composition Completeness and Validity",
+            range_y=[0, 1],
+        )
+        validity_fig.update_layout(height=360, margin=dict(l=10, r=10, t=55, b=10))
+        st.plotly_chart(validity_fig, width="stretch")
+
+        rank_cols = {
+            "QoS_Adjusted_Composition_Score": False,
+            "Total_Response_Time": True,
+            "Bottleneck_Throughput": False,
+            "Average_Workflow_Availability": False,
+        }
+        rank_rows: list[dict] = []
+        for (query_id, run_name), group in filtered.groupby(["Query_ID", "run_name"], dropna=False):
+            for metric, ascending in rank_cols.items():
+                if metric not in group:
+                    continue
+                ranked = group[["Mode", metric]].dropna().copy()
+                if ranked.empty:
+                    continue
+                ranked["Rank"] = ranked[metric].rank(method="min", ascending=ascending)
+                for _, row in ranked.iterrows():
+                    rank_rows.append(
+                        {
+                            "Query_ID": query_id,
+                            "run_name": run_name,
+                            "Mode": row["Mode"],
+                            "Metric": metric,
+                            "Rank": row["Rank"],
+                        }
+                    )
+        rank_df = pd.DataFrame(rank_rows)
+        if not rank_df.empty:
+            selected_rank_query = str(filtered["Query_ID"].iloc[0])
+            selected_rank_run = str(filtered["run_name"].iloc[0])
+            heat_df = rank_df[
+                (rank_df["Query_ID"].astype(str) == selected_rank_query)
+                & (rank_df["run_name"].astype(str) == selected_rank_run)
+            ].pivot(index="Mode", columns="Metric", values="Rank")
+            if not heat_df.empty:
+                fig = px.imshow(
+                    heat_df.astype(float),
+                    text_auto=".0f",
+                    color_continuous_scale="RdYlGn_r",
+                    title=f"Mode Rank Heatmap: {selected_rank_query} / {selected_rank_run}",
+                    aspect="auto",
+                )
+                fig.update_layout(height=360, margin=dict(l=10, r=10, t=55, b=10))
+                st.plotly_chart(fig, width="stretch")
+
+    with workflow_tab:
+        workflow_view = workflow_df.copy()
+        if not workflow_view.empty:
+            if selected_queries and "Query_ID" in workflow_view:
+                workflow_view = workflow_view[workflow_view["Query_ID"].astype(str).isin(selected_queries)]
+            if selected_composition_modes and "Mode" in workflow_view:
+                workflow_view = workflow_view[workflow_view["Mode"].astype(str).isin(selected_composition_modes)]
+        if workflow_view.empty:
+            st.info("No planned workflow rows found for the selected composition reports.")
+            return
+        for col in ["Step", "rt_ms", "tp_rps", "availability", "Functional_Match"]:
+            if col in workflow_view:
+                workflow_view[col] = pd.to_numeric(workflow_view[col], errors="coerce")
+
+        st.dataframe(
+            workflow_view[
+                [
+                    col
+                    for col in [
+                        "Query_ID",
+                        "run_name",
+                        "Mode",
+                        "Step",
+                        "Subtask_ID",
+                        "API_ID",
+                        "Functional_Match",
+                        "rt_ms",
+                        "tp_rps",
+                        "availability",
+                        "Action",
+                    ]
+                    if col in workflow_view.columns
+                ]
+            ],
+            width="stretch",
+            hide_index=True,
+        )
+
+        timeline_source = workflow_view.dropna(subset=["Step"]).copy()
+        if not timeline_source.empty:
+            timeline_source["y_label"] = timeline_source["Mode"].astype(str) + " | " + timeline_source["run_name"].astype(str)
+            timeline_fig = px.scatter(
+                timeline_source,
+                x="Step",
+                y="y_label",
+                color="Mode",
+                text="API_ID",
+                hover_data=["Subtask_ID", "Action", "Input_From_Previous_Step", "Output_To_Next_Step"],
+                title="Planned Workflow Timeline",
+            )
+            timeline_fig.update_traces(mode="markers+text", textposition="top center")
+            timeline_fig.update_layout(height=460, margin=dict(l=10, r=10, t=55, b=10), yaxis_title="Mode / Run")
+            st.plotly_chart(timeline_fig, width="stretch")
+
+        step_metric_options = [col for col in ["rt_ms", "tp_rps", "availability"] if col in workflow_view.columns]
+        if not step_metric_options:
+            st.info("No step-level QoS columns found for this workflow report.")
+            return
+        step_metric = st.selectbox("Step-level QoS metric", step_metric_options, key="composition_step_metric")
+        step_df = workflow_view.dropna(subset=["Step", step_metric]).copy()
+        if not step_df.empty:
+            line_fig = px.line(
+                step_df,
+                x="Step",
+                y=step_metric,
+                color="Mode",
+                markers=True,
+                line_group="run_name",
+                hover_data=["Query_ID", "run_name", "API_ID", "Subtask_ID"],
+                title=f"Step-Level {step_metric}",
+            )
+            line_fig.update_layout(height=380, margin=dict(l=10, r=10, t=55, b=10))
+            st.plotly_chart(line_fig, width="stretch")
+
+
 def render_ranking_evaluation() -> None:
     st.title("MAOF Ranking Evaluation")
 
@@ -934,79 +1350,107 @@ def render_ranking_evaluation() -> None:
             default=MODE_ORDER,
             help="Evaluation includes only query/subtask cases where all selected modes have usable outputs for the metric being computed.",
         )
+        discovered_rows, discovery_warnings = _discover_query_runs(parent_dir)
+        for warning in discovery_warnings:
+            st.warning(warning)
+        query_options = sorted({str(row["query_id"]) for row in discovered_rows if row.get("query_id")})
+        query_filter_key = "ranking_eval_shared_query_filter"
+        query_options_signature_key = f"{query_filter_key}_options"
+        if st.session_state.get(query_options_signature_key) != query_options:
+            st.session_state[query_filter_key] = query_options
+            st.session_state[query_options_signature_key] = query_options
+        else:
+            current_queries = st.session_state.get(query_filter_key, query_options)
+            sanitized_queries = [query for query in current_queries if query in query_options]
+            if sanitized_queries != current_queries or not sanitized_queries:
+                st.session_state[query_filter_key] = query_options
+        selected_queries_common = st.multiselect(
+            "Query ID",
+            query_options,
+            default=query_options,
+            help="Shared query filter for ranking similarity and composition workflow reports.",
+            key=query_filter_key,
+        )
         st.caption(K_HELP)
         if st.button("Reload reports"):
             _load_bundle.clear()
+            _load_composition_reports.clear()
 
     if len(selected_modes) < 2:
         st.warning("Select at least two modes.")
         return
 
-    bundle = _load_bundle(parent_dir, rbo_p, tuple(selected_modes))
-    cases_df = cases_to_frame(bundle.cases)
+    composition_tab, ranking_tab = st.tabs(["Composition Workflow Evaluation", "Ranking Similarity Evaluation"])
+    with composition_tab:
+        _render_composition_evaluation(parent_dir, list(selected_modes), list(selected_queries_common))
 
-    if bundle.warnings:
-        with st.expander(f"Warnings ({len(bundle.warnings)})", expanded=False):
-            for warning in bundle.warnings:
-                st.warning(warning)
+    with ranking_tab:
+        bundle = _load_bundle(parent_dir, rbo_p, tuple(selected_modes))
+        cases_df = cases_to_frame(bundle.cases)
 
-    if not bundle.cases:
-        st.error("No query/subtask cases were available for the selected modes.")
-        st.caption("Check that the selected parent directory contains q* run folders with Excel reports.")
-        if not bundle.invalid_cases.empty:
-            with st.expander(f"Invalid mode/subtask cases ({len(bundle.invalid_cases)})", expanded=True):
-                st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
-        return
+        if bundle.warnings:
+            with st.expander(f"Warnings ({len(bundle.warnings)})", expanded=False):
+                for warning in bundle.warnings:
+                    st.warning(warning)
 
-    with st.sidebar:
-        st.header("Filters")
-        query_options = sorted(cases_df["query_id"].unique().tolist())
-        selected_queries = st.multiselect("Query ID", query_options, default=query_options)
+        if not bundle.cases:
+            st.error("No query/subtask cases were available for the selected modes.")
+            st.caption("Check that the selected parent directory contains q* run folders with Excel reports.")
+            if not bundle.invalid_cases.empty:
+                with st.expander(f"Invalid mode/subtask cases ({len(bundle.invalid_cases)})", expanded=True):
+                    st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
+            return
 
-        visible_cases_df = cases_df[cases_df["query_id"].isin(selected_queries)]
-        subtask_options = sorted(visible_cases_df["subtask_id"].unique().tolist(), key=lambda value: str(value))
-        selected_subtasks = st.multiselect("Subtask ID", subtask_options, default=subtask_options)
+        with st.sidebar:
+            st.header("Filters")
+            query_options = sorted(cases_df["query_id"].unique().tolist())
+            selected_queries = [query for query in selected_queries_common if query in query_options] or query_options
+            st.caption("Using shared Query ID filter: " + ", ".join(selected_queries))
 
-        selected_metrics = st.multiselect(
-            "Metric",
-            METRIC_NAMES,
-            default=METRIC_NAMES,
-            format_func=lambda value: METRIC_LABELS.get(value, value),
+            visible_cases_df = cases_df[cases_df["query_id"].isin(selected_queries)]
+            subtask_options = sorted(visible_cases_df["subtask_id"].unique().tolist(), key=lambda value: str(value))
+            selected_subtasks = st.multiselect("Subtask ID", subtask_options, default=subtask_options)
+
+            selected_metrics = st.multiselect(
+                "Metric",
+                METRIC_NAMES,
+                default=METRIC_NAMES,
+                format_func=lambda value: METRIC_LABELS.get(value, value),
+            )
+
+        if not selected_metrics:
+            st.warning("Select at least one metric.")
+            return
+
+        filtered_ids = set(
+            cases_df[
+                cases_df["query_id"].isin(selected_queries)
+                & cases_df["subtask_id"].isin(selected_subtasks)
+            ]["case_id"]
         )
+        filtered_cases = [case for case in bundle.cases if case.case_id in filtered_ids]
+        if not filtered_cases:
+            st.error("No cases match the selected filters.")
+            return
 
-    if not selected_metrics:
-        st.warning("Select at least one metric.")
-        return
+        filtered_matrices, filtered_counts = aggregate_matrices_with_counts(filtered_cases, p=rbo_p)
+        filtered_pairwise = matrices_to_pairwise_table(filtered_matrices, filtered_counts)
 
-    filtered_ids = set(
-        cases_df[
-            cases_df["query_id"].isin(selected_queries)
-            & cases_df["subtask_id"].isin(selected_subtasks)
-        ]["case_id"]
-    )
-    filtered_cases = [case for case in bundle.cases if case.case_id in filtered_ids]
-    if not filtered_cases:
-        st.error("No cases match the selected filters.")
-        return
-
-    filtered_matrices, filtered_counts = aggregate_matrices_with_counts(filtered_cases, p=rbo_p)
-    filtered_pairwise = matrices_to_pairwise_table(filtered_matrices, filtered_counts)
-
-    fallback_count = sum(case.k_fallback_used for case in filtered_cases)
-    included_pairwise = (
-        int(filtered_pairwise["included_cases"].sum())
-        if "included_cases" in filtered_pairwise.columns and not filtered_pairwise.empty
-        else 0
-    )
-    stat_cols = st.columns(7)
-    stat_cols[0].metric("Included cases", len(filtered_cases))
-    stat_cols[1].metric("Discovered runs", len(bundle.discovered_run_dirs))
-    stat_cols[2].metric("Loaded reports", len(bundle.loaded_report_paths))
-    stat_cols[3].metric("Fallback K cases", fallback_count)
-    stat_cols[4].metric("Metric comparisons", included_pairwise)
-    stat_cols[5].metric("Invalid cases", len(bundle.invalid_cases))
-    stat_cols[6].metric("Rows loaded", len(bundle.raw_rows))
-    st.caption("Evaluation rule: strict selected-mode evaluation. Final reporting should use all four modes selected.")
+        fallback_count = sum(case.k_fallback_used for case in filtered_cases)
+        included_pairwise = (
+            int(filtered_pairwise["included_cases"].sum())
+            if "included_cases" in filtered_pairwise.columns and not filtered_pairwise.empty
+            else 0
+        )
+        stat_cols = st.columns(7)
+        stat_cols[0].metric("Included cases", len(filtered_cases))
+        stat_cols[1].metric("Discovered runs", len(bundle.discovered_run_dirs))
+        stat_cols[2].metric("Loaded reports", len(bundle.loaded_report_paths))
+        stat_cols[3].metric("Fallback K cases", fallback_count)
+        stat_cols[4].metric("Metric comparisons", included_pairwise)
+        stat_cols[5].metric("Invalid cases", len(bundle.invalid_cases))
+        stat_cols[6].metric("Rows loaded", len(bundle.raw_rows))
+        st.caption("Evaluation rule: strict selected-mode evaluation. Final reporting should use all four modes selected.")
 
     if not bundle.invalid_cases.empty:
         st.subheader("Invalid Evaluation Cases")
