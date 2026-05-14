@@ -210,6 +210,31 @@ Coordinator fusion and multi-LLM comparison are under active development.
 * **WSDream** (QoS measurements: latency, throughput, availability)
 * **Custom curated catalogs** for cross-domain service discovery experiments
 
+### ToolBench Enriched Catalogs
+
+MAOF can materialize the subset of ToolBench endpoint evidence used by the API
+catalog, so runtime ranking/evaluation prompts do not need to scan the full
+external ToolBench tree.
+
+```bash
+python -m src.tools.build_enriched_catalog
+```
+
+By default this reads `TOOLBENCH_TOOLS_ROOT` or
+`/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools`, enriches
+only APIs already present in the MAOF catalog, and writes three canonical
+runtime data files:
+
+* `data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl`
+* `data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl`
+* `data/processed/api_catalog_sample_balanced/api_qos.jsonl`
+* `data/processed/api_catalog_sample_balanced/enrichment_manifest.json`
+
+Runtime service loading uses the enriched functional catalog for API evidence.
+When QoS is requested, it merges `api_qos.jsonl` by `api_id`; otherwise it
+returns the same functional rows without QoS. Legacy no-QoS/with-QoS catalogs
+remain supported as generation inputs and fallbacks.
+
 ---
 
 ## Future Extensions

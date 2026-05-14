@@ -32,7 +32,7 @@ from src.llm.backends import (
     groq_experiment_model_pool,
     make_backend,
 )
-from src.tools.fetch_services import fetch_services
+from src.tools.fetch_services import catalog_path, fetch_services
 
 DECOMPOSER_SYS = (
     "You are a decomposition agent for API discovery. "
@@ -1149,7 +1149,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         eval_dir = out_dir / "evaluation"
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "functional_match_cache.json"
-        evaluation_agent = EvaluationAgent(catalog_no_qos_path=CONFIG.catalog_no_qos_path)
+        evaluation_agent = EvaluationAgent(catalog_no_qos_path=catalog_path(with_qos=False))
         meta_tracker.start_stage("retrieval_functional_match_evaluation")
         log_line(f"[{run_label}] starting Functional Candidate Refinement labeling")
         try:

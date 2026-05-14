@@ -8,6 +8,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+from src.tools.fetch_services import catalog_path
+
 MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_INDEX = {name: idx for idx, name in enumerate(MODE_ORDER)}
 
@@ -551,7 +553,7 @@ def main() -> None:
     parser.add_argument(
         "--catalog-path",
         type=Path,
-        default=Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl"),
+        default=catalog_path(with_qos=False),
         help="Catalog JSONL used as the source of truth for valid API ids.",
     )
     parser.add_argument(

@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from src.config import CONFIG
 from src.eval.candidate_api_rankings_excel import enrich_functional_match_rows_with_anomaly_flags, write_candidate_api_rankings_excel
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
+from src.tools.fetch_services import catalog_path
 
 RUN_DIR_PATTERN = re.compile(r"^q\d+_\d{8}T\d{6}$", flags=re.IGNORECASE)
 
@@ -55,7 +55,7 @@ def _load_or_collect_duplicate_audit(run_dir: Path, eval_dir: Path, query_id: st
 def _load_or_collect_hallucination_audit(run_dir: Path, eval_dir: Path, query_id: str) -> Dict[str, Any]:
     path = eval_dir / f"query_{query_id}_hallucination_audit.json"
     audit = _load_audit_json(path)
-    return audit if audit is not None else collect_hallucination_audit_for_run(run_dir, CONFIG.catalog_no_qos_path)
+    return audit if audit is not None else collect_hallucination_audit_for_run(run_dir, catalog_path(with_qos=False))
 
 
 def _backfill_single(run_path: Path, output_dir: Path | None) -> Path:

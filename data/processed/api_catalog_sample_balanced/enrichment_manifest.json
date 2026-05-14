@@ -1,0 +1,32 @@
+{
+  "enriched_catalog": {
+    "endpoint_found": 5559,
+    "input": "data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl",
+    "output": "data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl",
+    "records": 5559,
+    "status_counts": {
+      "matched": 5559
+    },
+    "tool_file_found": 5559
+  },
+  "functional_catalog": {
+    "input": "data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl",
+    "output": "data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl",
+    "records": 5559,
+    "reused_existing": true
+  },
+  "generated_at": "2026-05-14T02:15:53.408694+00:00",
+  "qos_overlay": {
+    "input": "data/processed/api_catalog_sample_balanced/api_qos.jsonl",
+    "output": "data/processed/api_catalog_sample_balanced/api_qos.jsonl",
+    "qos_records": 5559,
+    "records": 5559,
+    "reused_existing": true
+  },
+  "runtime_mapping": {
+    "with_qos_false": "load enriched_catalog only",
+    "with_qos_true": "load enriched_catalog and merge qos_overlay by api_id"
+  },
+  "schema_version": 1,
+  "toolbench_root": "/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools"
+}

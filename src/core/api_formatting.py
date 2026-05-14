@@ -130,18 +130,18 @@ def normalize_api_for_ranking(
     )
     category = _first_value(compressed.get("category"), service.get("category"), api.get("category"))
     tool_name = _first_value(
+        endpoint_detail.get("tool_name"),
         compressed.get("tool_name"),
         service.get("tool_name"),
         api.get("tool_name"),
-        endpoint_detail.get("tool_name"),
         service.get("_tool"),
         api.get("_tool"),
     )
     tool_description = _first_value(
+        endpoint_detail.get("tool_description"),
         compressed.get("tool_description"),
         service.get("tool_description"),
         api.get("tool_description"),
-        endpoint_detail.get("tool_description"),
     )
     description = _first_value(
         endpoint_detail.get("description"),
@@ -320,6 +320,10 @@ def _find_endpoint_detail(
     compressed: Dict[str, Any],
     service: Dict[str, Any],
 ) -> Dict[str, Any]:
+    precomputed, has_precomputed = _precomputed_endpoint_detail(api, compressed, service)
+    if has_precomputed:
+        return precomputed
+
     existing = _as_dict(_first_value(api.get("endpoint_details"), compressed.get("endpoint_details"), service.get("endpoint_details")))
     category = _candidate_field(api, compressed, service, "category")
     file_name = _first_value(
@@ -347,6 +351,64 @@ def _find_endpoint_detail(
     elif existing:
         detail["endpoint_details"] = existing
     return detail
+
+
+def _precomputed_endpoint_detail(
+    api: Dict[str, Any],
+    compressed: Dict[str, Any],
+    service: Dict[str, Any],
+) -> Tuple[Dict[str, Any], bool]:
+    has_precomputed = False
+    detail: Dict[str, Any] = {}
+
+    for source in (api, compressed, service):
+        if not isinstance(source, dict):
+            continue
+        enrichment = _as_dict(source.get("toolbench_enrichment"))
+        source_has_precomputed = bool(enrichment) or any(
+            key in source
+            for key in (
+                "toolbench_tool_name",
+                "toolbench_tool_description",
+                "toolbench_endpoint_description",
+                "toolbench_endpoint_details",
+            )
+        )
+        if not source_has_precomputed:
+            continue
+        has_precomputed = True
+
+        endpoint_details = _as_dict(
+            _first_value(
+                source.get("toolbench_endpoint_details"),
+                enrichment.get("endpoint_details"),
+                source.get("endpoint_details"),
+            )
+        )
+        description = _first_value(
+            source.get("toolbench_endpoint_description"),
+            enrichment.get("endpoint_description"),
+            endpoint_details.get("description"),
+        )
+        tool_name = _first_value(
+            source.get("toolbench_tool_name"),
+            enrichment.get("tool_name"),
+        )
+        tool_description = _first_value(
+            source.get("toolbench_tool_description"),
+            enrichment.get("tool_description"),
+        )
+
+        if tool_name and not detail.get("tool_name"):
+            detail["tool_name"] = tool_name
+        if tool_description and not detail.get("tool_description"):
+            detail["tool_description"] = tool_description
+        if description and not detail.get("description"):
+            detail["description"] = description
+        if endpoint_details and not detail.get("endpoint_details"):
+            detail["endpoint_details"] = endpoint_details
+
+    return detail, has_precomputed
 
 
 @lru_cache(maxsize=1024)

@@ -18,8 +18,8 @@ from src.eval.candidate_api_rankings_excel import write_candidate_api_rankings_e
 from src.eval.functional_match_prompt import build_llm_prompt
 from src.llm.autogen_gateway import call_autogen_gateway
 from src.llm.backends import make_backend
+from src.tools.fetch_services import load_catalog_map
 
-CATALOG_WITH_QOS_PATH = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.tooldesc.jsonl")
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
 EVAL_SYS = (
@@ -863,7 +863,7 @@ def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[s
     query_id = query_id or str(meta.get("query_id") or query_dir.name)
     subtasks = _load_subtasks(query_dir)
     shared_candidates = _load_shared_candidates(query_dir)
-    catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
+    catalog = load_catalog_map(with_qos=True)
     batches = _build_shared_retrieval_batches(query_id, main_task, subtasks, shared_candidates, catalog)
     candidate_ids_by_subtask = {
         batch["subtask_id"]: {
@@ -932,7 +932,7 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
     subtasks = _load_subtasks(query_dir)
     ranked_by_mode = _load_ranked_files(query_dir)
     shared_candidates = _load_shared_candidates(query_dir)
-    catalog = _load_jsonl_catalog(CATALOG_WITH_QOS_PATH)
+    catalog = load_catalog_map(with_qos=True)
     cache = _load_cache(cache_path)
     duplicate_flags = _build_duplicate_flag_map(ranked_by_mode)
     hallucination_flags = _build_hallucination_flag_map(ranked_by_mode, shared_candidates, set(catalog.keys()))

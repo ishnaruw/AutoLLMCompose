@@ -30,6 +30,7 @@ from src.eval.ranking_metrics import (  # noqa: E402
     top_lists_to_wide_frame,
 )
 from src.llm.backends import fireworks_model_options  # noqa: E402
+from src.ui import composition_visualization_helpers as viz  # noqa: E402
 
 DEFAULT_RUN_EXPLORER_PARENT = PROJECT_ROOT / "results/logs"
 DEFAULT_PARENT = DEFAULT_RUN_EXPLORER_PARENT
@@ -1327,6 +1328,501 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             st.plotly_chart(line_fig, width="stretch")
 
 
+def _display_frame(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return df
+    return df.astype(object).where(pd.notna(df), viz.NA)
+
+
+def _composition_visual_css() -> None:
+    st.markdown(
+        """
+        <style>
+        div[data-testid="stVerticalBlock"] div[data-testid="stPlotlyChart"] {
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            padding: 0.25rem;
+            background: #FFFFFF;
+        }
+        div[data-testid="stMetric"] {
+            border: 1px solid #E5E7EB;
+            border-radius: 8px;
+            padding: 0.65rem 0.75rem;
+            background: #FFFFFF;
+        }
+        div[data-testid="stMetricValue"] {
+            font-size: 1.75rem;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _plotly_config() -> dict:
+    return {
+        "displayModeBar": True,
+        "displaylogo": False,
+        "scrollZoom": True,
+        "modeBarButtonsToRemove": ["lasso2d", "select2d"],
+        "responsive": True,
+    }
+
+
+def _viz_key(*parts: object) -> str:
+    raw = "_".join(str(part) for part in parts if part is not None)
+    return re.sub(r"[^a-zA-Z0-9_]+", "_", raw).strip("_").lower()
+
+
+def _ordered_mode_subset(values: list[str]) -> list[str]:
+    value_set = {str(value) for value in values}
+    ordered = [mode for mode in MODE_ORDER if mode in value_set]
+    ordered.extend(sorted(value_set - set(ordered)))
+    return ordered
+
+
+def _visual_run_label(row: pd.Series) -> str:
+    run_dir = Path(str(row.get("run_dir") or ""))
+    parent_name = run_dir.parent.name if str(run_dir) else ""
+    suffix = f" | {parent_name}" if parent_name else ""
+    return f"{row.get('run_name')}{suffix}"
+
+
+def _highlight_selection_difference(row: pd.Series) -> list[str]:
+    color = "background-color: #FFF2CC" if row.get("Selection_Difference") == "Different APIs" else ""
+    return [color for _ in row]
+
+
+def _render_summary_metrics(summary_rows: list[dict[str, str]]) -> None:
+    summary = {row["Metric"]: row["Value"] for row in summary_rows}
+    metric_order = [
+        "Selected Mode",
+        "Number of Subtasks",
+        "Number of Selected APIs",
+        "Composition Validity",
+        "Composition Completeness",
+        "Functional Coverage",
+        "Total Response Time",
+        "Bottleneck Throughput",
+        "Average Workflow Availability",
+        "Normalized QoS Score",
+        "QoS-Adjusted Composition Score",
+    ]
+    cols = st.columns(4)
+    for idx, label in enumerate(metric_order):
+        cols[idx % 4].metric(label, summary.get(label, viz.NA))
+    st.markdown(f"**Bottleneck API:** {summary.get('Bottleneck API', viz.NA)}")
+
+
+def _render_quality_legend() -> None:
+    legend = pd.DataFrame(
+        [
+            {"Color": "Green", "Meaning": "Functional match with strong QoS"},
+            {"Color": "Orange", "Meaning": "Functional match with moderate or incomplete QoS"},
+            {"Color": "Red", "Meaning": "Functional mismatch, poor QoS, or bottleneck"},
+            {"Color": "Gray", "Meaning": "Missing or unknown data"},
+        ]
+    )
+    st.dataframe(legend, width="stretch", hide_index=True, height=180)
+
+
+def _render_workflow_interpretation(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) -> None:
+    if workflow.empty:
+        return
+    status_counts = workflow["Health_Status"].value_counts().to_dict() if "Health_Status" in workflow else {}
+    mismatch_count = int((pd.to_numeric(workflow.get("Functional_Match"), errors="coerce") == 0).sum()) if "Functional_Match" in workflow else 0
+    bottleneck_text = viz.bottleneck_summary(bottlenecks)
+    rows = [
+        {"Signal": "Selected APIs", "Interpretation": str(len(workflow))},
+        {"Signal": "Strong selections", "Interpretation": str(status_counts.get("green", 0))},
+        {"Signal": "Moderate or incomplete", "Interpretation": str(status_counts.get("orange", 0) + status_counts.get("gray", 0))},
+        {"Signal": "Risk nodes", "Interpretation": str(status_counts.get("red", 0))},
+        {"Signal": "Functional mismatches", "Interpretation": str(mismatch_count)},
+        {"Signal": "Bottleneck", "Interpretation": bottleneck_text},
+    ]
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=250)
+
+
+def _render_step_cards(workflow: pd.DataFrame) -> None:
+    if workflow.empty:
+        return
+    for _, row in workflow.iterrows():
+        title = f"Step {row.get('Step', viz.NA)} | Subtask {row.get('Subtask_ID', viz.NA)} | {row.get('API_Name', row.get('API_ID', viz.NA))}"
+        with st.expander(title, expanded=False):
+            cols = st.columns(4)
+            cols[0].metric("Functional Match", viz.format_flag(row.get("Functional_Match")))
+            cols[1].metric("rt_ms", viz.format_value(row.get("rt_ms")))
+            cols[2].metric("tp_rps", viz.format_value(row.get("tp_rps")))
+            cols[3].metric("availability", viz.format_value(row.get("availability")))
+            detail = pd.DataFrame(
+                [
+                    {"Field": "Subtask", "Value": row.get("Subtask", viz.NA)},
+                    {"Field": "API ID", "Value": row.get("API_ID", viz.NA)},
+                    {"Field": "Mode Rank", "Value": viz.format_value(row.get("Mode_Rank"), 0)},
+                    {"Field": "QoS LLM Score", "Value": viz.format_value(row.get("QoS_LLM_Score"))},
+                    {"Field": "TOPSIS Score", "Value": viz.format_value(row.get("TOPSIS_Score"))},
+                    {"Field": "Selection Health", "Value": row.get("Health_Reason", viz.NA)},
+                    {"Field": "Action", "Value": row.get("Action", viz.NA)},
+                    {"Field": "Why", "Value": row.get("Why", viz.NA)},
+                ]
+            )
+            st.dataframe(_display_frame(detail), width="stretch", hide_index=True)
+
+
+def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
+    cols = [
+        "Step",
+        "Subtask_ID",
+        "Subtask",
+        "API_Name",
+        "API_ID",
+        "Functional_Match",
+        "rt_ms",
+        "tp_rps",
+        "availability",
+        "Mode_Rank",
+        "QoS_LLM_Score",
+        "TOPSIS_Score",
+        "Health_Status",
+        "Bottleneck_Dimensions",
+    ]
+    return _display_frame(workflow[[col for col in cols if col in workflow.columns]])
+
+
+def _render_mode_comparison(
+    *,
+    eval_df: pd.DataFrame,
+    workflow_df: pd.DataFrame,
+    query_context: dict[str, str],
+    query_id: str,
+    run_dir: Path,
+    run_name: str,
+    modes: list[str],
+) -> None:
+    key_prefix = _viz_key("mode_compare", query_id, run_name)
+    workflows_by_mode: dict[str, pd.DataFrame] = {}
+    bottlenecks_by_mode: dict[str, pd.DataFrame] = {}
+    eval_rows_by_mode: dict[str, dict] = {}
+    for mode in modes:
+        mode_workflow, mode_bottlenecks = viz.enrich_workflow_for_selection(
+            workflow_df,
+            query_id=query_id,
+            run_dir=run_dir,
+            run_name=run_name,
+            mode=mode,
+        )
+        workflows_by_mode[mode] = mode_workflow
+        bottlenecks_by_mode[mode] = mode_bottlenecks
+        eval_rows_by_mode[mode] = viz.eval_row_for_mode(
+            eval_df,
+            query_id=query_id,
+            run_dir=run_dir,
+            run_name=run_name,
+            mode=mode,
+        )
+
+    st.plotly_chart(
+        viz.build_mode_comparison_figure(workflows_by_mode, modes),
+        width="stretch",
+        config=_plotly_config(),
+        key=f"{key_prefix}_matrix",
+    )
+
+    st.subheader("Compact Comparison Table")
+    difference_df = viz.workflow_difference_table(workflows_by_mode, modes)
+    if not difference_df.empty:
+        st.dataframe(
+            difference_df.style.apply(_highlight_selection_difference, axis=1),
+            width="stretch",
+            hide_index=True,
+        )
+    else:
+        st.info("No selected API rows were available for comparison.")
+
+    summary_df = viz.mode_summary_table(
+        eval_df,
+        workflows_by_mode,
+        bottlenecks_by_mode,
+        query_id=query_id,
+        run_dir=run_dir,
+        run_name=run_name,
+        modes=modes,
+    )
+    if not summary_df.empty:
+        st.dataframe(_display_frame(summary_df), width="stretch", hide_index=True)
+        highlights = viz.comparison_highlights(summary_df, difference_df)
+        if highlights:
+            st.markdown("**Mode Differences**")
+            for item in highlights:
+                st.markdown(f"- {item}")
+
+    mode_tabs = st.tabs(modes)
+    for mode_tab, mode in zip(mode_tabs, modes):
+        workflow = workflows_by_mode.get(mode, pd.DataFrame())
+        with mode_tab:
+            if workflow.empty:
+                st.info("No planned workflow rows.")
+                continue
+            left, right = st.columns([1.45, 1])
+            with left:
+                st.plotly_chart(
+                    viz.build_workflow_figure(
+                        query_context=query_context,
+                        workflow=workflow,
+                        mode=mode,
+                        eval_row=eval_rows_by_mode.get(mode),
+                    ),
+                    width="stretch",
+                    config=_plotly_config(),
+                    key=f"{key_prefix}_{_viz_key(mode)}_workflow",
+                )
+            with right:
+                summary_rows = viz.recommended_summary_rows(
+                    eval_rows_by_mode.get(mode, {}),
+                    workflow,
+                    bottlenecks_by_mode.get(mode, pd.DataFrame()),
+                    mode=mode,
+                )
+                st.dataframe(_display_frame(pd.DataFrame(summary_rows)), width="stretch", hide_index=True, height=430)
+                _render_workflow_interpretation(workflow, bottlenecks_by_mode.get(mode, pd.DataFrame()))
+
+
+def render_composition_visualizations() -> None:
+    _composition_visual_css()
+    st.title("Composition Visualizations")
+    st.caption("Visual inspection of composed API workflows using existing MAOF run artifacts.")
+
+    with st.sidebar:
+        st.header("Composition Visualizations")
+        parent_dir = _render_directory_selector(
+            "Runs directory",
+            default_path=DEFAULT_PARENT,
+            key="composition_visuals_dir",
+        )
+        if st.button("Reload visualization data"):
+            _load_composition_reports.clear()
+            st.rerun()
+
+    eval_df, workflow_df, warnings = _load_composition_reports(parent_dir)
+    for warning in warnings:
+        st.warning(warning)
+    if eval_df.empty:
+        st.info("No composition QoS evaluation reports found under the selected parent directory.")
+        return
+
+    query_lookup = {row["id"]: {"title": row.get("title", ""), "goal": row.get("goal", "")} for row in _load_query_options(str(QUERIES_PATH))}
+    query_options = sorted(
+        eval_df["Query_ID"].dropna().astype(str).unique().tolist(),
+        key=lambda value: int(value[1:]) if value.lower().startswith("q") and value[1:].isdigit() else value,
+    )
+    if not query_options:
+        st.info("No query IDs were found in composition reports.")
+        return
+
+    with st.sidebar:
+        selected_query = st.selectbox("Query ID", query_options, key="composition_visual_query")
+        run_rows = (
+            eval_df[eval_df["Query_ID"].astype(str) == selected_query][["run_dir", "run_name"]]
+            .drop_duplicates()
+            .sort_values(["run_name", "run_dir"])
+            .reset_index(drop=True)
+        )
+        if run_rows.empty:
+            st.info("No composition runs are available for the selected query.")
+            return
+        run_labels = [_visual_run_label(row) for _, row in run_rows.iterrows()]
+        selected_run_label = st.selectbox("Run", run_labels, key="composition_visual_run")
+        selected_run = run_rows.iloc[run_labels.index(selected_run_label)]
+        run_dir = Path(str(selected_run["run_dir"]))
+        run_name = str(selected_run["run_name"])
+        mode_values = eval_df[
+            (eval_df["Query_ID"].astype(str) == selected_query)
+            & (eval_df["run_dir"].astype(str) == str(run_dir))
+        ]["Mode"].dropna().astype(str).unique().tolist()
+        available_modes = _ordered_mode_subset(mode_values)
+        if not available_modes:
+            st.info("No ranking modes are available for the selected run.")
+            return
+        default_mode_idx = available_modes.index("qos_hybrid") if "qos_hybrid" in available_modes else 0
+        selected_mode = st.selectbox("Mode", available_modes, index=default_mode_idx, key="composition_visual_mode")
+
+    query_context = viz.load_query_context(run_dir, selected_query, query_lookup)
+    eval_row = viz.eval_row_for_mode(
+        eval_df,
+        query_id=selected_query,
+        run_dir=run_dir,
+        run_name=run_name,
+        mode=selected_mode,
+    )
+    workflow, bottlenecks = viz.enrich_workflow_for_selection(
+        workflow_df,
+        query_id=selected_query,
+        run_dir=run_dir,
+        run_name=run_name,
+        mode=selected_mode,
+    )
+    chart_key_prefix = _viz_key("composition_visuals", selected_query, run_name, selected_mode)
+
+    st.write(f"**Query:** {query_context['label']}")
+    if query_context.get("goal"):
+        st.caption(query_context["goal"])
+    st.caption(f"Run folder: `{run_dir}`")
+
+    tabs = st.tabs(
+        [
+            "Workflow Graph",
+            "Bottleneck Analysis",
+            "Recommended Path",
+            "Mode Comparison",
+            "Sequence Diagram",
+            "Raw Workflow Data",
+        ]
+    )
+
+    with tabs[0]:
+        if workflow.empty:
+            st.info("No planned workflow rows found for this query and mode.")
+        else:
+            st.plotly_chart(
+                viz.build_workflow_figure(
+                    query_context=query_context,
+                    workflow=workflow,
+                    mode=selected_mode,
+                    eval_row=eval_row,
+                ),
+                width="stretch",
+                config=_plotly_config(),
+                key=f"{chart_key_prefix}_workflow_graph",
+            )
+            left, right = st.columns([1.2, 1])
+            with left:
+                st.dataframe(
+                    _display_frame(pd.DataFrame(viz.recommended_summary_rows(eval_row, workflow, bottlenecks, mode=selected_mode))),
+                    width="stretch",
+                    hide_index=True,
+                    height=430,
+                )
+            with right:
+                _render_quality_legend()
+                _render_workflow_interpretation(workflow, bottlenecks)
+
+    with tabs[1]:
+        if bottlenecks.empty:
+            st.info("No response time, throughput, or availability bottlenecks could be inferred from available workflow metrics.")
+        else:
+            st.plotly_chart(
+                viz.build_bottleneck_figure(workflow, bottlenecks),
+                width="stretch",
+                config=_plotly_config(),
+                key=f"{chart_key_prefix}_bottleneck",
+            )
+            cols = st.columns([1, 1])
+            with cols[0]:
+                display_cols = ["Bottleneck_Type", "API", "Subtask_ID", "Reason", "Metric", "Metric_Value", "Impact"]
+                st.dataframe(
+                    _display_frame(bottlenecks[[col for col in display_cols if col in bottlenecks.columns]]),
+                    width="stretch",
+                    hide_index=True,
+                    height=240,
+                )
+            with cols[1]:
+                _render_workflow_interpretation(workflow, bottlenecks)
+        if not workflow.empty:
+            st.subheader("Selected API Metrics")
+            st.dataframe(_workflow_detail_view(workflow), width="stretch", hide_index=True)
+
+    with tabs[2]:
+        summary_rows = viz.recommended_summary_rows(eval_row, workflow, bottlenecks, mode=selected_mode)
+        _render_summary_metrics(summary_rows)
+        if not workflow.empty:
+            chart_cols = st.columns([1.05, 1.3])
+            with chart_cols[0]:
+                st.plotly_chart(
+                    viz.build_quality_score_figure(eval_row, workflow),
+                    width="stretch",
+                    config=_plotly_config(),
+                    key=f"{chart_key_prefix}_quality_scores",
+                )
+            with chart_cols[1]:
+                st.plotly_chart(
+                    viz.build_workflow_figure(
+                        query_context=query_context,
+                        workflow=workflow,
+                        mode=selected_mode,
+                        eval_row=eval_row,
+                    ),
+                    width="stretch",
+                    config=_plotly_config(),
+                    key=f"{chart_key_prefix}_recommended_workflow",
+                )
+            st.subheader("Recommended Path Steps")
+            step_cols = [
+                "Step",
+                "Subtask_ID",
+                "Subtask",
+                "API_Name",
+                "Functional_Match",
+                "rt_ms",
+                "tp_rps",
+                "availability",
+                "Mode_Rank",
+                "QoS_LLM_Score",
+                "TOPSIS_Score",
+                "Health_Reason",
+            ]
+            st.dataframe(
+                _display_frame(workflow[[col for col in step_cols if col in workflow.columns]]),
+                width="stretch",
+                hide_index=True,
+            )
+            _render_step_cards(workflow)
+
+    with tabs[3]:
+        _render_mode_comparison(
+            eval_df=eval_df,
+            workflow_df=workflow_df,
+            query_context=query_context,
+            query_id=selected_query,
+            run_dir=run_dir,
+            run_name=run_name,
+            modes=available_modes,
+        )
+
+    with tabs[4]:
+        if workflow.empty:
+            st.info("No workflow steps are available for sequence visualization.")
+        else:
+            agent_tab, api_tab, graphviz_tab, mermaid_tab = st.tabs(["Agent Flow", "API Execution", "Graphviz Source", "Mermaid Source"])
+            with agent_tab:
+                st.plotly_chart(
+                    viz.build_sequence_figure(workflow, kind="agent"),
+                    width="stretch",
+                    config=_plotly_config(),
+                    key=f"{chart_key_prefix}_sequence_agent",
+                )
+            with api_tab:
+                st.plotly_chart(
+                    viz.build_sequence_figure(workflow, kind="api"),
+                    width="stretch",
+                    config=_plotly_config(),
+                    key=f"{chart_key_prefix}_sequence_api",
+                )
+            with graphviz_tab:
+                st.graphviz_chart(viz.build_agent_sequence_dot(workflow), width="stretch")
+                st.graphviz_chart(viz.build_api_execution_dot(workflow), width="stretch")
+            with mermaid_tab:
+                st.code(viz.build_agent_mermaid(workflow), language="mermaid")
+                st.code(viz.build_api_mermaid(workflow), language="mermaid")
+
+    with tabs[5]:
+        st.subheader("Enriched Workflow Rows")
+        st.dataframe(_workflow_detail_view(workflow), width="stretch", hide_index=True)
+        st.subheader("Composition Evaluation Row")
+        st.dataframe(_display_frame(pd.DataFrame([eval_row])), width="stretch", hide_index=True)
+        st.subheader("Bottleneck Rows")
+        st.dataframe(_display_frame(bottlenecks), width="stretch", hide_index=True)
+
+
 def render_ranking_evaluation() -> None:
     st.title("MAOF Ranking Evaluation")
 
@@ -1573,12 +2069,14 @@ def main() -> None:
     with st.sidebar:
         page = st.radio(
             "Page",
-            ["Ranking Evaluation", "Run Experiments", "Completed Runs"],
+            ["Ranking Evaluation", "Composition Visualizations", "Run Experiments", "Completed Runs"],
             index=0,
         )
 
     if page == "Ranking Evaluation":
         render_ranking_evaluation()
+    elif page == "Composition Visualizations":
+        render_composition_visualizations()
     elif page == "Run Experiments":
         render_query_run_explorer()
     else:

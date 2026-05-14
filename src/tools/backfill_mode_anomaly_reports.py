@@ -6,10 +6,10 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from src.config import CONFIG
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
 from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
+from src.tools.fetch_services import catalog_path
 
 RUN_DIR_PATTERN = re.compile(r"^q\d+_\d{8}T\d{6}$", flags=re.IGNORECASE)
 
@@ -133,7 +133,7 @@ def _build_report_for_run(
             provider_label,
         )
     else:
-        hallucination_audit = collect_hallucination_audit_for_run(run_dir, CONFIG.catalog_no_qos_path)
+        hallucination_audit = collect_hallucination_audit_for_run(run_dir, catalog_path(with_qos=False))
 
     ranking_anomaly_audit = collect_ranking_anomaly_audit_for_run(run_dir, query_id=_query_id_from_run_dir(run_dir))
     out_path = _report_path(run_dir, output_dir)
