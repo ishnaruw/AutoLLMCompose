@@ -64,9 +64,9 @@ WORKFLOW_COLUMNS = [
 
 DEFINITION_ROWS = [
     {
-        "Metric": "Total Response Time",
+        "Metric": "Total Response Time (s)",
         "Category": "QoS quality",
-        "Definition": "Sum of response times across planned APIs",
+        "Definition": "Sum of response times in seconds across planned APIs",
         "Direction": "Lower is better",
     },
     {

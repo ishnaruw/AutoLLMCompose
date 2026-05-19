@@ -165,8 +165,28 @@ class PlannerPlanItem(_SchemaModel):
     subtask_coverage: List[Dict[str, Any]] = Field(default_factory=list)
 
 
+class PlannerExecutionStepItem(_SchemaModel):
+    step: Any
+    api_id: str
+    subtask_id: Any | None = None
+    method: str | None = None
+    url: str | None = None
+    required_parameters: List[Dict[str, Any]] = Field(default_factory=list)
+    optional_parameters: List[Dict[str, Any]] = Field(default_factory=list)
+    depends_on: List[Any] = Field(default_factory=list)
+    input_mapping: str
+    output_mapping: str
+    expected_output: str
+
+
+class PlannerExecutionWorkflow(_SchemaModel):
+    type: str
+    steps: List[PlannerExecutionStepItem] = Field(default_factory=list)
+
+
 class PlannerOutput(_SchemaModel):
     primary_plan: PlannerPlanItem
+    execution_workflow: PlannerExecutionWorkflow
     selected_api_ids: List[Any]
     overall_rationale: str
 

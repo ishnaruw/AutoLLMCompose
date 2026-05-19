@@ -14,6 +14,27 @@ Candidates: {ranked_compact}
 """
 
 
+def _execution_workflow(api_id: str = "api_a") -> dict:
+    return {
+        "type": "sequential",
+        "steps": [
+            {
+                "step": 1,
+                "api_id": api_id,
+                "subtask_id": 1,
+                "method": "GET",
+                "url": "https://example.test/api",
+                "required_parameters": [{"name": "q", "source": "user_goal"}],
+                "optional_parameters": [],
+                "depends_on": [],
+                "input_mapping": "Use the user goal as q.",
+                "output_mapping": "Return the API result.",
+                "expected_output": "API result",
+            }
+        ],
+    }
+
+
 class PlannerRepairTests(unittest.TestCase):
     def _prompt_file(self) -> Path:
         tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False)
@@ -39,6 +60,7 @@ class PlannerRepairTests(unittest.TestCase):
                 }
             ],
             "subtask_coverage": [],
+            "execution_workflow": _execution_workflow(),
             "selected_api_ids": ["api_a"],
             "overall_rationale": "Best fit",
         }
@@ -78,6 +100,7 @@ class PlannerRepairTests(unittest.TestCase):
                     ],
                     "subtask_coverage": [],
                 },
+                "execution_workflow": _execution_workflow(api_id="api_a"),
                 "selected_api_ids": [],
                 "overall_rationale": "Bad shape",
             },
@@ -99,6 +122,7 @@ class PlannerRepairTests(unittest.TestCase):
                     ],
                     "subtask_coverage": [],
                 },
+                "execution_workflow": _execution_workflow(api_id="api_a"),
                 "selected_api_ids": ["api_a"],
                 "overall_rationale": "Fixed",
             },
@@ -141,6 +165,7 @@ class PlannerRepairTests(unittest.TestCase):
                 ],
                 "subtask_coverage": [],
             },
+            "execution_workflow": _execution_workflow(),
             "selected_api_ids": ["api_a"],
             "overall_rationale": "Best fit",
         }

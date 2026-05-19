@@ -39,6 +39,7 @@ def _repair_planner_payload(payload):
 
     repaired = deepcopy(payload)
     if "primary_plan" not in repaired and isinstance(repaired.get("steps"), list):
+        execution_workflow = repaired.get("execution_workflow")
         steps = repaired.get("steps") or []
         selected_api_ids = repaired.get("selected_api_ids")
         if not isinstance(selected_api_ids, list):
@@ -50,6 +51,7 @@ def _repair_planner_payload(payload):
                 "steps": steps,
                 "subtask_coverage": repaired.get("subtask_coverage", []),
             },
+            "execution_workflow": execution_workflow,
             "selected_api_ids": selected_api_ids,
             "overall_rationale": repaired.get("overall_rationale", ""),
         }
@@ -79,8 +81,11 @@ def _schema_retry_prompt(prompt, issue):
         "Your previous planner JSON failed validation. Correct it and return JSON only.\n"
         f"Validation error:\n{issue_text}\n\n"
         "Mandatory corrections:\n"
-        "- Use the required top-level shape: primary_plan, selected_api_ids, overall_rationale.\n"
+        "- Use the required top-level shape: primary_plan, execution_workflow, selected_api_ids, overall_rationale.\n"
         "- Put plan_id, summary, steps, and subtask_coverage inside primary_plan.\n"
+        "- Put type and steps inside execution_workflow.\n"
+        "- Each execution_workflow step must include step, api_id, method, url, required_parameters, optional_parameters, depends_on, input_mapping, output_mapping, and expected_output.\n"
+        "- Copy method, url, and endpoint parameter details from the matching Candidate API service when available.\n"
         "- Every step.api_id must be a non-empty string copied exactly from the provided Candidate APIs.\n"
         "- Never use null for api_id. If a subtask seems internal/UI/local, choose the closest suitable provided API and describe the local work in action/why.\n"
         "- input_from_previous_step and output_to_next_step must be strings or null, never objects or arrays.\n"
@@ -117,11 +122,11 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
             ]
 
     Expected LLM output (see prompts/planner.md for schema):
-      {
-        "primary_plan": {
-          "plan_id": <int>,
-          "summary": "...",
-          "steps": [
+        {
+          "primary_plan": {
+            "plan_id": <int>,
+            "summary": "...",
+            "steps": [
             {
               "step": <int>,
               "api_id": "...",
@@ -140,6 +145,25 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
               "description": "...",
               "steps": [<int, ...>],
               "coverage": "full" | "partial" | "missing"
+            },
+            ...
+          ]
+        },
+        "execution_workflow": {
+          "type": "sequential",
+          "steps": [
+            {
+              "step": <int>,
+              "api_id": "...",
+              "subtask_id": <int or null>,
+              "method": "...",
+              "url": "...",
+              "required_parameters": [...],
+              "optional_parameters": [...],
+              "depends_on": [<int, ...>],
+              "input_mapping": "...",
+              "output_mapping": "...",
+              "expected_output": "..."
             },
             ...
           ]

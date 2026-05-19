@@ -100,12 +100,31 @@ class OutputSchemaTests(unittest.TestCase):
                         {"subtask_id": 1, "description": "Find route", "steps": [1], "coverage": "full"}
                     ],
                 },
+                "execution_workflow": {
+                    "type": "sequential",
+                    "steps": [
+                        {
+                            "step": 1,
+                            "api_id": "api_a",
+                            "subtask_id": 1,
+                            "method": "GET",
+                            "url": "https://example.test/api",
+                            "required_parameters": [{"name": "q", "source": "user_goal"}],
+                            "optional_parameters": [],
+                            "depends_on": [],
+                            "input_mapping": "Use the user goal as q.",
+                            "output_mapping": "Return api_a result.",
+                            "expected_output": "api_a result",
+                        }
+                    ],
+                },
                 "selected_api_ids": ["api_a"],
                 "overall_rationale": "Best fit",
             }
         )
 
         self.assertEqual(output.primary_plan.steps[0].api_id, "api_a")
+        self.assertEqual(output.execution_workflow.steps[0].method, "GET")
 
     def test_ranked_output_missing_ranked_key_is_invalid(self) -> None:
         with self.assertRaises(ValidationError) as raised:
