@@ -17,7 +17,7 @@ The current pipeline supports:
 ## Repository Layout
 
 ```text
-MAOF/
+AutoLLMCompose/
 |-- data/
 |   |-- processed/api_catalog_sample_balanced/
 |   |   |-- api_repo.tooldesc.jsonl        # Functional catalog without QoS
@@ -56,11 +56,10 @@ MAOF/
 
 ## Installation
 
-Run all commands from the repository root. In the current checkout, that folder
-is named `MAOF/`.
+Run all commands from the repository root.
 
 ```bash
-cd MAOF
+cd AutoLLMCompose
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
