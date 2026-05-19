@@ -29,7 +29,7 @@ class EvaluationAgent:
     """
     catalog_no_qos_path: Path
     name: str = "evaluation_agent"
-    description: str = "Deterministic MAOF evaluation and audit agent"
+    description: str = "Deterministic AutoLLMCompose evaluation and audit agent"
 
     def evaluate_retrieval_functional_match(
         self,

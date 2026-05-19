@@ -54,7 +54,7 @@ def _write_outputs(bundle, output_dir: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Evaluate MAOF mode-ranking agreement from completed query run outputs."
+        description="Evaluate AutoLLMCompose mode-ranking agreement from completed query run outputs."
     )
     parser.add_argument(
         "parent_runs_dir",

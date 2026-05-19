@@ -417,7 +417,7 @@ def _read_ranked_sheet(report_path: Path) -> Tuple[pd.DataFrame, str]:
 
 
 def load_report_rows(report_path: str | Path, run_dir: str | Path | None = None) -> pd.DataFrame:
-    """Load and normalize one completed MAOF ranking/functional match Excel report."""
+    """Load and normalize one completed AutoLLMCompose ranking/functional match Excel report."""
     path = Path(report_path).expanduser()
     df, sheet_name = _read_ranked_sheet(path)
 

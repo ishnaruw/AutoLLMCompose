@@ -782,7 +782,7 @@ def _render_logs(run_dir: Path, key_prefix: str = "logs") -> None:
 
 def render_query_run_explorer() -> None:
     st.title("Run Experiments")
-    st.caption("Launch MAOF query-level runs, watch stage progress, then inspect the generated reports and logs.")
+    st.caption("Launch AutoLLMCompose query-level runs, watch stage progress, then inspect the generated reports and logs.")
 
     queries = _load_query_options(str(QUERIES_PATH))
     if not queries:
@@ -904,7 +904,7 @@ def render_query_run_explorer() -> None:
 
 def render_completed_runs() -> None:
     st.title("Completed Runs")
-    st.caption("Browse MAOF query runs, including still-running experiments, with the same live progress and report view used by Run Experiments.")
+    st.caption("Browse AutoLLMCompose query runs, including still-running experiments, with the same live progress and report view used by Run Experiments.")
 
     with st.sidebar:
         st.header("Completed Run Directory")
@@ -1839,7 +1839,7 @@ def _composition_visual_css() -> None:
         div[data-testid="stMetricValue"] {
             font-size: 1.75rem;
         }
-        .maof-color-legend {
+        .AutoLLMCompose-color-legend {
             display: flex;
             flex-wrap: wrap;
             gap: 0.65rem 1rem;
@@ -1852,36 +1852,36 @@ def _composition_visual_css() -> None:
             font-size: 0.92rem;
             color: #374151;
         }
-        .maof-color-legend .legend-title {
+        .AutoLLMCompose-color-legend .legend-title {
             font-weight: 700;
             color: #111827;
         }
-        .maof-color-legend .legend-item {
+        .AutoLLMCompose-color-legend .legend-item {
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
             white-space: nowrap;
         }
-        .maof-color-legend .legend-chip {
+        .AutoLLMCompose-color-legend .legend-chip {
             display: inline-block;
             width: 0.95rem;
             height: 0.95rem;
             border-radius: 3px;
             border: 2px solid #64748B;
         }
-        .maof-color-legend .legend-green {
+        .AutoLLMCompose-color-legend .legend-green {
             background: #C6EFCE;
             border-color: #2F855A;
         }
-        .maof-color-legend .legend-orange {
+        .AutoLLMCompose-color-legend .legend-orange {
             background: #FCE4D6;
             border-color: #B7791F;
         }
-        .maof-color-legend .legend-red {
+        .AutoLLMCompose-color-legend .legend-red {
             background: #F4CCCC;
             border-color: #C53030;
         }
-        .maof-color-legend .legend-gray {
+        .AutoLLMCompose-color-legend .legend-gray {
             background: #E5E7EB;
             border-color: #64748B;
         }
@@ -2015,7 +2015,7 @@ def _render_quality_legend() -> None:
 def _render_color_chip_legend() -> None:
     st.markdown(
         """
-        <div class="maof-color-legend">
+        <div class="AutoLLMCompose-color-legend">
             <span class="legend-title">Node color guide:</span>
             <span class="legend-item"><span class="legend-chip legend-green"></span>Strong QoS / Low Risk</span>
             <span class="legend-item"><span class="legend-chip legend-orange"></span>Moderate QoS / Medium Risk</span>
@@ -2247,7 +2247,7 @@ def _render_mode_comparison(
 def render_composition_visualizations() -> None:
     _composition_visual_css()
     st.title("Composition Visualizations")
-    st.caption("Visual inspection of composed API workflows using existing MAOF run artifacts.")
+    st.caption("Visual inspection of composed API workflows using existing AutoLLMCompose run artifacts.")
 
     with st.sidebar:
         st.header("Composition Visualizations")
@@ -2605,7 +2605,7 @@ def render_composition_visualizations() -> None:
 
 
 def render_ranking_evaluation() -> None:
-    st.title("MAOF Ranking Evaluation")
+    st.title("AutoLLMCompose Ranking Evaluation")
 
     with st.sidebar:
         st.header("Input")
@@ -2846,7 +2846,7 @@ def render_ranking_evaluation() -> None:
 
 
 def main() -> None:
-    st.set_page_config(page_title="MAOF Dashboard", layout="wide")
+    st.set_page_config(page_title="AutoLLMCompose Dashboard", layout="wide")
     with st.sidebar:
         page = st.radio(
             "Page",

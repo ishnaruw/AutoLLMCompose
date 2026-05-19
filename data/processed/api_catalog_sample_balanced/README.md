@@ -1,30 +1,35 @@
-# API Catalog Layout
+# API Catalog Files
 
-This directory now uses a three-file canonical runtime layout:
+This directory contains the committed API catalog snapshot used by
+AutoLLMCompose at runtime.
 
-- `api_repo.tooldesc.jsonl`: base functional API catalog without QoS fields.
-- `api_repo.enriched.jsonl`: ToolBench-enriched functional catalog used by runtime ranking and evaluation prompts.
-- `api_qos.jsonl`: compact QoS overlay keyed by `api_id`.
+## Runtime Files
 
-Runtime loading should use `src.tools.fetch_services.fetch_services()` or
-`src.tools.fetch_services.load_catalog_map()`. When `with_qos=False`, the loader
-returns functional catalog rows without QoS. When `with_qos=True`, it merges
-`api_qos.jsonl` into the functional catalog by `api_id`.
+- `api_repo.enriched.jsonl`: primary functional API catalog loaded by retrieval, ranking, planning, and evaluation code.
+- `api_qos.jsonl`: QoS overlay keyed by `api_id`; merged into catalog rows when `with_qos=True`.
+- `api_repo.tooldesc.jsonl`: base functional catalog without QoS; kept as the stable source for rebuilding the enriched catalog.
+- `enrichment_manifest.json`: provenance for the current generated snapshot.
 
-## Deprecated Legacy Files
+Normal project runs should not need to regenerate these files.
 
-These files are retained only as legacy generation inputs, fallbacks, or
-historical references:
+## Loader Behavior
 
+Use `src.tools.fetch_services.fetch_services()` or
+`src.tools.fetch_services.load_catalog_map()` instead of reading these files
+directly.
+
+- `with_qos=False`: loads functional rows from `api_repo.enriched.jsonl` and removes any QoS field.
+- `with_qos=True`: loads `api_repo.enriched.jsonl` and merges `api_qos.jsonl` by `api_id`.
+
+## Misc Files
+
+`misc/` stores legacy generation inputs, fallback catalogs, and one-off reports:
+
+- `api_repo.balanced_counts.csv`
 - `api_repo.no_qos.tooldesc.jsonl`
 - `api_repo.with_qos.tooldesc.jsonl`
 - `deprecated_api_repo.no_qos.jsonl`
 - `deprecated_api_repo.with_qos.jsonl`
 
-Do not use the deprecated split catalogs for new runtime code. Regenerate the
-canonical files with:
-
-```bash
-python -m src.tools.build_enriched_catalog
-```
-
+These files are retained for reproducibility and fallback behavior only. New
+runtime code should use the canonical files listed above.

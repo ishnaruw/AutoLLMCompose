@@ -62,13 +62,9 @@ results/*
 *.index
 data/index/*
 
-
-
-data/index/maof_v1/with_qos/config.json
-data/index/maof_v1/with_qos/faiss.index
-data/index/maof_v1/with_qos/meta.jsonl
-
-
-data/index/maof_v2/with_qos/config.json
-data/index/maof_v2/with_qos/faiss.index
-data/index/maof_v2/with_qos/meta.jsonl
+# Commit the default shared retrieval index so fresh clones can run the pipeline.
+!data/index/AutoLLMCompose_v3/
+!data/index/AutoLLMCompose_v3/shared_no_qos/
+!data/index/AutoLLMCompose_v3/shared_no_qos/config.json
+!data/index/AutoLLMCompose_v3/shared_no_qos/meta.jsonl
+!data/index/AutoLLMCompose_v3/shared_no_qos/faiss.index

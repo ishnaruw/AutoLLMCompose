@@ -9,12 +9,12 @@ from typing import Dict, Any
 class PipelineConfig:
     run_tag: str | None = "RUNS_MAY_13_NEW"
 
-    shared_index_dir: Path = Path("data/index/maof_v3/shared_no_qos")
+    shared_index_dir: Path = Path("data/index/AutoLLMCompose_v3/shared_no_qos")
     catalog_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl")
     catalog_enriched_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl")
     api_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_qos.jsonl")
-    catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.tooldesc.jsonl")
-    catalog_with_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.tooldesc.jsonl")
+    catalog_no_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.no_qos.tooldesc.jsonl")
+    catalog_with_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.with_qos.tooldesc.jsonl")
 
     rag_top_k: int = 40
     ranker_max_candidates: int = 40

@@ -44,7 +44,7 @@ def call_autogen_gateway(
     max_tokens: int | None = None,
 ) -> str:
     """
-    Central AutoGen-backed entry point for MAOF LLM reasoning calls.
+    Central AutoGen-backed entry point for AutoLLMCompose LLM reasoning calls.
 
     Stage code should call this gateway, or an llm_call wrapper backed by it.
     Direct provider/backend calls stay in the backend and AutoGen model-client

@@ -753,7 +753,7 @@ def evaluate_composition_qos(*, query_dir: Path, query_id: str | None = None, ou
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Evaluate deterministic composition-level QoS for one MAOF query run.")
+    parser = argparse.ArgumentParser(description="Evaluate deterministic composition-level QoS for one AutoLLMCompose query run.")
     parser.add_argument("query_dir", type=Path)
     parser.add_argument("--query-id")
     parser.add_argument("--output-dir", type=Path)

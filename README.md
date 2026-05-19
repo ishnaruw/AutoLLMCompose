@@ -1,279 +1,443 @@
-# MAOF: Multi-Agent Observability Framework  
-*Automating API Orchestration using Large Language Models*
+# AutoLLMCompose
 
---- 
+AutoLLMCompose is a research codebase for multi-agent API discovery, ranking, composition, and evaluation. Given a user goal, the pipeline decomposes the goal into API-retrieval subtasks, retrieves candidate APIs from a FAISS-backed catalog index, ranks them under multiple QoS and non-QoS modes, generates executable composition plans, and writes evaluation artifacts for thesis analysis.
 
-## Overview
+## What AutoLLMCompose Does
 
-**MAOF (Multi-Agent Observability Framework)** is a modular system that explores how Large Language Models (LLMs) can discover, rank, and compose APIs based on **observability metrics** such as response time, throughput, and availability.
-It combines Retrieval-Augmented Generation (RAG), TOPSIS-based QoS ranking, and multi-agent orchestration through AutoGen to enable transparent and performance-aware API automation.
+The current pipeline supports:
 
----
+- Query decomposition into ordered API subtasks.
+- Shared semantic retrieval from the local API catalog index.
+- Candidate ranking across four modes: `no_qos`, `qos_pure_llm`, `qos_topsis`, and `qos_hybrid`.
+- Deterministic TOPSIS scoring from QoS metrics.
+- LLM-based planning over selected APIs.
+- Functional-match, hallucination, duplicate, ranking-anomaly, and composition-QoS evaluation outputs.
+- A Streamlit dashboard for running experiments and inspecting completed runs.
 
-## Architecture
+## Repository Layout
 
-MAOF organizes its components as modular agents in a transparent, observable pipeline.
-
-```
-
-User Query
-│
-▼
-[Retriever Agent] ───► Selects relevant APIs from the catalog
-│
-▼
-[Ranker Agent] ──────► Applies TOPSIS ranking using QoS metrics (rt_ms, tp_rps, availability)
-│
-▼
-[Planner Agent] ─────► Generates a coherent composition plan
-│
-▼
-[Coordinator Agent] ─► Fuses results across multiple LLMs
-
-```
-
----
-
-## Repository Structure
-
-```
-
+```text
 MAOF/
-├── data/                   # API datasets and generated artifacts
-│   ├── raw/                # Original ToolBench / WSDream datasets
-│   ├── processed/          # Cleaned catalogs and capability tags
-│   ├── data_gen/           # Jupyter notebooks for data extraction
-│   └── results/            # Generated API inventories
-│
-├── prompts/                # LLM instruction templates
-│   ├── retriever.md
-│   ├── ranker_topsis.md
-│   └── planner.md
-│
-├── src/
-│   ├── tools/fetch_services.py     # JSONL loader and batch fetcher
-│   ├── agents/
-│   │   ├── retriever.py            # LLM-based candidate selection
-│   │   ├── ranker_topsis.py        # TOPSIS QoS ranking
-│   │   └── planner.py              # Plan composition generator
-│   ├── core/topsis_verify.py       # Numeric TOPSIS verification
-│   └── driver/run_autogen_pipeline.py  # Main pipeline script
-│
-├── results/
-│   ├── logs/               # Latest agent outputs (retriever, ranker, planner)
-│   └── comparisons/        # Evaluation summaries and plots
-│
-├── runs/                   # Dated experimental runs
-├── requirements.txt
-└── README.md
+|-- data/
+|   |-- processed/api_catalog_sample_balanced/
+|   |   |-- api_repo.tooldesc.jsonl        # Functional catalog without QoS
+|   |   |-- api_repo.enriched.jsonl        # ToolBench-enriched runtime catalog
+|   |   |-- api_qos.jsonl                  # QoS overlay keyed by api_id
+|   |   |-- enrichment_manifest.json       # Catalog generation provenance
+|   |   |-- misc/                          # Legacy catalogs and one-off reports
+|   |   `-- README.md                      # Catalog layout notes
+|   |-- queries/
+|   |   |-- all_user_query.jsonl           # Main batch query set
+|   |-- index/AutoLLMCompose_v3/shared_no_qos/
+|   |                                      # Committed default FAISS index
+|   |-- data_gen/                          # ARCHIVAL notebooks, not runtime setup
+|   |-- raw/wsdream/                       # ARCHIVAL raw matrices
+|   `-- results/api_inventory/             # ARCHIVAL inventory reports
+|-- prompts/                               # LLM prompt templates
+|-- src/
+|   |-- agents/                            # Decomposer, retriever, ranker, planner, evaluator
+|   |-- config/pipeline_config.py          # Central pipeline defaults
+|   |-- core/                              # Schemas, parsing, retry, logging helpers
+|   |-- driver/run_autogen_pipeline.py     # Main experiment runner
+|   |-- eval/                              # Evaluation and audit scripts
+|   |-- llm/                               # Provider backends and AutoGen gateway
+|   |-- rag/                               # FAISS index build and retrieval
+|   |-- tools/                             # Catalog build/backfill utilities
+|   `-- ui/ranking_eval_app.py             # Streamlit dashboard
+|-- tests/                                 # Unit tests
+|-- requirements.txt
+`-- README.md
+```
 
-````
+## Requirements
 
----
+- Python 3.12 is used in the current local environment. Python 3.10+ should work for most code, but use 3.12 if you want to match this setup closely.
+- An LLM provider key or a local LM Studio server.
 
-## Installation & Setup
+## Installation
 
-### 1. Create environment
+Run all commands from the repository root. In the current checkout, that folder
+is named `MAOF/`.
+
 ```bash
+cd MAOF
 python -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
-````
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
 
-### 2. Configure environment variables
-
-MAOF currently supports **Azure OpenAI**, **Mistral**, and **Azure AI Foundry** backends.
-
-Create a `.env` file in the root with:
+The retrieval layer requires FAISS. If your environment does not already provide it, install:
 
 ```bash
-AZURE_OPENAI_API_KEY=your_azure_api_key
-AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com/
+python -m pip install faiss-cpu
+```
+
+On Apple Silicon or other platforms where FAISS wheels are unavailable, install FAISS through conda:
+
+```bash
+conda install -c conda-forge faiss-cpu
+```
+
+## Environment Variables
+
+Create a local `.env` file in the repository root. The code loads this file
+automatically. Do not commit it.
+
+Set `LLM_PROVIDER` to your default provider, or pass `--provider` on the command line.
+
+```bash
+# Provider selection
+LLM_PROVIDER=groq
+
+# Azure OpenAI
+AZURE_OPENAI_API_KEY=
+AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
 AZURE_OPENAI_API_VERSION=2024-05-01-preview
 AZURE_OPENAI_DEPLOYMENT=gpt-4o-dspy
 
-MISTRAL_API_KEY=your_mistral_api_key
-MISTRAL_MODEL=mistral-small-latest
+# Mistral
+MISTRAL_API_KEY=
+MISTRAL_MODEL=mistral-large-latest
 
-GROQ_API_KEY=your_groq_api_key
+# Groq
+GROQ_API_KEY=
 GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MULTI_MODEL_MODE=false
+GROQ_MULTI_MODELS=llama-3.3-70b-versatile,openai/gpt-oss-120b,openai/gpt-oss-20b,llama-3.1-8b-instant,qwen/qwen3-32b
 
-FIREWORKS_API_KEY=your_fireworks_api_key
+# Fireworks AI
+FIREWORKS_API_KEY=
 FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
-FIREWORKS_MODEL=accounts/fireworks/models/llama-v3p1-8b-instruct
+FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v3p1
 
-TOGETHER_API_KEY=your_together_api_key
+# Together AI
+TOGETHER_API_KEY=
 TOGETHER_BASE_URL=https://api.together.xyz/v1
 TOGETHER_MODEL=meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo
 
-AZURE_FOUNDRY_API_KEY=your_foundry_api_key
-AZURE_FOUNDRY_ENDPOINT=https://your-resource.services.ai.azure.com
+# Gemini
+GEMINI_API_KEY=
+GEMINI_MODEL=gemini-2.5-flash
+
+# Azure AI Foundry
+AZURE_FOUNDRY_API_KEY=
+AZURE_FOUNDRY_ENDPOINT=https://your-resource.services.ai.azure.com/models
 AZURE_FOUNDRY_API_VERSION=2024-05-01-preview
 AZURE_FOUNDRY_MODEL=DeepSeek-R1-0528
+AZURE_FOUNDRY_TIMEOUT_SECONDS=300
+
+# LM Studio, OpenAI-compatible local server
+LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1
+LMSTUDIO_MODEL=meta-llama-3.1-8b-instruct
+LMSTUDIO_API_KEY=lmstudio
+
+# LM Studio native chat endpoint used by lmstudio_qwen
+LMSTUDIO_QWEN_CHAT_URL=http://localhost:1234/api/v1/chat
+LMSTUDIO_QWEN_MODEL=qwen2.5-3b-instruct.gguf
 ```
 
-Alternatively, export them directly:
+Supported provider names are:
+
+```text
+azure, mistral, groq, fireworks, together, gemini, azure_foundry, lmstudio, lmstudio_qwen
+```
+
+## Data And Index Setup
+
+The tracked catalog files live in:
+
+```text
+data/processed/api_catalog_sample_balanced/
+```
+
+Runtime loading uses:
+
+- `api_repo.enriched.jsonl` for functional API evidence.
+- `api_qos.jsonl` for QoS values.
+- `api_repo.tooldesc.jsonl` as the base functional catalog.
+
+Legacy split catalogs and generation reports live under
+`data/processed/api_catalog_sample_balanced/misc/`. They are retained for
+fallbacks, reproducibility, and historical reference, but new runtime code should
+use the canonical files above.
+
+The default FAISS index is committed at `data/index/AutoLLMCompose_v3/shared_no_qos/` so a fresh clone can run the main pipeline without rebuilding retrieval artifacts first.
+
+If you change the catalog or want to regenerate the index, run:
 
 ```bash
-export AZURE_OPENAI_API_KEY=...
-export AZURE_OPENAI_ENDPOINT=...
-export GROQ_API_KEY=...
-export FIREWORKS_API_KEY=...
-export TOGETHER_API_KEY=...
-export AZURE_FOUNDRY_API_KEY=...
-export AZURE_FOUNDRY_ENDPOINT=...
+python -m src.rag.index_build \
+  --index_dir data/index/AutoLLMCompose_v3/shared_no_qos \
+  --embed_model sentence-transformers/all-MiniLM-L6-v2
 ```
 
----
+This creates or refreshes:
 
-## Running the Pipeline
+```text
+data/index/AutoLLMCompose_v3/shared_no_qos/
+|-- faiss.index
+|-- meta.jsonl
+`-- config.json
+```
 
-Run the full LLM-based retrieval–ranking–planning pipeline:
+Commit the refreshed index files when the catalog and embedding configuration are intentionally updated.
+
+Normal users do not need the external ToolBench source tree. Only regenerate the
+enriched catalog when intentionally changing the committed catalog snapshot:
+
+```bash
+python -m src.tools.build_enriched_catalog \
+  --toolbench-root /path/to/ToolBench/data/toolenv/tools
+```
+
+Regeneration can change catalog evidence and derived QoS overlays, so commit the
+new catalog, manifest, and rebuilt FAISS index together.
+
+## Running The Pipeline
+
+Run one or more query IDs non-interactively:
+
+```bash
+python -m src.driver.run_autogen_pipeline \
+  --query-ids q01 \
+  --provider groq \
+  --model llama-3.3-70b-versatile \
+  --run-tag DEV_RUN
+```
+
+Run multiple queries:
+
+```bash
+python -m src.driver.run_autogen_pipeline \
+  --query-ids q01,q02,q03 \
+  --provider fireworks \
+  --model deepseek-v3p1 \
+  --run-tag FIREWORKS_DEV
+```
+
+You can also pass repeated query IDs:
+
+```bash
+python -m src.driver.run_autogen_pipeline \
+  --query-id q01 \
+  --query-id q05 \
+  --provider mistral
+```
+
+If you omit `--query-ids` and `--query-id`, the script opens an interactive query and provider selector:
 
 ```bash
 python -m src.driver.run_autogen_pipeline
 ```
 
-### Outputs
+The default query file is `data/queries/all_user_query.jsonl`. To use a custom
+query set, create a JSONL file with the same `id`, `title`, and `goal` fields,
+then pass it with `--queries-path`.
 
-The pipeline saves intermediate and final outputs under:
+## Pipeline Stages
 
+For each selected query, the driver performs:
+
+1. Decomposition: writes `0_decomposer.json`.
+2. Shared retrieval: writes `1_retriever_s<subtask>.json`.
+3. Functional candidate labeling: writes retrieval functional-match evaluation rows.
+4. Ranking for each mode:
+   - `no_qos`
+   - `qos_pure_llm`
+   - `qos_topsis`
+   - `qos_hybrid`
+5. Planner input selection and planning for each mode.
+6. Evaluation output generation.
+7. Composition-QoS evaluation when planning is enabled.
+
+The mode behavior is:
+
+| Mode | Ranking Signal | Description |
+| --- | --- | --- |
+| `no_qos` | Functional evidence only | LLM ranks retrieved APIs without QoS fields. |
+| `qos_pure_llm` | LLM QoS scoring + functional evidence | LLM scores QoS values, then ranks with QoS-aware prompt context. |
+| `qos_topsis` | Deterministic TOPSIS | Ranks by computed QoS closeness score. |
+| `qos_hybrid` | Functional match + TOPSIS | Places functionally matching APIs first, ordered by TOPSIS. |
+
+## Outputs
+
+Runs are written under:
+
+```text
+results/logs/<run_tag>/<provider_model>/<query_id_timestamp>/
 ```
-results/logs/
-├── retriever_autogen.json   # Selected candidate APIs
-├── ranker_autogen.json      # Ranked APIs (TOPSIS)
-├── planner_autogen.json     # Generated orchestration plan
-└── topsis_verify.json       # Numeric verification of LLM scores
+
+Important files in each query run include:
+
+```text
+meta.json                         # Run status, timings, provider/model metadata
+run_config.json                   # Pipeline config snapshot
+run.log                           # Stage-level run log
+model_usage.json                  # Model usage and failover metadata
+0_decomposer.json                 # Decomposed subtasks
+1_retriever_s<id>.json            # Retrieved candidates per subtask
+evaluation_result.json            # Pointers to evaluation outputs
+<mode>/2_ranked_s<id>.json        # Ranked APIs per mode/subtask
+<mode>/3_selected_s<id>.json      # Planner input selection per mode/subtask
+<mode>/4_planner.json             # Planner output per mode
+evaluation/                       # Excel, JSON, audit, and composition-QoS reports
 ```
 
----
+The evaluation folder can contain:
 
-## Experiment Modes
+- `query_<id>_candidate_api_rankings.xlsx`
+- `query_<id>_candidate_api_rankings_rows.json`
+- duplicate and hallucination audit JSON
+- mode anomaly reports
+- planner selection-K summaries
+- composition-QoS rows, summary, and workbook outputs
 
-MAOF supports four experimental configurations for evaluating retrieval and observability effects.
+## Dashboard
 
-| Mode | Retrieval | QoS | Status | Description |
-|------|------------|-----|---------|-------------|
-| **1. noRAG_noQoS** | LLM retriever only | ✗ | Planned | Baseline without QoS ranking |
-| **2. noRAG_QoS** | LLM retriever | ✓ |  Implemented | Current pipeline with TOPSIS QoS ranking |
-| **3. RAG_noQoS** | FAISS prefilter + LLM retriever | ✗ | Planned | Adds embedding prefiltering |
-| **4. RAG_QoS** | FAISS prefilter + LLM retriever | ✓ | Planned | Full hybrid RAG + QoS pipeline |
-
-The current implementation runs **Mode 2 (noRAG_QoS)** using three LLM agents (Retriever, Ranker, Planner) in the AutoGen framework.
-
-
----
-
-## Agents Overview
-
-| Agent                            | Function                             | Key File                      | Notes                                        |
-| -------------------------------- | ------------------------------------ | ----------------------------- | -------------------------------------------- |
-| **Retriever Agent**              | Selects relevant APIs for user goal  | `src/agents/retriever.py`     | Uses LLM to filter JSON catalog              |
-| **Ranker Agent**                 | Performs QoS-based scoring           | `src/agents/ranker_topsis.py` | Follows TOPSIS ranking logic                 |
-| **Planner Agent**                | Composes selected APIs into workflow | `src/agents/planner.py`       | Produces JSON plan output                    |
-| **Coordinator Agent (in progress)** | Aggregates ranked outputs from multiple LLMs | (to be added) | Planned for cross-model fusion and consensus scoring |
-
-
----
-
-## Result Interpretation
-
-* **retriever_autogen.json** → Candidate APIs (`api_id`, `reason`)
-* **ranker_autogen.json** → TOPSIS results (`C`, `D_plus`, `D_minus`)
-* **planner_autogen.json** → Final orchestration plan (`step`, `api_id`, `why`)
-* **topsis_verify.json** → Numerical verification of LLM ranking
-
-Higher `C` means closer to the ideal QoS point (fast, reliable, available).
-
----
-
-## Evaluation (in progress)
-
-MAOF supports multi-LLM evaluation across:
-
-* **LLMs:** GPT-4o, Mistral, OpenAI GPT-4o-mini, and local TinyLlama
-* **Metrics:**
-
-  * Candidate overlap @k
-  * Kendall τ agreement (LLM vs numeric TOPSIS)
-  * Plan completeness and logical order
-  * RAG vs no-RAG improvement
-  * QoS impact on ranking consistency
-
-Coordinator fusion and multi-LLM comparison are under active development.
-
----
-
-## Data Sources
-
-* **ToolBench** (API capability metadata)
-* **WSDream** (QoS measurements: latency, throughput, availability)
-* **Custom curated catalogs** for cross-domain service discovery experiments
-
-### ToolBench Enriched Catalogs
-
-MAOF can materialize the subset of ToolBench endpoint evidence used by the API
-catalog, so runtime ranking/evaluation prompts do not need to scan the full
-external ToolBench tree.
+Launch the Streamlit dashboard:
 
 ```bash
-python -m src.tools.build_enriched_catalog
+streamlit run src/ui/ranking_eval_app.py
 ```
 
-By default this reads `TOOLBENCH_TOOLS_ROOT` or
-`/Users/ishwaryapns/Documents/Thesis/ToolBench/data/toolenv/tools`, enriches
-only APIs already present in the MAOF catalog, and writes three canonical
-runtime data files:
+The dashboard includes pages for:
 
-* `data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl`
-* `data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl`
-* `data/processed/api_catalog_sample_balanced/api_qos.jsonl`
-* `data/processed/api_catalog_sample_balanced/enrichment_manifest.json`
+- Ranking evaluation.
+- Composition visualizations.
+- Launching experiment runs.
+- Browsing completed runs.
 
-Runtime service loading uses the enriched functional catalog for API evidence.
-When QoS is requested, it merges `api_qos.jsonl` by `api_id`; otherwise it
-returns the same functional rows without QoS. Legacy no-QoS/with-QoS catalogs
-remain supported as generation inputs and fallbacks.
+Experiment runs launched from the UI write logs under `results/logs/streamlit_launches/` and run outputs under the selected run tag.
 
----
+## Evaluation Scripts
 
-## Future Extensions
+Evaluate ranking agreement across a parent run directory:
 
-* Add **semantic RAG module** using FAISS/Chroma for pre-retrieval filtering
-* Extend coordinator agent for **cross-LLM fusion and justification**
-* Automate batch runs across 10+ user queries × 3 models × 4 modes
-* Integrate **evaluation dashboards** (e.g., Streamlit or Jupyter notebooks)
+```bash
+python -m src.eval.run_ranking_eval \
+  results/logs/DEV_RUN/groq_llama-3.3-70b-versatile \
+  --output-dir results/logs/DEV_RUN/ranking_eval
+```
 
----
+Run composition-QoS evaluation for one query run:
 
-<!-- ## 🧑‍💻 Citation
+```bash
+python -m src.eval.composition_qos_eval \
+  results/logs/DEV_RUN/groq_llama-3.3-70b-versatile/q01_YYYYMMDDTHHMMSS \
+  --query-id q01 \
+  --output-dir results/logs/DEV_RUN/groq_llama-3.3-70b-versatile/q01_YYYYMMDDTHHMMSS/evaluation
+```
+
+Backfill selected reports when needed:
+
+```bash
+python -m src.tools.backfill_candidate_api_rankings_reports --help
+python -m src.tools.backfill_mode_anomaly_reports --help
+```
+
+## Testing
+
+Run the full unit test suite:
+
+```bash
+python -m unittest discover -s tests
+```
+
+Run focused tests while changing a subsystem:
+
+```bash
+python -m unittest tests.test_json_parsing tests.test_output_schemas
+python -m unittest tests.test_ranking_metrics
+python -m unittest tests.test_composition_qos_eval
+```
+
+For a quick syntax check:
+
+```bash
+python -m compileall src tests
+```
+
+## Configuration
+
+Pipeline defaults are defined in `src/config/pipeline_config.py`. Common values:
+
+- `run_tag`: default output folder under `results/logs/`.
+- `shared_index_dir`: FAISS index path.
+- `catalog_enriched_path`: runtime functional catalog path.
+- `api_qos_path`: QoS overlay path.
+- `rag_top_k`: candidates retrieved per subtask.
+- `ranker_max_candidates`: ranker candidate cap.
+- `selector_top_n`: fallback number of APIs selected for planner input.
+- `planner_enabled`: enables planner generation.
+- `composition_qos_eval_enabled`: enables composition-level QoS evaluation.
+- `llm_validation_max_retries`: bounded retries for structurally invalid LLM outputs.
+
+Prefer changing these defaults in code only when you want a persistent project-wide behavior change. For one-off experiments, use CLI flags such as `--provider`, `--model`, `--query-ids`, `--queries-path`, and `--run-tag`.
+
+## Troubleshooting
+
+`RuntimeError: faiss is required`
+
+Install `faiss-cpu` with pip or conda, then rebuild the index if needed.
+
+`FileNotFoundError` for `data/index/AutoLLMCompose_v3/shared_no_qos/faiss.index`
+
+The default index should be included in the repository. If it is missing or stale, rebuild it:
+
+```bash
+python -m src.rag.index_build --index_dir data/index/AutoLLMCompose_v3/shared_no_qos
+```
+
+Provider key errors such as `GROQ_API_KEY missing`
+
+Add the required key to `.env` or pass a different provider with `--provider`.
+
+LM Studio timeouts or connection errors
+
+Start the LM Studio local server and verify the configured URL:
+
+```bash
+LMSTUDIO_BASE_URL=http://127.0.0.1:1234/v1
+LMSTUDIO_QWEN_CHAT_URL=http://localhost:1234/api/v1/chat
+```
+
+No services loaded from catalog
+
+Check that `data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl`
+exists and that the repository data files were pulled correctly. Catalog
+regeneration is a maintainer workflow, not a normal setup step.
+
+## Notes For New Contributors
+
+- Keep generated outputs under `results/`; this directory is ignored by git.
+- Keep local secrets in `.env`; it is ignored by git.
+- Rebuild the FAISS index after changing the functional catalog.
+- Use the JSON sidecars as the detailed source of truth for evaluation. Excel workbooks are user-facing reports.
+- Do not overwrite historical run artifacts unless the task explicitly asks for regeneration.
+
+## Citation
 
 If you use this framework or datasets, please cite:
 
-```
-@research{Subramanian2025MAOF,
-  title={MAOF: Multi-Agent Observability Framework for Service Discovery and Composition},
+```bibtex
+@research{Subramanian2025AutoLLMCompose,
+  title={AutoLLMCompose: Multi-Agent LLM Framework for Service Discovery and Composition},
   author={Ishwarya Narayana Subramanian and Eyhab Al-Masri},
   year={2025},
   institution={University of Washington Tacoma}
 }
 ```
 
----
+## License
 
-## 📜 License
-
-MIT License © 2025 Ishwarya Narayana Subramanian
+MIT License (c) 2025 Ishwarya Narayana Subramanian.
 See [LICENSE](LICENSE) for details.
-
---- -->
 
 ## Acknowledgments
 
-* **Prof. Eyhab Al-Masri**, University of Washington Tacoma — ealmasri@uw.edu  
-* Supported by the University of Washington Master’s in Computer Science & Systems program
+- **Prof. Eyhab Al-Masri**, University of Washington Tacoma - ealmasri@uw.edu
+- Supported by the University of Washington Master's in Computer Science & Systems program
 
----
-
-**Researcher:** Ishwarya Narayana Subramanian (University of Washington Tacoma)  
+**Researcher:** Ishwarya Narayana Subramanian, University of Washington Tacoma  
 Contact: ishnaruw@uw.edu

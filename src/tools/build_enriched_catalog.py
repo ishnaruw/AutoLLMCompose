@@ -327,7 +327,7 @@ def build_all(
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build compact ToolBench-enriched MAOF catalog snapshots.")
+    parser = argparse.ArgumentParser(description="Build compact ToolBench-enriched AutoLLMCompose catalog snapshots.")
     parser.add_argument("--toolbench-root", type=Path, default=DEFAULT_TOOLBENCH_TOOLS_ROOT)
     parser.add_argument(
         "--catalog-input",

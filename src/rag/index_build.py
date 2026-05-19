@@ -80,8 +80,8 @@ def _save_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Build shared semantic FAISS index for MAOF API catalog")
-    p.add_argument("--index_dir", type=str, default="data/index/maof_v3/shared_no_qos")
+    p = argparse.ArgumentParser(description="Build shared semantic FAISS index for AutoLLMCompose API catalog")
+    p.add_argument("--index_dir", type=str, default="data/index/AutoLLMCompose_v3/shared_no_qos")
     p.add_argument("--embed_model", type=str, default="sentence-transformers/all-MiniLM-L6-v2")
     p.add_argument("--no_normalize", action="store_true")
     p.add_argument("--fetch_limit", type=int, default=500)

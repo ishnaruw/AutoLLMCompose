@@ -251,7 +251,7 @@ def _select_queries_by_ids(queries: List[Dict[str, Any]], raw_ids: str) -> List[
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run MAOF query-level pipeline experiments.")
+    parser = argparse.ArgumentParser(description="Run AutoLLMCompose query-level pipeline experiments.")
     parser.add_argument(
         "--query-ids",
         help="Comma-separated query ids to run, such as q01,q03. If omitted, interactive selection is used.",

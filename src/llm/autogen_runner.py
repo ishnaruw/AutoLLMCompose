@@ -41,7 +41,7 @@ def _require_autogen() -> None:
     if AssistantAgent is None or CreateResult is None or RequestUsage is None or ModelFamily is None:
         raise RuntimeError(
             "AutoGen packages are not available in the active interpreter. "
-            "Run the pipeline with the project virtualenv, for example: MAOF/.venv/bin/python ..."
+            "Run the pipeline with the project virtualenv, for example: AutoLLMCompose/.venv/bin/python ..."
         )
 
 

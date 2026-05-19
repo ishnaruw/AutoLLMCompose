@@ -1,4 +1,4 @@
-"""Configuration package for MAOF pipelines."""
+"""Configuration package for AutoLLMCompose pipelines."""
 
 from .pipeline_config import CONFIG, PipelineConfig
 

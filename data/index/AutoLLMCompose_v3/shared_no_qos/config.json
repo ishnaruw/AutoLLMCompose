@@ -1,0 +1,9 @@
+{
+  "index_dir": "data/index/AutoLLMCompose_v3/shared_no_qos",
+  "embed_model": "sentence-transformers/all-MiniLM-L6-v2",
+  "normalize": true,
+  "fetch_limit": 500,
+  "dims": 384,
+  "count": 5559,
+  "created_at": "2026-05-18T00:38:05Z"
+}

@@ -5,10 +5,10 @@ from typing import Optional, List, Dict, Any
 
 from src.config import CONFIG
 
-CATALOG_WITH_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.tooldesc.jsonl")
-CATALOG_NO_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.tooldesc.jsonl")
-CATALOG_WITH_QOS = Path("data/processed/api_catalog_sample_balanced/api_repo.with_qos.jsonl")
-CATALOG_NO_QOS = Path("data/processed/api_catalog_sample_balanced/api_repo.no_qos.jsonl")
+CATALOG_WITH_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.with_qos.tooldesc.jsonl")
+CATALOG_NO_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.no_qos.tooldesc.jsonl")
+CATALOG_WITH_QOS = Path("data/processed/api_catalog_sample_balanced/misc/deprecated_api_repo.with_qos.jsonl")
+CATALOG_NO_QOS = Path("data/processed/api_catalog_sample_balanced/misc/deprecated_api_repo.no_qos.jsonl")
 
 
 def catalog_path(with_qos: bool, *, prefer_enriched: bool = True) -> Path:
