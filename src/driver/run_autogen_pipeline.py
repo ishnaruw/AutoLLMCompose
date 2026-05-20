@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from src.core.runtime_bootstrap import harden_scientific_runtime
+
+harden_scientific_runtime()
+
 import argparse
 import json
 import time
@@ -927,7 +931,8 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         for idx, r in enumerate(selected_rows, start=1):
             row = dict(r)
             row["selected_rank"] = idx
-            row["score"] = (len(selected_rows) - idx + 1) / float(len(selected_rows) or 1)
+            row["selection_order"] = idx
+            row.pop("score", None)
             row["subtask_id"] = sub_id
             row["selector_reason"] = "Deterministic selection from mode rank using a shared per-subtask top-n cutoff."
             row["planner_top_n"] = selected_limit
@@ -1375,7 +1380,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             planner_selection_k_summary_path = eval_dir / f"query_{query_id}_planner_selection_k_summary.json"
             for mode in MODE_ORDER:
                 try:
-                    planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner.md"
+                    planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner_qos.md"
                     result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
                     summary_selected[f"{mode}_selected"] = len(result["selected"])
                     planner_selection_k_by_mode_subtask[mode] = result.get("selection_trace", {})

@@ -1462,66 +1462,137 @@ def _planner_steps(run_dir: Path, mode: str) -> list[dict[str, Any]]:
     return steps if isinstance(steps, list) else []
 
 
-def build_dataflow_graph_dot(
+def build_dataflow_cards_html(
     *,
     query_context: dict[str, str],
     workflow: pd.DataFrame,
     mode: str,
-    view_mode: str = "compact",
+    detailed: bool = False,
 ) -> str:
-    detailed = str(view_mode).lower().startswith("detailed")
-    graph_label = wrap_label(query_context.get("goal") or query_context.get("label") or query_context.get("query_id"), width=34, max_lines=3)
-    lines = [
-        "digraph G {",
-        "  rankdir=TB;",
-        '  graph [bgcolor="transparent", pad="0.3", margin="0.1", nodesep="0.5", ranksep="0.75", splines=ortho, concentrate=false];',
-        '  node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=12, margin="0.12", width=2.6, height=0.6];',
-        '  edge [color="#64748B", arrowsize=0.7, penwidth=1.1, fontsize=10, fontname="Helvetica"];',
-        f'  query [label="User Query\\n{_dot_escape(graph_label)}", fillcolor="{HEALTH_COLORS["blue"]}", color="#0284C7"];',
-    ]
-    if workflow.empty:
-        lines.append(f'  final [label="Final Planned Workflow", fillcolor="{HEALTH_COLORS["final"]}", color="#548235"];')
-        lines.append("  query -> final;")
-        lines.append("}")
-        return "\n".join(lines)
+    query_text = query_context.get("goal") or query_context.get("label") or query_context.get("query_id") or NA
 
-    previous_node = "query"
-    for idx, (_, row) in enumerate(workflow.iterrows(), start=1):
-        sid = _normalize_id(row.get("Subtask_ID")) or str(idx)
-        api_node = f"api_{idx}"
-        output_node = f"out_{idx}"
-        step = _first_value(row, "Step") or idx
-        api_name = wrap_label(row.get("API_Name") or row.get("API_ID"), width=30, max_lines=2)
-        input_text = wrap_label(row.get("Input_From_Previous_Step") or row.get("Subtask") or f"Input to step {idx}", width=28, max_lines=2)
-        output_text = wrap_label(row.get("Output_To_Next_Step") or ("Final workflow output" if idx == len(workflow) else f"Output to step {idx + 1}"), width=28, max_lines=2)
-        api_label_parts = [
-            f"Step {step} API",
-            api_name,
-            f"Input: {input_text}",
-            f"Output: {output_text}",
-        ]
-        if detailed:
-            subtask_text = wrap_label(row.get("Subtask") or f"Subtask {sid}", width=30, max_lines=2)
-            action_text = wrap_label(row.get("Action"), width=30, max_lines=2)
-            api_label_parts.insert(2, f"Subtask: {subtask_text}")
-            if action_text != NA:
-                api_label_parts.append(f"Action: {action_text}")
-        api_label = "\n".join(api_label_parts)
-        output_label = f"Output of Step {step}\\n{output_text}"
-        lines.extend(
-            [
-                f'  {api_node} [label="{_dot_escape(api_label)}", fillcolor="{_selection_color(row)}", color="{_selection_border(row)}"];',
-                f'  {output_node} [label="{_dot_escape(output_label)}", shape=note, fillcolor="#E2F0D9", color="#548235"];',
-                f"  {previous_node} -> {api_node};",
-                f"  {api_node} -> {output_node};",
-            ]
+    def card(title: str, rows: list[tuple[str, Any]], *, css_class: str = "") -> str:
+        row_html = "\n".join(
+            (
+                '<div class="maof-dataflow-field">'
+                f'<div class="maof-dataflow-key">{escape(label)}</div>'
+                f'<div class="maof-dataflow-value" title="{escape(str(value if not _is_missing(value) else NA))}">'
+                f'{escape(str(value if not _is_missing(value) else NA))}'
+                "</div>"
+                "</div>"
+            )
+            for label, value in rows
         )
-        previous_node = output_node
-    final_label = f"Final Planned Workflow\\nMode: {_dot_escape(wrap_label(mode, width=24, max_lines=1))}"
-    lines.append(f'  final [label="{final_label}", fillcolor="{HEALTH_COLORS["final"]}", color="#548235"];')
-    lines.append(f"  {previous_node} -> final;")
-    lines.append("}")
-    return "\n".join(lines)
+        return (
+            f'<div class="maof-dataflow-card {css_class}">'
+            f'<div class="maof-dataflow-title">{escape(title)}</div>'
+            f"{row_html}"
+            "</div>"
+        )
+
+    parts = [
+        """
+<style>
+.maof-dataflow-wrap {
+  max-width: 850px;
+  margin: 0 auto;
+}
+.maof-dataflow-card {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #d0d7de;
+  background: #f8fafc;
+  color: #1f2937;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.35;
+}
+.maof-dataflow-step {
+  background: #ffffff;
+}
+.maof-dataflow-final {
+  background: #e8f5e9;
+}
+.maof-dataflow-title {
+  font-size: 16px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.maof-dataflow-field {
+  display: grid;
+  grid-template-columns: minmax(110px, 170px) minmax(0, 1fr);
+  gap: 10px;
+  padding-top: 7px;
+}
+.maof-dataflow-key {
+  font-size: 13px;
+  font-weight: 650;
+  color: #57606a;
+}
+.maof-dataflow-value {
+  font-size: 14px;
+  color: #24292f;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.maof-dataflow-arrow {
+  text-align: center;
+  font-size: 28px;
+  line-height: 1;
+  color: #57606a;
+  padding: 8px 0;
+}
+@media (max-width: 700px) {
+  .maof-dataflow-card {
+    padding: 12px 14px;
+  }
+  .maof-dataflow-field {
+    display: block;
+  }
+  .maof-dataflow-key {
+    margin-bottom: 2px;
+  }
+}
+</style>
+<div class="maof-dataflow-wrap">
+""",
+        card("User Query", [("Request", query_text)]),
+    ]
+
+    for idx, (_, row) in enumerate(workflow.iterrows(), start=1):
+        step = _first_value(row, "Step") or idx
+        if detailed:
+            rows = [
+                ("Step number", step),
+                ("Subtask", row.get("Subtask")),
+                ("Selected API", row.get("API_Name") or row.get("API_ID")),
+                ("Input from previous step", row.get("Input_From_Previous_Step")),
+                ("Action summary", row.get("Action")),
+                ("Output to next step", row.get("Output_To_Next_Step")),
+            ]
+        else:
+            rows = [
+                ("Step number", step),
+                ("Selected API", row.get("API_Name") or row.get("API_ID")),
+                ("Input", row.get("Input_From_Previous_Step")),
+                ("Output", row.get("Output_To_Next_Step")),
+            ]
+        parts.append('<div class="maof-dataflow-arrow">↓</div>')
+        parts.append(card(f"Step {step}", rows, css_class="maof-dataflow-step"))
+
+    parts.append('<div class="maof-dataflow-arrow">↓</div>')
+    parts.append(card("Final Planned Workflow", [("Mode", mode)], css_class="maof-dataflow-final"))
+    parts.append("</div>")
+    return "\n".join(parts)
 
 
 def _stage_row(stage: str, status: str, evidence: str, details: str = "", warnings: str = "") -> dict[str, str]:

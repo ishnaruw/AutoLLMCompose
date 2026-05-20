@@ -27,6 +27,16 @@ _INTERNAL_ONLY_PATTERNS = (
     r"\bdashboard update\b",
 )
 
+_ALWAYS_INTERNAL_PATTERNS = (
+    r"\bfetch (?:the )?list of domains to monitor\b",
+    r"\bretrieve (?:the )?list of domains to monitor\b",
+    r"\bget (?:the )?list of domains to monitor\b",
+    r"\bconfiguration or inventory api\b",
+    r"\bdownstream blocking service\b",
+    r"\baggregated scan results\b",
+    r"\breturn(?:ing)? (?:the )?scan results\b",
+)
+
 _EXPLICIT_API_BACKED_TERMS = (
     " api",
     "apis",
@@ -48,6 +58,8 @@ def _looks_internal_subtask(description: str) -> bool:
     text = re.sub(r"\s+", " ", str(description or "").strip().lower())
     if not text:
         return False
+    if any(re.search(pattern, text) for pattern in _ALWAYS_INTERNAL_PATTERNS):
+        return True
     if any(term in text for term in _EXPLICIT_API_BACKED_TERMS):
         return False
     return any(re.search(pattern, text) for pattern in _INTERNAL_ONLY_PATTERNS)
@@ -70,7 +82,9 @@ def _fold_internal_subtasks(subtasks: List[Dict[str, Any]]) -> List[Dict[str, An
         desc = str(subtask.get("description") or "").strip()
         if not desc:
             continue
-        if folded and _looks_internal_subtask(desc):
+        if _looks_internal_subtask(desc):
+            if not folded:
+                continue
             previous = str(folded[-1].get("description") or "").strip()
             folded[-1]["description"] = f"{previous}; include local workflow step: {desc}"
             continue

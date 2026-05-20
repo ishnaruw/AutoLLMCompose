@@ -11,10 +11,11 @@ Ordered subtasks:
 {subtasks_json}
 
 Candidate APIs:
-{ranked_compact}
+{selected_candidates_json}
 
 Rules:
 - Use only the provided candidates.
+- Candidate APIs are already selected and ordered. Lower "selection_order" means higher priority within the selected set.
 - Keep workflows sequential.
 - Return exactly one primary plan.
 - Return a machine-readable execution workflow in addition to the human-readable primary plan.
@@ -35,8 +36,7 @@ Rules:
 - The top-level JSON must contain exactly these required fields: "primary_plan", "execution_workflow", "selected_api_ids", and "overall_rationale".
 - Put "plan_id", "summary", "steps", and "subtask_coverage" inside "primary_plan"; do not put "steps" at the top level.
 - Put "type" and "steps" inside "execution_workflow".
-- Do not reason about QoS.
-- Keep "qos": null for every step.
+- This is the no-QoS planning mode. Generate the workflow using only functional suitability, subtask coverage, parameter compatibility, and selected API order. Do not optimize using QoS or quality-related attributes. Keep "qos": null for every workflow step.
 
 Return JSON only:
 {

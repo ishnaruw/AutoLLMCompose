@@ -33,6 +33,37 @@ def _candidate_rank(row):
     return None
 
 
+def _selection_order(row):
+    for key in ("selection_order", "selected_rank"):
+        value = row.get(key)
+        if value is not None:
+            return value
+    return _candidate_rank(row)
+
+
+_NO_QOS_SERVICE_KEYS = {
+    "qos",
+    "rt_ms",
+    "tp_rps",
+    "availability",
+    "qos_score",
+    "qos_rank",
+    "topsis_score",
+    "topsis_rank",
+    "qos_llm_score",
+    "qos_llm_rank",
+}
+
+
+def _service_for_planner(row, *, strip_qos: bool):
+    service = row.get("service", {})
+    service_copy = deepcopy(service) if isinstance(service, dict) else {}
+    if strip_qos:
+        for key in _NO_QOS_SERVICE_KEYS:
+            service_copy.pop(key, None)
+    return service_copy
+
+
 def _repair_planner_payload(payload):
     if not isinstance(payload, dict):
         return payload
@@ -93,18 +124,20 @@ def _schema_retry_prompt(prompt, issue):
     )
 
 
-def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner.md"):
+def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner_qos.md"):
     """
-    Compose one final orchestration plan from ranked candidates.
+    Compose one final orchestration plan from selected candidates.
 
     Inputs:
       - user_goal: the original natural language goal.
-      - ranked_top: list of candidate APIs with scores and their catalog entries,
+      - ranked_top: selected candidate APIs with planner selection order and
+        their catalog metadata,
         for example:
             [
               {
                 "api_id": "...",
-                "score": <number>,
+                "subtask_id": 1,
+                "selection_order": 1,
                 "service": {
                   "api_id": "...",
                   "description": "...",
@@ -121,7 +154,7 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
               ...
             ]
 
-    Expected LLM output (see prompts/planner.md for schema):
+    Expected LLM output (see prompts/planner_qos.md for schema):
         {
           "primary_plan": {
             "plan_id": <int>,
@@ -173,28 +206,27 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
       }
 
     Behavior:
-      - Builds a compact JSON payload with api_id, score, and the full service
-        entry as seen in the catalog.
+      - Builds a compact JSON payload with api_id, subtask_id,
+        selection_order, and the service entry as seen in the catalog.
       - Fills the planner prompt template with:
           * user_goal
           * subtasks (JSON)
-          * ranked candidates (compact JSON)
+          * selected candidates (compact JSON)
       - Calls the LLM and parses the returned JSON plan.
       - Returns the parsed dictionary directly.
     """
     compact = []
+    strip_qos = str(prompt_path).endswith("planner_no_qos.md")
     for r in ranked_top:
         compact.append({
             "api_id": r.get("api_id"),
-            "score": float(r.get("score", 0) or 0),
-            "rank": _candidate_rank(r),
             "subtask_id": r.get("subtask_id"),
-            "rag_score": r.get("rag_score"),
-            "service": r.get("service", {}),
+            "selection_order": _selection_order(r),
+            "service": _service_for_planner(r, strip_qos=strip_qos),
         })
 
     subtasks_json = json.dumps(subtasks or [], ensure_ascii=False)
-    ranked_json = json.dumps(compact, ensure_ascii=False)
+    selected_candidates_json = json.dumps(compact, ensure_ascii=False)
 
     with open(prompt_path, "r", encoding="utf-8") as f:
         tmpl = f.read()
@@ -203,7 +235,8 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
         tmpl
         .replace("{user_goal}", user_goal)
         .replace("{subtasks_json}", subtasks_json)
-        .replace("{ranked_compact}", ranked_json)
+        .replace("{selected_candidates_json}", selected_candidates_json)
+        .replace("{ranked_compact}", selected_candidates_json)
     )
 
     def _parse_plan(text: str):

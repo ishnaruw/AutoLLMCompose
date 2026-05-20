@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.ui.composition_visualization_helpers import (
-    build_dataflow_graph_dot,
+    build_dataflow_cards_html,
     build_bottleneck_replacement_simulations,
     build_replacement_simulation_dot,
     build_winner_heatmap,
@@ -386,7 +386,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         self.assertIn("Original_QoS_Adjusted_Composition_Score", scored.columns)
         self.assertEqual(rows.iloc[0]["QoS_Adjusted_Composition_Score"], 0.9)
 
-    def test_dataflow_graph_uses_planner_io_fields(self) -> None:
+    def test_dataflow_cards_use_planner_io_fields(self) -> None:
         workflow = pd.DataFrame(
             [
                 {
@@ -394,29 +394,38 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Subtask_ID": "1",
                     "API_ID": "geo",
                     "API_Name": "Geo API",
+                    "Subtask": "Resolve the user location",
                     "Input_From_Previous_Step": "User location",
                     "Output_To_Next_Step": "Latitude and longitude",
                     "Action": "Resolve location",
+                    "Why": "Long rationale should stay out of the graph cards.",
                 }
             ]
         )
 
-        dot = build_dataflow_graph_dot(query_context={"query_id": "q1", "goal": "Find local weather"}, workflow=workflow, mode="qos_hybrid")
+        html = build_dataflow_cards_html(query_context={"query_id": "q1", "goal": "Find local weather"}, workflow=workflow, mode="qos_hybrid")
 
-        self.assertIn("rankdir=TB", dot)
-        self.assertNotIn("rankdir=LR", dot)
-        self.assertIn("User location", dot)
-        self.assertIn("Latitude and longitude", dot)
-        self.assertIn("Final Planned Workflow", dot)
-        self.assertNotIn("Resolve location", dot)
+        self.assertIn("maof-dataflow-wrap", html)
+        self.assertIn("max-width: 850px", html)
+        self.assertIn("Find local weather", html)
+        self.assertIn("Geo API", html)
+        self.assertIn("User location", html)
+        self.assertIn("Latitude and longitude", html)
+        self.assertIn("Final Planned Workflow", html)
+        self.assertIn("↓", html)
+        self.assertNotIn("Resolve location", html)
+        self.assertNotIn("Long rationale", html)
+        self.assertNotIn("digraph", html)
 
-        detailed_dot = build_dataflow_graph_dot(
+        detailed_html = build_dataflow_cards_html(
             query_context={"query_id": "q1", "goal": "Find local weather"},
             workflow=workflow,
             mode="qos_hybrid",
-            view_mode="detailed",
+            detailed=True,
         )
-        self.assertIn("Resolve location", detailed_dot)
+        self.assertIn("Resolve the user location", detailed_html)
+        self.assertIn("Resolve location", detailed_html)
+        self.assertNotIn("Long rationale", detailed_html)
 
     def test_invalid_workflow_diagnostics_reports_missing_reason_and_step_warnings(self) -> None:
         workflow = pd.DataFrame(

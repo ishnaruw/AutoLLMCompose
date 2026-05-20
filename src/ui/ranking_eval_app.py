@@ -4,19 +4,27 @@ import json
 import os
 import re
 import subprocess
+import sys
+import warnings
 from dataclasses import dataclass
+from html import escape
 from pathlib import Path
 from typing import Any
-import sys
 import time
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.core.runtime_bootstrap import harden_scientific_runtime
+
+harden_scientific_runtime()
 
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
+warnings.filterwarnings("ignore", message="coroutine 'expire_cache' was never awaited", category=RuntimeWarning)
 
 from src.eval.ranking_metrics import (  # noqa: E402
     DEFAULT_RBO_P,
@@ -467,6 +475,8 @@ def _load_composition_reports(parent_dir_text: str) -> tuple[pd.DataFrame, pd.Da
             workflow_df["report_path"] = str(xlsx_candidates[0])
             workflow_frames.append(workflow_df)
 
+    eval_frames = [frame.dropna(axis=1, how="all") for frame in eval_frames if not frame.empty and not frame.dropna(axis=1, how="all").empty]
+    workflow_frames = [frame.dropna(axis=1, how="all") for frame in workflow_frames if not frame.empty and not frame.dropna(axis=1, how="all").empty]
     eval_df = pd.concat(eval_frames, ignore_index=True) if eval_frames else pd.DataFrame()
     workflow_df = pd.concat(workflow_frames, ignore_index=True) if workflow_frames else pd.DataFrame()
     return eval_df, workflow_df, warnings
@@ -540,7 +550,12 @@ def _render_excel_viewer(run_dir: Path, token: str, title: str, missing_message:
         st.info("The selected sheet is empty.")
         return
     view = _render_dataframe_filters(df, key_prefix) if token == "candidate_api_rankings" else df
-    st.dataframe(view, width="stretch", hide_index=True)
+    render_sticky_table(
+        view,
+        sticky_columns=["Query_ID", "query_id", "Mode", "mode", "Subtask_ID", "subtask_id", "API_Name", "API_ID", "api_id"],
+        height=520,
+        key=f"{key_prefix}_{sheet_name}",
+    )
 
 
 def _tail_text(path: Path, line_count: int) -> tuple[str | None, str | None]:
@@ -655,7 +670,7 @@ def _run_progress_info(run_dir: Path) -> dict:
 def _render_process_tracker(run_dir: Path) -> None:
     st.subheader("Process Tracker")
     rows = _stage_rows_for_run(run_dir)
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
 def _render_run_progress_panel(run_dir: Path) -> None:
@@ -673,7 +688,7 @@ def _render_run_progress_panel(run_dir: Path) -> None:
             f"`{_display_status(str(row['Status']))}`"
         )
     with st.expander("Stage details", expanded=True):
-        st.dataframe(pd.DataFrame(info["rows"]), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(info["rows"]), use_container_width=True, hide_index=True)
 
 
 def _is_run_live(run_dir: Path) -> bool:
@@ -872,7 +887,7 @@ def render_query_run_explorer() -> None:
                 }
             )
         st.subheader("Current Batch Progress")
-        st.dataframe(pd.DataFrame(progress_rows), width="stretch", hide_index=True)
+        st.dataframe(pd.DataFrame(progress_rows), use_container_width=True, hide_index=True)
     else:
         st.info("Waiting for the first query run folder to appear.")
 
@@ -1007,7 +1022,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         if col in filtered:
             filtered[col] = pd.to_numeric(filtered[col], errors="coerce")
 
-    st.dataframe(
+    render_sticky_table(
         _composition_display_frame(filtered[
             [
                 col
@@ -1027,8 +1042,9 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                 if col in filtered.columns
             ]
         ].round(4)),
-        width="stretch",
-        hide_index=True,
+        sticky_columns=["Query_ID", "Mode"],
+        height=360,
+        key="composition_eval_overview",
     )
     if availability_col in filtered:
         st.caption(viz.WORKFLOW_AVAILABILITY_HELP)
@@ -1082,8 +1098,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                 yaxis_title="Mean QoS-Adjusted Composition Score",
                 showlegend=False,
             )
-            st.plotly_chart(overall_fig, width="stretch")
-            st.dataframe(
+            st.plotly_chart(overall_fig, use_container_width=True)
+            render_sticky_table(
                 overall_score.round(
                     {
                         "Mean_QoS_Adjusted_Composition_Score": 4,
@@ -1093,8 +1109,9 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                         "Mean_Normalized_QoS_Score": 4,
                     }
                 ),
-                width="stretch",
-                hide_index=True,
+                sticky_columns=["Mode"],
+                height=320,
+                key="composition_overall_score",
             )
 
         query_order = sorted(
@@ -1124,7 +1141,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             bargroupgap=0.05,
         )
         all_query_fig.update_xaxes(tickangle=0)
-        st.plotly_chart(all_query_fig, width="stretch")
+        st.plotly_chart(all_query_fig, use_container_width=True)
 
         normalized_cols = [
             "Normalized_Response_Time_Score",
@@ -1149,7 +1166,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                 range_y=[0, 1],
             )
             norm_fig.update_layout(height=400, margin=dict(l=10, r=10, t=55, b=10))
-            st.plotly_chart(norm_fig, width="stretch")
+            st.plotly_chart(norm_fig, use_container_width=True)
 
         scatter_fig = px.scatter(
             filtered,
@@ -1165,7 +1182,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         )
         scatter_fig.update_traces(textposition="top center")
         scatter_fig.update_layout(height=430, margin=dict(l=10, r=10, t=55, b=10))
-        st.plotly_chart(scatter_fig, width="stretch")
+        st.plotly_chart(scatter_fig, use_container_width=True)
 
     with raw_tab:
         raw_cols = [
@@ -1194,7 +1211,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             )
             raw_fig.update_yaxes(matches=None)
             raw_fig.update_layout(height=390, margin=dict(l=10, r=10, t=55, b=10), showlegend=False)
-            st.plotly_chart(raw_fig, width="stretch")
+            st.plotly_chart(raw_fig, use_container_width=True)
 
         validity_long = filtered.melt(
             id_vars=["Query_ID", "run_name", "Mode"],
@@ -1212,7 +1229,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             range_y=[0, 1],
         )
         validity_fig.update_layout(height=360, margin=dict(l=10, r=10, t=55, b=10))
-        st.plotly_chart(validity_fig, width="stretch")
+        st.plotly_chart(validity_fig, use_container_width=True)
 
         rank_cols = {
             "QoS_Adjusted_Composition_Score": False,
@@ -1256,7 +1273,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                     aspect="auto",
                 )
                 fig.update_layout(height=360, margin=dict(l=10, r=10, t=55, b=10))
-                st.plotly_chart(fig, width="stretch")
+                st.plotly_chart(fig, use_container_width=True)
 
     with workflow_tab:
         workflow_view = workflow_df.copy()
@@ -1272,7 +1289,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             if col in workflow_view:
                 workflow_view[col] = pd.to_numeric(workflow_view[col], errors="coerce")
 
-        st.dataframe(
+        render_sticky_table(
             _composition_display_frame(workflow_view[
                 [
                     col
@@ -1292,8 +1309,9 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                     if col in workflow_view.columns
                 ]
             ]),
-            width="stretch",
-            hide_index=True,
+            sticky_columns=["Query_ID", "Mode", "Step", "API_ID"],
+            height=480,
+            key="composition_planned_workflow",
         )
 
         timeline_source = workflow_view.dropna(subset=["Step"]).copy()
@@ -1310,7 +1328,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             )
             timeline_fig.update_traces(mode="markers+text", textposition="top center")
             timeline_fig.update_layout(height=460, margin=dict(l=10, r=10, t=55, b=10), yaxis_title="Mode / Run")
-            st.plotly_chart(timeline_fig, width="stretch")
+            st.plotly_chart(timeline_fig, use_container_width=True)
 
         step_metric_options = [col for col in ["rt_ms", "tp_rps", "availability"] if col in workflow_view.columns]
         if not step_metric_options:
@@ -1336,13 +1354,186 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                 labels={step_metric: _composition_metric_label(step_metric)},
             )
             line_fig.update_layout(height=380, margin=dict(l=10, r=10, t=55, b=10), yaxis_title=_composition_metric_label(step_metric))
-            st.plotly_chart(line_fig, width="stretch")
+            st.plotly_chart(line_fig, use_container_width=True)
 
 
 def _display_frame(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
-    return df.astype(object).where(pd.notna(df), viz.NA)
+    return df.astype(object).where(pd.notna(df), viz.NA).astype(str)
+
+
+DEFAULT_STICKY_IDENTIFIER_COLUMNS = [
+    "Query_ID",
+    "Query ID",
+    "query_id",
+    "Mode",
+    "mode",
+    "Step",
+    "Subtask_ID",
+    "Subtask ID",
+    "subtask_id",
+    "Subtask",
+    "API_Name",
+    "API Name",
+    "API",
+    "API_ID",
+    "API ID",
+    "api_id",
+    "Metric",
+]
+
+
+def _sticky_columns_for(df: pd.DataFrame, preferred: list[str] | tuple[str, ...] | None = None, *, max_columns: int = 2) -> list[str]:
+    if df.empty:
+        return []
+    candidates = list(preferred or []) + [col for col in DEFAULT_STICKY_IDENTIFIER_COLUMNS if col not in set(preferred or [])]
+    sticky: list[str] = []
+    for col in candidates:
+        if col in df.columns and col not in sticky:
+            sticky.append(col)
+        if len(sticky) >= max_columns:
+            break
+    return sticky
+
+
+def _html_value(value: Any) -> str:
+    if value is None:
+        return viz.NA
+    if isinstance(value, float) and pd.isna(value):
+        return viz.NA
+    text = str(value)
+    return text if text.strip() else viz.NA
+
+
+def render_sticky_table(
+    df: pd.DataFrame,
+    sticky_columns: list[str] | tuple[str, ...] | None = None,
+    *,
+    height: int = 420,
+    key: str | None = None,
+    note: bool = True,
+) -> None:
+    if df.empty:
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        return
+
+    display = _display_frame(df)
+    sticky = _sticky_columns_for(display, sticky_columns)
+    if not sticky:
+        st.dataframe(display, use_container_width=True, hide_index=True, height=height)
+        return
+
+    ordered_cols = sticky + [col for col in display.columns if col not in sticky]
+    display = display[ordered_cols]
+    safe_key = re.sub(r"[^a-zA-Z0-9_-]+", "-", key or "default").strip("-") or "default"
+    sticky_widths = [180, 220]
+    sticky_lefts = [0]
+    for idx in range(1, len(sticky)):
+        sticky_lefts.append(sum(sticky_widths[:idx]))
+
+    sticky_css = []
+    for idx, col in enumerate(sticky, start=1):
+        width = sticky_widths[min(idx - 1, len(sticky_widths) - 1)]
+        left = sticky_lefts[idx - 1]
+        sticky_css.append(
+            f"""
+.maof-sticky-{safe_key} th:nth-child({idx}),
+.maof-sticky-{safe_key} td:nth-child({idx}) {{
+  position: sticky;
+  left: {left}px;
+  min-width: {width}px;
+  max-width: {width}px;
+  background: #ffffff;
+  z-index: 4;
+  box-shadow: 1px 0 0 #d0d7de;
+}}
+.maof-sticky-{safe_key} th:nth-child({idx}) {{
+  z-index: 6;
+  background: #f6f8fa;
+}}
+"""
+        )
+
+    header_html = "".join(f"<th>{escape(str(col))}</th>" for col in display.columns)
+    body_rows = []
+    for _, row in display.iterrows():
+        cells = []
+        for col in display.columns:
+            value = _html_value(row.get(col))
+            cells.append(f'<td title="{escape(value)}"><div class="maof-sticky-cell-text">{escape(value)}</div></td>')
+        body_rows.append(f"<tr>{''.join(cells)}</tr>")
+
+    if note:
+        st.caption("Primary identifier columns remain fixed while scrolling horizontally.")
+    st.markdown(
+        f"""
+<style>
+.maof-sticky-{safe_key}-wrap {{
+  max-height: {int(height)}px;
+  overflow: auto;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  background: #ffffff;
+}}
+.maof-sticky-{safe_key} {{
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+  line-height: 1.35;
+  color: #24292f;
+}}
+.maof-sticky-{safe_key} th,
+.maof-sticky-{safe_key} td {{
+  box-sizing: border-box;
+  min-width: 150px;
+  max-width: 280px;
+  padding: 8px 10px;
+  border-right: 1px solid #d8dee4;
+  border-bottom: 1px solid #d8dee4;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}}
+.maof-sticky-{safe_key} th {{
+  position: sticky;
+  top: 0;
+  background: #f6f8fa;
+  color: #57606a;
+  font-weight: 650;
+  z-index: 3;
+}}
+.maof-sticky-{safe_key} td {{
+  background: #ffffff;
+  display: table-cell;
+}}
+.maof-sticky-{safe_key} .maof-sticky-cell-text {{
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}}
+.maof-sticky-{safe_key} tbody tr:nth-child(even) td {{
+  background: #fbfcfe;
+}}
+.maof-sticky-{safe_key} tbody tr:nth-child(even) td:nth-child(-n+{len(sticky)}) {{
+  background: #fbfcfe;
+}}
+{''.join(sticky_css)}
+</style>
+<div class="maof-sticky-{safe_key}-wrap">
+  <table class="maof-sticky-{safe_key}">
+    <thead><tr>{header_html}</tr></thead>
+    <tbody>{''.join(body_rows)}</tbody>
+  </table>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 COMPOSITION_METRIC_LABELS = {
@@ -1413,7 +1604,7 @@ def _render_grouped_bottlenecks(workflow: pd.DataFrame, bottlenecks: pd.DataFram
                 {"Metric": "Throughput", "Value": viz.format_value(raw.get("throughput"))},
                 {"Metric": "Availability", "Value": viz.format_value(raw.get("availability"))},
             ]
-            st.dataframe(pd.DataFrame(raw_rows), width="stretch", hide_index=True)
+            st.dataframe(pd.DataFrame(raw_rows), use_container_width=True, hide_index=True)
 
 
 def _api_detail_rows(row: dict[str, Any] | pd.Series, *, dimensions: str | None = None, reason: str | None = None) -> pd.DataFrame:
@@ -1520,10 +1711,10 @@ def _render_replacement_simulation(
     left, right = st.columns(2)
     with left:
         st.markdown("**Current Bottleneck API**")
-        st.dataframe(_display_frame(_api_detail_rows(current_row, dimensions=dimensions)), width="stretch", hide_index=True)
+        st.dataframe(_display_frame(_api_detail_rows(current_row, dimensions=dimensions)), use_container_width=True, hide_index=True)
     with right:
         st.markdown("**Candidate Replacement API**")
-        st.dataframe(_display_frame(_api_detail_rows(replacement_row, reason=simulation.get("reason"))), width="stretch", hide_index=True)
+        st.dataframe(_display_frame(_api_detail_rows(replacement_row, reason=simulation.get("reason"))), use_container_width=True, hide_index=True)
         if other_modes is None:
             st.caption("This candidate may or may not appear in another mode's selected workflow.")
         else:
@@ -1533,7 +1724,7 @@ def _render_replacement_simulation(
 
     st.markdown("**What-If Metric Change**")
     comparison = pd.DataFrame(viz.simulation_metric_rows(simulation["current_metrics"], simulation["simulated_metrics"]))
-    st.dataframe(_display_frame(comparison), width="stretch", hide_index=True)
+    st.dataframe(_display_frame(comparison), use_container_width=True, hide_index=True)
     worsens_major_metric = _what_if_worsens_major_metric(simulation["current_metrics"], simulation["simulated_metrics"])
     if worsens_major_metric:
         st.warning("The candidate replacement does not improve the workflow overall and may weaken one or more QoS metrics.")
@@ -1565,24 +1756,8 @@ def _render_replacement_simulation(
         )
         st.graphviz_chart(
             viz.build_replacement_simulation_dot(workflow, simulation["simulated_workflow"], current_row, replacement_row),
-            width="stretch",
+            use_container_width=True,
         )
-
-
-def _render_step_by_step_dataflow_cards(workflow: pd.DataFrame) -> None:
-    st.markdown("**Step-by-step Dataflow Cards**")
-    card_rows = []
-    for idx, (_, row) in enumerate(workflow.iterrows(), start=1):
-        card_rows.append(
-            {
-                "Step": row.get("Step", idx),
-                "Selected API": row.get("API_Name") or row.get("API_ID") or viz.NA,
-                "Input from previous step": row.get("Input_From_Previous_Step", viz.NA),
-                "Output to next step": row.get("Output_To_Next_Step", viz.NA),
-                "Action summary": row.get("Action", viz.NA),
-            }
-        )
-    st.dataframe(_display_frame(pd.DataFrame(card_rows)), width="stretch", hide_index=True)
 
 
 def _render_dataflow_graph(workflow: pd.DataFrame, query_context: dict[str, str], selected_mode: str) -> None:
@@ -1590,39 +1765,24 @@ def _render_dataflow_graph(workflow: pd.DataFrame, query_context: dict[str, str]
         st.info("No planned workflow rows are available for the dataflow graph.")
         return
 
-    control_cols = st.columns([1, 1, 2])
-    view_mode = control_cols[0].selectbox(
+    view_mode = st.selectbox(
         "View mode",
         ["Compact graph", "Detailed graph"],
         index=0,
         key=f"dataflow_view_mode_{selected_mode}",
     )
-    graph_height = control_cols[1].selectbox(
-        "Graph height",
-        [500, 700, 900],
-        index=1,
-        format_func=lambda value: f"{value} px",
-        key=f"dataflow_graph_height_{selected_mode}",
+    st.markdown(
+        viz.build_dataflow_cards_html(
+            query_context=query_context,
+            workflow=workflow,
+            mode=selected_mode,
+            detailed=view_mode == "Detailed graph",
+        ),
+        unsafe_allow_html=True,
     )
-    control_cols[2].caption("Compact mode keeps long action details out of the diagram for cleaner screenshots.")
-
-    graph_dot = viz.build_dataflow_graph_dot(
-        query_context=query_context,
-        workflow=workflow,
-        mode=selected_mode,
-        view_mode="detailed" if view_mode == "Detailed graph" else "compact",
-    )
-    try:
-        graph_container = st.container(height=graph_height, border=True)
-    except TypeError:
-        graph_container = st.container()
-    with graph_container:
-        st.graphviz_chart(graph_dot, width="stretch")
     st.caption(
-        "This graph shows the planned dataflow between selected APIs. Long action details are shown in the step details below to keep the graph readable."
+        "This view shows the planned dataflow between selected APIs. Long action and rationale details are shown below to keep the diagram readable."
     )
-
-    _render_step_by_step_dataflow_cards(workflow)
 
     st.markdown("**Step Details**")
     for _, row in workflow.iterrows():
@@ -1638,7 +1798,7 @@ def _render_dataflow_graph(workflow: pd.DataFrame, query_context: dict[str, str]
                     {"Field": "Why", "Value": row.get("Why", viz.NA)},
                 ]
             )
-            st.dataframe(_display_frame(detail), width="stretch", hide_index=True)
+            st.dataframe(_display_frame(detail), use_container_width=True, hide_index=True)
 
 
 def _render_agent_observability(
@@ -1662,13 +1822,13 @@ def _render_agent_observability(
     )
     score = summary.get("score")
     st.metric("Pipeline Health Score", viz.format_value(score, percent=True))
-    st.dataframe(_display_frame(pd.DataFrame(summary.get("rows", []))), width="stretch", hide_index=True)
+    st.dataframe(_display_frame(pd.DataFrame(summary.get("rows", []))), use_container_width=True, hide_index=True)
     logs = pd.DataFrame(summary.get("logs", []))
     if logs.empty:
         st.info("No warning/error log available for this run.")
         return
     st.markdown("**Warning and Error Log Signals**")
-    st.dataframe(_display_frame(logs), width="stretch", hide_index=True)
+    st.dataframe(_display_frame(logs), use_container_width=True, hide_index=True)
     available_logs = logs[logs["Status"].astype(str) == "Available"] if "Status" in logs else pd.DataFrame()
     if available_logs.empty:
         st.info("No warning/error log available for this run.")
@@ -1690,9 +1850,9 @@ def _render_invalid_workflow_diagnostics(
     if not issues:
         st.info("No invalid workflow issues detected.")
         return
-    st.graphviz_chart(viz.build_invalid_workflow_diagnostic_dot(workflow, issues), width="stretch")
+    st.graphviz_chart(viz.build_invalid_workflow_diagnostic_dot(workflow, issues), use_container_width=True)
     issues_df = pd.DataFrame(issues)
-    st.dataframe(_display_frame(issues_df), width="stretch", hide_index=True)
+    render_sticky_table(_display_frame(issues_df), sticky_columns=["Step", "API", "Issue"], height=360, key="invalid_workflow_issues")
 
 
 def _render_winner_heatmap(eval_df: pd.DataFrame, run_dir: Path) -> None:
@@ -1704,11 +1864,10 @@ def _render_winner_heatmap(eval_df: pd.DataFrame, run_dir: Path) -> None:
     if winners.empty:
         st.info("Winner heatmap unavailable because composition evaluation rows are missing.")
         return
-    style = winners.style.map(_mode_cell_style, subset=[col for col in winners.columns if col != "Query"])
-    st.dataframe(style, width="stretch", hide_index=True)
+    render_sticky_table(winners, sticky_columns=["Query"], height=420, key="winner_heatmap")
     if not counts.empty:
         st.markdown("**Win Counts by Metric**")
-        st.dataframe(_display_frame(counts), width="stretch", hide_index=True)
+        render_sticky_table(_display_frame(counts), sticky_columns=["Metric", "Mode"], height=320, key="winner_counts")
         overall = counts.groupby("Mode", as_index=False)["Wins"].sum().sort_values(["Wins", "Mode"], ascending=[False, True])
         if not overall.empty:
             st.caption(f"Overall most frequent winner: `{overall.iloc[0]['Mode']}` with {int(overall.iloc[0]['Wins'])} metric wins.")
@@ -1752,7 +1911,12 @@ def _render_sensitivity_analysis(eval_df: pd.DataFrame, *, query_id: str, run_di
         "Composition_Validity",
     ]
     display_scores = scores[[col for col in display_cols if col in scores]].copy()
-    st.dataframe(_composition_display_frame(display_scores.round(4)), width="stretch", hide_index=True)
+    render_sticky_table(
+        _composition_display_frame(display_scores.round(4)),
+        sticky_columns=["Mode"],
+        height=320,
+        key="sensitivity_scores",
+    )
 
     chart_source = scores.melt(
         id_vars=["Mode"],
@@ -1779,7 +1943,7 @@ def _render_sensitivity_analysis(eval_df: pd.DataFrame, *, query_id: str, run_di
             category_orders={"Mode": MODE_ORDER},
         )
         fig.update_layout(height=410, margin=dict(l=10, r=10, t=55, b=60), yaxis_title="Score")
-        st.plotly_chart(fig, width="stretch", config=_plotly_config())
+        st.plotly_chart(fig, use_container_width=True, config=_plotly_config())
 
     sensitivity_winner = str(scores.iloc[0].get("Mode") or viz.NA)
     if recommended_mode and sensitivity_winner != recommended_mode:
@@ -1995,7 +2159,7 @@ def _render_recommendation_summary(recommendation: dict[str, Any]) -> None:
         ("Bottleneck Throughput", viz.format_value(row.get("Bottleneck_Throughput"))),
         (viz.WORKFLOW_AVAILABILITY_LABEL, viz.format_value(workflow_availability)),
     ]
-    st.dataframe(_display_frame(pd.DataFrame(fields, columns=["Metric", "Value"])), width="stretch", hide_index=True)
+    st.dataframe(_display_frame(pd.DataFrame(fields, columns=["Metric", "Value"])), use_container_width=True, hide_index=True)
     st.caption(viz.WORKFLOW_AVAILABILITY_HELP)
 
 
@@ -2008,7 +2172,7 @@ def _render_quality_legend() -> None:
             {"Color": "Gray", "Meaning": "Missing or unknown QoS data"},
         ]
     )
-    st.dataframe(legend, width="stretch", hide_index=True, height=180)
+    st.dataframe(legend, use_container_width=True, hide_index=True, height=180)
     st.caption(viz.API_HEALTH_HELP)
 
 
@@ -2056,7 +2220,7 @@ def _render_workflow_interpretation(workflow: pd.DataFrame, bottlenecks: pd.Data
         {"Signal": "Functional mismatches", "Interpretation": str(mismatch_count)},
         {"Signal": "Bottleneck", "Interpretation": bottleneck_text},
     ]
-    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True, height=250)
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=250)
 
 
 def _render_step_cards(workflow: pd.DataFrame) -> None:
@@ -2087,7 +2251,7 @@ def _render_step_cards(workflow: pd.DataFrame) -> None:
                     {"Field": "Why", "Value": row.get("Why", viz.NA)},
                 ]
             )
-            st.dataframe(_display_frame(detail), width="stretch", hide_index=True)
+            st.dataframe(_display_frame(detail), use_container_width=True, hide_index=True)
 
 
 def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
@@ -2175,7 +2339,7 @@ def _render_mode_comparison(
         _render_qos_health_warnings(mode_workflow)
     st.plotly_chart(
         viz.build_mode_comparison_figure(workflows_by_mode, modes),
-        width="stretch",
+        use_container_width=True,
         config=_plotly_config(),
         key=f"{key_prefix}_matrix",
     )
@@ -2184,10 +2348,11 @@ def _render_mode_comparison(
     st.subheader("Compact Comparison Table")
     difference_df = viz.workflow_difference_table(workflows_by_mode, modes)
     if not difference_df.empty:
-        st.dataframe(
-            difference_df.style.apply(_highlight_selection_difference, axis=1),
-            width="stretch",
-            hide_index=True,
+        render_sticky_table(
+            difference_df,
+            sticky_columns=["Subtask_ID", "Subtask"],
+            height=420,
+            key=f"{key_prefix}_difference_table",
         )
     else:
         st.info("No selected API rows were available for comparison.")
@@ -2202,7 +2367,12 @@ def _render_mode_comparison(
         modes=modes,
     )
     if not summary_df.empty:
-        st.dataframe(_composition_display_frame(summary_df), width="stretch", hide_index=True)
+        render_sticky_table(
+            _composition_display_frame(summary_df),
+            sticky_columns=["Mode"],
+            height=360,
+            key=f"{key_prefix}_mode_summary",
+        )
         highlights = viz.comparison_highlights(summary_df, difference_df)
         if highlights:
             st.markdown("**Mode Differences**")
@@ -2225,7 +2395,7 @@ def _render_mode_comparison(
                         mode=mode,
                         eval_row=eval_rows_by_mode.get(mode),
                     ),
-                    width="stretch",
+                    use_container_width=True,
                     config=_plotly_config(),
                     key=f"{key_prefix}_{_viz_key(mode)}_workflow",
                 )
@@ -2240,7 +2410,7 @@ def _render_mode_comparison(
                     bottlenecks_by_mode.get(mode, pd.DataFrame()),
                     mode=mode,
                 )
-                st.dataframe(_display_frame(pd.DataFrame(summary_rows)), width="stretch", hide_index=True, height=430)
+                st.dataframe(_display_frame(pd.DataFrame(summary_rows)), use_container_width=True, hide_index=True, height=430)
                 _render_workflow_interpretation(workflow, bottlenecks_by_mode.get(mode, pd.DataFrame()))
 
 
@@ -2373,7 +2543,7 @@ def render_composition_visualizations() -> None:
                     mode=selected_mode,
                     eval_row=eval_row,
                 ),
-                width="stretch",
+                use_container_width=True,
                 config=_plotly_config(),
                 key=f"{chart_key_prefix}_workflow_graph",
             )
@@ -2385,7 +2555,7 @@ def render_composition_visualizations() -> None:
             with left:
                 st.dataframe(
                     _display_frame(pd.DataFrame(viz.recommended_summary_rows(eval_row, workflow, bottlenecks, mode=selected_mode))),
-                    width="stretch",
+                    use_container_width=True,
                     hide_index=True,
                     height=430,
                 )
@@ -2403,7 +2573,7 @@ def render_composition_visualizations() -> None:
         else:
             st.plotly_chart(
                 viz.build_bottleneck_figure(workflow, bottlenecks),
-                width="stretch",
+                use_container_width=True,
                 config=_plotly_config(),
                 key=f"{chart_key_prefix}_bottleneck",
             )
@@ -2412,11 +2582,11 @@ def render_composition_visualizations() -> None:
             _render_grouped_bottlenecks(workflow, bottlenecks)
             st.subheader("Raw Bottleneck Rows")
             display_cols = ["Bottleneck_Type", "API", "Subtask_ID", "Reason", "Metric", "Metric_Value", "Impact"]
-            st.dataframe(
+            render_sticky_table(
                 _bottleneck_display_frame(bottlenecks[[col for col in display_cols if col in bottlenecks.columns]]),
-                width="stretch",
-                hide_index=True,
                 height=240,
+                sticky_columns=["Bottleneck_Type", "API"],
+                key=f"{chart_key_prefix}_raw_bottleneck_rows",
             )
         if not workflow.empty:
             _render_replacement_simulation(
@@ -2429,7 +2599,12 @@ def render_composition_visualizations() -> None:
                 key_prefix=chart_key_prefix,
             )
             st.subheader("Selected API Metrics")
-            st.dataframe(_workflow_detail_view(workflow), width="stretch", hide_index=True)
+            render_sticky_table(
+                _workflow_detail_view(workflow),
+                sticky_columns=["Step", "API_Name", "API Name"],
+                height=420,
+                key=f"{chart_key_prefix}_selected_api_metrics",
+            )
 
     with tabs[2]:
         status = recommendation.get("status")
@@ -2451,7 +2626,7 @@ def render_composition_visualizations() -> None:
             with chart_cols[0]:
                 st.plotly_chart(
                     viz.build_quality_score_figure(recommended_eval_row, recommended_workflow),
-                    width="stretch",
+                    use_container_width=True,
                     config=_plotly_config(),
                     key=f"{recommendation_key_prefix}_quality_scores",
                 )
@@ -2466,7 +2641,7 @@ def render_composition_visualizations() -> None:
                     mode=recommended_mode,
                     eval_row=recommended_eval_row,
                 ),
-                width="stretch",
+                use_container_width=True,
                 config=_plotly_config(),
                 key=f"{recommendation_key_prefix}_workflow",
             )
@@ -2503,7 +2678,7 @@ def render_composition_visualizations() -> None:
             for health_col in ["API_QoS_Health", "API_Selection_Health"]:
                 if health_col in path_steps:
                     path_steps[health_col] = path_steps[health_col].apply(viz.format_api_health)
-            st.dataframe(
+            render_sticky_table(
                 _display_frame(path_steps).rename(
                     columns={
                         "Subtask_ID": "Subtask ID",
@@ -2522,8 +2697,9 @@ def render_composition_visualizations() -> None:
                         "Bottleneck_Dimensions": "Bottleneck Dimensions",
                     }
                 ),
-                width="stretch",
-                hide_index=True,
+                sticky_columns=["Step", "API_Name", "API Name"],
+                height=480,
+                key=f"{recommendation_key_prefix}_path_steps",
             )
             _render_step_cards(recommended_workflow)
 
@@ -2566,14 +2742,14 @@ def render_composition_visualizations() -> None:
             with agent_tab:
                 st.plotly_chart(
                     viz.build_sequence_figure(workflow, kind="agent"),
-                    width="stretch",
+                    use_container_width=True,
                     config=_plotly_config(),
                     key=f"{chart_key_prefix}_sequence_agent",
                 )
             with api_tab:
                 st.plotly_chart(
                     viz.build_sequence_figure(workflow, kind="api"),
-                    width="stretch",
+                    use_container_width=True,
                     config=_plotly_config(),
                     key=f"{chart_key_prefix}_sequence_api",
                 )
@@ -2581,9 +2757,9 @@ def render_composition_visualizations() -> None:
                 st.caption("Rendered Graphviz view using a top-down layout so the planned sequence remains readable.")
                 graphviz_agent_tab, graphviz_api_tab = st.tabs(["Planned Agent Flow", "Planned API Flow"])
                 with graphviz_agent_tab:
-                    st.graphviz_chart(viz.build_agent_sequence_dot(workflow, rankdir="TB"), width="stretch")
+                    st.graphviz_chart(viz.build_agent_sequence_dot(workflow, rankdir="TB"), use_container_width=True)
                 with graphviz_api_tab:
-                    st.graphviz_chart(viz.build_planned_api_flow_dot(workflow, rankdir="TB"), width="stretch")
+                    st.graphviz_chart(viz.build_planned_api_flow_dot(workflow, rankdir="TB"), use_container_width=True)
             with dot_tab:
                 st.caption("Copyable Graphviz DOT source for the rendered diagrams.")
                 agent_dot_tab, api_dot_tab = st.tabs(["Planned Agent Flow DOT", "Planned API Flow DOT"])
@@ -2597,11 +2773,26 @@ def render_composition_visualizations() -> None:
 
     with tabs[6]:
         st.subheader("Enriched Workflow Rows")
-        st.dataframe(_workflow_detail_view(workflow), width="stretch", hide_index=True)
+        render_sticky_table(
+            _workflow_detail_view(workflow),
+            sticky_columns=["Step", "API_Name", "API Name"],
+            height=520,
+            key=f"{chart_key_prefix}_raw_enriched_workflow",
+        )
         st.subheader("Composition Evaluation Row")
-        st.dataframe(_composition_display_frame(pd.DataFrame([eval_row])), width="stretch", hide_index=True)
+        render_sticky_table(
+            _composition_display_frame(pd.DataFrame([eval_row])),
+            sticky_columns=["Query_ID", "Mode"],
+            height=260,
+            key=f"{chart_key_prefix}_raw_eval_row",
+        )
         st.subheader("Bottleneck Rows")
-        st.dataframe(_bottleneck_display_frame(bottlenecks), width="stretch", hide_index=True)
+        render_sticky_table(
+            _bottleneck_display_frame(bottlenecks),
+            sticky_columns=["Bottleneck_Type", "API"],
+            height=420,
+            key=f"{chart_key_prefix}_raw_bottlenecks",
+        )
 
 
 def render_ranking_evaluation() -> None:
@@ -2676,7 +2867,12 @@ def render_ranking_evaluation() -> None:
             st.caption("Check that the selected parent directory contains q* run folders with Excel reports.")
             if not bundle.invalid_cases.empty:
                 with st.expander(f"Invalid mode/subtask cases ({len(bundle.invalid_cases)})", expanded=True):
-                    st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
+                    render_sticky_table(
+                        bundle.invalid_cases,
+                        sticky_columns=["query_id", "subtask_id"],
+                        height=420,
+                        key="invalid_cases_empty_bundle",
+                    )
             return
 
         with st.sidebar:
@@ -2735,21 +2931,26 @@ def render_ranking_evaluation() -> None:
         invalid_cols = st.columns(3)
         invalid_cols[0].dataframe(
             bundle.invalid_cases.groupby("mode", dropna=False).size().reset_index(name="count"),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         invalid_cols[1].dataframe(
             bundle.invalid_cases.groupby("failure_reason", dropna=False).size().reset_index(name="count"),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         invalid_cols[2].dataframe(
             bundle.invalid_cases.groupby(["query_id", "subtask_id"], dropna=False).size().reset_index(name="count"),
-            width="stretch",
+            use_container_width=True,
             hide_index=True,
         )
         with st.expander("Excluded invalid mode/subtask rows", expanded=False):
-            st.dataframe(bundle.invalid_cases, width="stretch", hide_index=True)
+            render_sticky_table(
+                bundle.invalid_cases,
+                sticky_columns=["query_id", "subtask_id"],
+                height=420,
+                key="excluded_invalid_cases",
+            )
 
     st.subheader("Overall Mode Similarity")
     with st.expander("Metric notes", expanded=False):
@@ -2761,7 +2962,7 @@ def render_ranking_evaluation() -> None:
         value_range = (-1.0, 1.0) if metric == "spearman" else (0.0, 1.0)
         st.plotly_chart(
             _heatmap(matrix, METRIC_LABELS.get(metric, metric), value_range),
-            width="stretch",
+            use_container_width=True,
         )
 
     st.subheader("Pairwise Scores")
@@ -2769,7 +2970,12 @@ def render_ranking_evaluation() -> None:
     pairwise_table = pairwise_view.copy()
     if not pairwise_table.empty:
         pairwise_table["metric"] = pairwise_table["metric"].map(METRIC_LABELS)
-    st.dataframe(pairwise_table.round({"score": 4}), width="stretch", hide_index=True)
+    render_sticky_table(
+        pairwise_table.round({"score": 4}),
+        sticky_columns=["mode_a", "mode_b"],
+        height=420,
+        key="pairwise_scores",
+    )
 
     if not pairwise_view.empty:
         pairwise_plot = pairwise_view.copy()
@@ -2785,7 +2991,7 @@ def render_ranking_evaluation() -> None:
             labels={"mode_pair": "Mode pair", "score": "Score", "metric_label": "Metric"},
         )
         fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=380)
-        st.plotly_chart(fig, width="stretch")
+        st.plotly_chart(fig, use_container_width=True)
 
     st.subheader("Selected Query/Subtask Details")
     detail_df = cases_to_frame(filtered_cases)
@@ -2801,7 +3007,12 @@ def render_ranking_evaluation() -> None:
     )
     ranked_count = min((len(selected_case.ranked_lists.get(mode, [])) for mode in selected_case.valid_modes), default=0)
     st.caption(f"K = {selected_case.k} ({k_note}); Spearman uses all {ranked_count} ranked candidates.")
-    st.dataframe(top_lists_to_wide_frame(selected_case), width="stretch", hide_index=True)
+    render_sticky_table(
+        top_lists_to_wide_frame(selected_case),
+        sticky_columns=["rank"],
+        height=420,
+        key=f"top_lists_{selected_case_id}",
+    )
 
     st.subheader("Case-Level Metrics")
     case_matrices = compute_case_matrices(selected_case, p=rbo_p)
@@ -2817,7 +3028,7 @@ def render_ranking_evaluation() -> None:
             f"{METRIC_LABELS.get(selected_case_metric, selected_case_metric)} for selected case",
             value_range,
         ),
-        width="stretch",
+        use_container_width=True,
     )
 
     st.subheader("Average Overlap by Depth")
@@ -2842,7 +3053,7 @@ def render_ranking_evaluation() -> None:
         labels={"depth": "Depth", "overlap_ratio": "Overlap ratio"},
     )
     fig.update_layout(margin=dict(l=10, r=10, t=20, b=10), height=320)
-    st.plotly_chart(fig, width="stretch")
+    st.plotly_chart(fig, use_container_width=True)
 
 
 def main() -> None:

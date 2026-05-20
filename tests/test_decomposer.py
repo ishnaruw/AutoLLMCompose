@@ -49,6 +49,40 @@ class DecomposerPostprocessTests(unittest.TestCase):
 
         self.assertEqual(subtasks, [{"id": 1, "description": "Display current weather info"}])
 
+    def test_drops_leading_domain_inventory_subtask(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Fetch the list of domains to monitor via a configuration or inventory API"},
+                    {"id": 2, "description": "Check each provided domain using a domain threat intelligence API"},
+                    {"id": 3, "description": "Send SMS alerts to administrators"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(raw, "fallback")
+
+        self.assertEqual(len(subtasks), 2)
+        self.assertEqual(subtasks[0]["id"], 1)
+        self.assertEqual(subtasks[0]["description"], "Check each provided domain using a domain threat intelligence API")
+        self.assertEqual(subtasks[1]["id"], 2)
+
+    def test_folds_downstream_blocking_handoff_into_scan_step(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Scan the URL for malware using a URL scanning API"},
+                    {"id": 2, "description": "Send aggregated scan results to the downstream blocking service via an API"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(raw, "fallback")
+
+        self.assertEqual(len(subtasks), 1)
+        self.assertIn("Scan the URL for malware", subtasks[0]["description"])
+        self.assertIn("downstream blocking service", subtasks[0]["description"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -144,7 +144,7 @@ class PlannerRepairTests(unittest.TestCase):
         self.assertIn("failed validation", prompts[1])
         self.assertEqual(output["primary_plan"]["steps"][0]["api_id"], "api_a")
 
-    def test_planner_prompt_uses_selected_rank_when_rank_is_missing(self) -> None:
+    def test_planner_prompt_uses_selection_order(self) -> None:
         prompt_path = self._prompt_file()
         prompts = []
         response = {
@@ -173,13 +173,152 @@ class PlannerRepairTests(unittest.TestCase):
         planner_call(
             llm_call=lambda prompt: prompts.append(prompt) or json.dumps(response),
             user_goal="test",
-            ranked_top=[{"api_id": "api_a", "selected_rank": 2, "mode_rank": 7}],
+            ranked_top=[{"api_id": "api_a", "selection_order": 3, "selected_rank": 2, "mode_rank": 7}],
             subtasks=[{"id": 1, "description": "Call API"}],
             prompt_path=str(prompt_path),
         )
 
-        self.assertIn('"rank": 2', prompts[0])
-        self.assertNotIn('"rank": null', prompts[0])
+        self.assertIn('"selection_order": 3', prompts[0])
+        self.assertNotIn('"rank"', prompts[0])
+        self.assertNotIn('"selected_rank"', prompts[0])
+
+    def test_planner_prompt_omits_rag_score(self) -> None:
+        prompt_path = self._prompt_file()
+        prompts = []
+        response = {
+            "primary_plan": {
+                "plan_id": 1,
+                "summary": "Use API",
+                "steps": [
+                    {
+                        "step": 1,
+                        "api_id": "api_a",
+                        "subtask_id": 1,
+                        "action": "Call API",
+                        "input_from_previous_step": None,
+                        "output_to_next_step": "result",
+                        "why": "Matches",
+                        "qos": None,
+                    }
+                ],
+                "subtask_coverage": [],
+            },
+            "execution_workflow": _execution_workflow(),
+            "selected_api_ids": ["api_a"],
+            "overall_rationale": "Best fit",
+        }
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(response),
+            user_goal="test",
+            ranked_top=[{"api_id": "api_a", "selected_rank": 1, "rag_score": 0.99}],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path=str(prompt_path),
+        )
+
+        self.assertNotIn("rag_score", prompts[0])
+
+    def test_planner_prompt_omits_noisy_candidate_fields(self) -> None:
+        prompt_path = self._prompt_file()
+        prompts = []
+        response = {
+            "primary_plan": {
+                "plan_id": 1,
+                "summary": "Use API",
+                "steps": [
+                    {
+                        "step": 1,
+                        "api_id": "api_a",
+                        "subtask_id": 1,
+                        "action": "Call API",
+                        "input_from_previous_step": None,
+                        "output_to_next_step": "result",
+                        "why": "Matches",
+                        "qos": None,
+                    }
+                ],
+                "subtask_coverage": [],
+            },
+            "execution_workflow": _execution_workflow(),
+            "selected_api_ids": ["api_a"],
+            "overall_rationale": "Best fit",
+        }
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(response),
+            user_goal="test",
+            ranked_top=[
+                {
+                    "api_id": "api_a",
+                    "score": 0.5,
+                    "rank": 1,
+                    "rag_score": 0.99,
+                    "functional_match": 1,
+                    "functional_reason": "matches",
+                    "Comments": "comment",
+                    "selection_order": 1,
+                    "service": {"api_id": "api_a"},
+                }
+            ],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path=str(prompt_path),
+        )
+
+        for field in ['"score"', '"rank"', '"rag_score"', '"functional_match"', '"functional_reason"', '"Comments"']:
+            self.assertNotIn(field, prompts[0])
+
+    def test_no_qos_planner_prompt_strips_service_qos_fields(self) -> None:
+        prompt_path = self._prompt_file()
+        no_qos_path = prompt_path.with_name(f"{prompt_path.name}_planner_no_qos.md")
+        no_qos_path.write_text(PROMPT_TEMPLATE, encoding="utf-8")
+        prompts = []
+        service = {
+            "api_id": "api_a",
+            "qos": {"rt_ms": 1},
+            "rt_ms": 1,
+            "tp_rps": 2,
+            "availability": 0.9,
+            "qos_score": 0.8,
+            "qos_rank": 1,
+            "topsis_score": 0.7,
+            "topsis_rank": 2,
+            "qos_llm_score": 0.6,
+            "qos_llm_rank": 3,
+        }
+        response = {
+            "primary_plan": {
+                "plan_id": 1,
+                "summary": "Use API",
+                "steps": [
+                    {
+                        "step": 1,
+                        "api_id": "api_a",
+                        "subtask_id": 1,
+                        "action": "Call API",
+                        "input_from_previous_step": None,
+                        "output_to_next_step": "result",
+                        "why": "Matches",
+                        "qos": None,
+                    }
+                ],
+                "subtask_coverage": [],
+            },
+            "execution_workflow": _execution_workflow(),
+            "selected_api_ids": ["api_a"],
+            "overall_rationale": "Best fit",
+        }
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(response),
+            user_goal="test",
+            ranked_top=[{"api_id": "api_a", "selection_order": 1, "service": service}],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path=str(no_qos_path),
+        )
+
+        for field in ['"qos"', '"rt_ms"', '"tp_rps"', '"availability"', '"qos_score"', '"qos_rank"', '"topsis_score"', '"topsis_rank"', '"qos_llm_score"', '"qos_llm_rank"']:
+            self.assertNotIn(field, prompts[0])
+        self.assertIn("qos", service)
 
 
 if __name__ == "__main__":
