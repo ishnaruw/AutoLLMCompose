@@ -25,6 +25,11 @@ class PipelineConfig:
     use_autogen_agents: bool = True
     lmstudio_timeout_seconds: int = 600
     remote_llm_timeout_seconds: int = 300
+    planner_timeout_seconds: int = 180
+    planner_max_retries: int = 2
+    fireworks_timeout_seconds: int = 180
+    ranker_timeout_seconds: int = 120
+    qos_scorer_timeout_seconds: int = 120
     lmstudio_ranker_max_tokens: int = 2500
     llm_debug_enabled: bool = True
     llm_validation_max_retries: int = 2

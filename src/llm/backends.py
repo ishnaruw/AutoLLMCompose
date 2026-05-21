@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 from urllib import error, parse, request
 
+from src.config import CONFIG
 from src.core.retry import call_with_backoff, classify_retryable_error, is_request_too_large_error
 from src.core.run_logging import log_line, record_model_switch, record_model_usage
 
@@ -744,6 +745,8 @@ class FireworksBackend(BaseBackend):
         self._client = OpenAI(
             api_key=api_key,
             base_url=base_url,
+            timeout=float(os.getenv("FIREWORKS_TIMEOUT_SECONDS", CONFIG.fireworks_timeout_seconds)),
+            max_retries=0,
         )
 
     def _chat_raw(

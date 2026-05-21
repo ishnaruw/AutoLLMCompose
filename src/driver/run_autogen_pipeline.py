@@ -355,11 +355,18 @@ def _build_llm_call(backend):
     def _invoke(fn, *, name: str) -> str:
         if getattr(backend, "multi_model_mode", lambda: False)():
             return fn()
-        return call_with_backoff(fn, name=name)
+        max_retries = CONFIG.planner_max_retries if name.startswith("planner") else 8
+        return call_with_backoff(fn, name=name, max_retries=max_retries)
 
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
         temp = CONFIG.planner_temperature if role_name.startswith("planner") else 0.0
         limits = _lmstudio_limits(role_name)
+        if role_name.startswith("planner"):
+            limits["timeout_seconds"] = CONFIG.planner_timeout_seconds
+        elif role_name.startswith("ranker"):
+            limits["timeout_seconds"] = CONFIG.ranker_timeout_seconds
+        elif role_name.startswith("qos_scorer"):
+            limits["timeout_seconds"] = CONFIG.qos_scorer_timeout_seconds
         return _invoke(
             lambda: call_autogen_gateway(
                 backend=backend,
