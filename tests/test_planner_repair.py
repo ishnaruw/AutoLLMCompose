@@ -320,6 +320,87 @@ class PlannerRepairTests(unittest.TestCase):
             self.assertNotIn(field, prompts[0])
         self.assertIn("qos", service)
 
+    def test_planner_prompt_compacts_service_metadata(self) -> None:
+        prompt_path = self._prompt_file()
+        prompts = []
+        service = {
+            "_file": "api_a.json",
+            "_tool": "api_a_tool",
+            "api_id": "api_a",
+            "name": "Lookup",
+            "category": "Weather",
+            "description": "Endpoint description",
+            "tool_description": "Tool description",
+            "method": "GET",
+            "url": "https://example.test/api",
+            "endpoint_details": {
+                "required_parameters": [{"name": "lat", "type": "NUMBER"}],
+                "optional_parameters": [{"name": "units", "type": "STRING"}],
+                "unused_detail": "drop me",
+            },
+            "toolbench_tool_name": "Repeated tool name",
+            "toolbench_tool_description": "Repeated tool description",
+            "toolbench_endpoint_description": "Repeated endpoint description",
+            "toolbench_enrichment": {
+                "endpoint_url": "https://example.test/from-enrichment",
+                "endpoint_method": "POST",
+                "tool_description": "Repeated enrichment description",
+                "endpoint_description": "Repeated enrichment endpoint",
+                "status": "matched",
+                "toolbench_relative_path": "Weather/api_a.json",
+            },
+            "qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10},
+        }
+        response = {
+            "primary_plan": {
+                "plan_id": 1,
+                "summary": "Use API",
+                "steps": [
+                    {
+                        "step": 1,
+                        "api_id": "api_a",
+                        "subtask_id": 1,
+                        "action": "Call API",
+                        "input_from_previous_step": None,
+                        "output_to_next_step": "result",
+                        "why": "Matches",
+                        "qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10},
+                    }
+                ],
+                "subtask_coverage": [],
+            },
+            "execution_workflow": _execution_workflow(),
+            "selected_api_ids": ["api_a"],
+            "overall_rationale": "Best fit",
+        }
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(response),
+            user_goal="test",
+            ranked_top=[{"api_id": "api_a", "selection_order": 1, "service": service}],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path=str(prompt_path),
+        )
+
+        self.assertIn('"api_id": "api_a"', prompts[0])
+        self.assertIn('"method": "GET"', prompts[0])
+        self.assertIn('"url": "https://example.test/api"', prompts[0])
+        self.assertIn('"required_parameters": [{"name": "lat", "type": "NUMBER"}]', prompts[0])
+        self.assertIn('"optional_parameters": [{"name": "units", "type": "STRING"}]', prompts[0])
+        self.assertIn('"qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10}', prompts[0])
+
+        for field in [
+            '"_file"',
+            '"_tool"',
+            '"toolbench_tool_name"',
+            '"toolbench_tool_description"',
+            '"toolbench_endpoint_description"',
+            '"toolbench_enrichment"',
+            '"toolbench_relative_path"',
+            '"unused_detail"',
+        ]:
+            self.assertNotIn(field, prompts[0])
+
 
 if __name__ == "__main__":
     unittest.main()

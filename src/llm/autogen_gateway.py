@@ -8,6 +8,8 @@ from src.core.run_logging import finish_llm_trace, log_line, start_llm_trace
 from src.llm.autogen_runner import run_autogen_agent
 from src.llm.backends import BaseBackend
 
+_LOCAL_TIMEOUT_PROVIDERS = {"lmstudio", "lmstudio_qwen"}
+
 
 def _active_model_name(backend: BaseBackend) -> str:
     try:
@@ -54,6 +56,10 @@ def call_autogen_gateway(
     model = _active_model_name(backend)
     prompt_chars = len(user_prompt or "")
     timeout_seconds = timeout_s
+    if timeout_seconds is None and provider not in _LOCAL_TIMEOUT_PROVIDERS:
+        configured_timeout = getattr(CONFIG, "remote_llm_timeout_seconds", None)
+        if configured_timeout and configured_timeout > 0:
+            timeout_seconds = configured_timeout
     trace_id: str | None = None
     started_at = time.perf_counter()
     trace_metadata = dict(metadata or {})

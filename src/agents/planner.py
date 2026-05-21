@@ -54,10 +54,105 @@ _NO_QOS_SERVICE_KEYS = {
     "qos_llm_rank",
 }
 
+_PLANNER_SERVICE_KEYS = (
+    "api_id",
+    "name",
+    "category",
+    "description",
+    "tool_name",
+    "tool_description",
+    "method",
+    "url",
+    "endpoint_details",
+)
+
+_PLANNER_QOS_KEYS = (
+    "qos",
+    "rt_ms",
+    "tp_rps",
+    "availability",
+    "qos_score",
+    "qos_rank",
+    "topsis_score",
+    "topsis_rank",
+    "qos_llm_score",
+    "qos_llm_rank",
+)
+
+
+def _has_value(value):
+    return value is not None and value != "" and value != [] and value != {}
+
+
+def _first_value(*values):
+    for value in values:
+        if _has_value(value):
+            return value
+    return None
+
+
+def _compact_endpoint_details(service, enrichment):
+    endpoint_details = _first_value(
+        service.get("endpoint_details"),
+        service.get("toolbench_endpoint_details"),
+        enrichment.get("endpoint_details"),
+    )
+    if not isinstance(endpoint_details, dict):
+        return None
+
+    compact = {}
+    for key in ("required_parameters", "optional_parameters"):
+        value = endpoint_details.get(key)
+        if isinstance(value, list):
+            compact[key] = value
+    return compact if compact else None
+
 
 def _service_for_planner(row, *, strip_qos: bool):
     service = row.get("service", {})
-    service_copy = deepcopy(service) if isinstance(service, dict) else {}
+    if not isinstance(service, dict):
+        return {}
+
+    enrichment = service.get("toolbench_enrichment")
+    enrichment = enrichment if isinstance(enrichment, dict) else {}
+
+    service_copy = {}
+    for key in _PLANNER_SERVICE_KEYS:
+        if key == "tool_name":
+            value = _first_value(
+                service.get("tool_name"),
+                service.get("toolbench_tool_name"),
+                enrichment.get("tool_name"),
+            )
+        elif key == "tool_description":
+            value = _first_value(
+                service.get("tool_description"),
+                service.get("toolbench_tool_description"),
+                enrichment.get("tool_description"),
+            )
+        elif key == "description":
+            value = _first_value(
+                service.get("description"),
+                service.get("toolbench_endpoint_description"),
+                enrichment.get("endpoint_description"),
+            )
+        elif key == "method":
+            value = _first_value(service.get("method"), enrichment.get("endpoint_method"))
+        elif key == "url":
+            value = _first_value(service.get("url"), enrichment.get("endpoint_url"))
+        elif key == "endpoint_details":
+            value = _compact_endpoint_details(service, enrichment)
+        else:
+            value = service.get(key)
+
+        if _has_value(value):
+            service_copy[key] = deepcopy(value)
+
+    for key in _PLANNER_QOS_KEYS:
+        value = service.get(key)
+        if _has_value(value):
+            service_copy[key] = deepcopy(value)
+
     if strip_qos:
         for key in _NO_QOS_SERVICE_KEYS:
             service_copy.pop(key, None)

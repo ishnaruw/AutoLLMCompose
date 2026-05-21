@@ -358,7 +358,7 @@ def _build_llm_call(backend):
         return call_with_backoff(fn, name=name)
 
     def llm_call(role_name: str, system_msg: str, prompt: str) -> str:
-        temp = 0.2 if role_name.startswith("planner") else 0.0
+        temp = CONFIG.planner_temperature if role_name.startswith("planner") else 0.0
         limits = _lmstudio_limits(role_name)
         return _invoke(
             lambda: call_autogen_gateway(
@@ -856,16 +856,30 @@ def _load_functional_match_map(rows_path: Path) -> Dict[tuple[str, str], Dict[st
     return out
 
 
-def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
+def _load_planner_top_n_from_retrieval_match(rows_path: Path) -> Dict[str, int]:
     data = json.loads(rows_path.read_text(encoding="utf-8"))
     matching_api_ids_by_subtask: Dict[str, set[str]] = {}
+
     for row in data:
         sub_id = str(row.get("Sub Task", row.get("subtask_id", "")))
         api_id = str(row.get("Selected_API", row.get("api_id", "")))
-        if not sub_id or not api_id or _functional_match_value(row) != 1:
+
+        if not sub_id or not api_id:
             continue
-        matching_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
-    return {sub_id: len(api_ids) for sub_id, api_ids in matching_api_ids_by_subtask.items()}
+
+        if _functional_match_value(row) == 1:
+            matching_api_ids_by_subtask.setdefault(sub_id, set()).add(api_id)
+
+    return {
+        sub_id: len(api_ids)
+        for sub_id, api_ids in matching_api_ids_by_subtask.items()
+    }
+
+
+def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
+    # Deprecated: planner K should come from retrieval_functional_match_rows_json,
+    # not mode-expanded candidate_api_rankings_rows_json.
+    return _load_planner_top_n_from_retrieval_match(rows_path)
 
 
 def _summarize_retry_outcomes(run_dir: Path) -> Dict[str, Any]:
@@ -924,9 +938,10 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         dynamic_top_n = int(planner_top_n.get(sub_id, 0) or 0)
         fallback_used = dynamic_top_n <= 0
         selected_limit = dynamic_top_n if dynamic_top_n > 0 else CONFIG.selector_top_n
+        requested_limit = selected_limit
         selected_limit = min(selected_limit, len(ranked_rows))
         selected_rows = ranked_rows[:selected_limit]
-        top_n_source = "functional_candidate_refinement_k" if dynamic_top_n > 0 else "selector_top_n_fallback"
+        top_n_source = "retrieval_functional_match_k" if dynamic_top_n > 0 else "selector_top_n_fallback"
         selected = []
         for idx, r in enumerate(selected_rows, start=1):
             row = dict(r)
@@ -934,8 +949,9 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             row["selection_order"] = idx
             row.pop("score", None)
             row["subtask_id"] = sub_id
-            row["selector_reason"] = "Deterministic selection from mode rank using a shared per-subtask top-n cutoff."
+            row["selector_reason"] = "Deterministic selection from mode rank using the shared retrieval-level functional-match K."
             row["planner_top_n"] = selected_limit
+            row["planner_requested_top_n"] = requested_limit
             row["planner_top_n_source"] = top_n_source
             row["fallback_used"] = fallback_used
             selected.append(row)
@@ -945,8 +961,9 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             mode_dir / f"3_selected_trace_s{sub_id}.json",
             {
                 "planner_top_n": selected_limit,
+                "planner_requested_top_n": requested_limit,
                 "planner_top_n_source": top_n_source,
-                "dynamic_top_n_from_functional_match": dynamic_top_n,
+                "retrieval_functional_match_k": dynamic_top_n,
                 "fallback_used": fallback_used,
                 "available_ranked": len(ranked_rows),
                 "selected_count": len(selected),
@@ -954,8 +971,9 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         )
         selection_trace[sub_id] = {
             "planner_top_k": selected_limit,
+            "planner_requested_top_k": requested_limit,
             "planner_top_k_source": top_n_source,
-            "dynamic_top_k_from_functional_match": dynamic_top_n,
+            "retrieval_functional_match_k": dynamic_top_n,
             "fallback_used": fallback_used,
             "available_ranked": len(ranked_rows),
             "selected_count": len(selected),
@@ -977,7 +995,7 @@ def _planner_selection_k_summary(query_id: str | None, subtasks: List[Dict[str, 
     return {
         "query_id": query_id,
         "selection_stage": "planner_input_selection",
-        "selection_rule": "For each subtask and mode, select top K ranked APIs for planner input. K is the number of functionally matching retrieved APIs for that subtask when available; otherwise CONFIG.selector_top_n is used.",
+        "selection_rule": "For each subtask, K equals the number of unique APIs in the shared retrieved candidate pool labeled Functional Match=1. If K=0, CONFIG.selector_top_n is used as fallback. Each mode then passes its own top-K ranked APIs to the planner.",
         "fallback_selector_top_n": CONFIG.selector_top_n,
         "by_mode": by_mode,
         "by_subtask": by_subtask,
@@ -1052,7 +1070,6 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     planner_top_n: Dict[str, int] = {}
     retrieval_functional_match_rows_path: Path | None = None
     eval_out: Path | None = None
-    candidate_api_rankings_rows_path: Path | None = None
     mode_anomaly_xlsx: Path | None = None
     ranking_anomaly_audit_json: Path | None = None
     duplicate_audit_json: Path | None = None
@@ -1339,9 +1356,9 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             )
             eval_out = evaluation_outputs["candidate_api_rankings_excel"]
             log_line(f"[{run_label}] finished building final functional match report outputs")
-            candidate_api_rankings_rows_path = evaluation_outputs["candidate_api_rankings_rows_json"]
-            if candidate_api_rankings_rows_path.exists():
-                planner_top_n = _load_planner_top_n(candidate_api_rankings_rows_path)
+            retrieval_functional_match_rows_path = evaluation_outputs["retrieval_functional_match_rows_json"]
+            if retrieval_functional_match_rows_path.exists():
+                planner_top_n = _load_planner_top_n_from_retrieval_match(retrieval_functional_match_rows_path)
 
             _write_json(
                 out_dir / "evaluation_result.json",

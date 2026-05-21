@@ -332,12 +332,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--catalog-input",
         type=Path,
-        default=CONFIG.catalog_path if CONFIG.catalog_path.exists() else CONFIG.catalog_no_qos_path,
+        default=CONFIG.catalog_path,
     )
     parser.add_argument(
         "--qos-input",
         type=Path,
-        default=CONFIG.api_qos_path if CONFIG.api_qos_path.exists() else CONFIG.catalog_with_qos_path,
+        default=CONFIG.api_qos_path,
     )
     parser.add_argument("--catalog-output", type=Path, default=CONFIG.catalog_path)
     parser.add_argument("--enriched-output", type=Path, default=CONFIG.catalog_enriched_path)

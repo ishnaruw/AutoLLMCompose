@@ -13,14 +13,16 @@ EVAL_COLUMNS = [
     "Query_ID",
     "Mode",
     "Composition_Validity",
+    "Invalid_Reason",
     "Planned_API_Count",
     "Covered_Subtask_Count",
     "Total_Subtask_Count",
     "Composition_Completeness",
+    "Composition_Completeness_Gate",
     "Functional_Coverage",
     "Total_Response_Time",
     "Bottleneck_Throughput",
-    "Workflow_Availability",
+    "Average_Workflow_Availability",
     "Normalized_Response_Time_Score",
     "Normalized_Throughput_Score",
     "Normalized_Availability_Score",
@@ -32,18 +34,26 @@ EVAL_COLUMNS = [
 SUMMARY_COLUMNS = [
     "Mode",
     "Valid",
+    "Complete",
     "QoS_Adjusted_Composition_Score",
     "Rank_By_QoS_Adjusted_Score",
-    "Total_Response_Time",
-    "Rank_By_Response_Time",
-    "Bottleneck_Throughput",
-    "Rank_By_Throughput",
-    "Workflow_Availability",
-    "Rank_By_Availability",
     "Functional_Coverage",
+    "Normalized_QoS_Score",
+    "Total_Response_Time",
+    "Bottleneck_Throughput",
+    "Average_Workflow_Availability",
     "Composition_Completeness",
+    "Composition_Completeness_Gate",
     "Composition_Validity",
     "Short_Interpretation",
+]
+
+BEST_MODE_SUMMARY_COLUMNS = [
+    "Metric",
+    "Direction",
+    "Best_Value",
+    "Best_Modes",
+    "Tie",
 ]
 
 WORKFLOW_COLUMNS = [
@@ -64,45 +74,57 @@ WORKFLOW_COLUMNS = [
 
 DEFINITION_ROWS = [
     {
-        "Metric": "Total Response Time (s)",
+        "Metric": "Composition_Validity",
+        "Category": "Planning quality",
+        "Definition": "Binary diagnostic metric indicating whether the planner output is structurally usable.",
+        "Direction": "Higher is better",
+    },
+    {
+        "Metric": "Composition_Completeness",
+        "Category": "Planning quality",
+        "Definition": "Fraction of decomposed subtasks covered by valid planned steps.",
+        "Direction": "Higher is better",
+    },
+    {
+        "Metric": "Composition_Completeness_Gate",
+        "Category": "Planning quality",
+        "Definition": "Hard gate set to 1 only when the workflow covers all subtasks, otherwise 0.",
+        "Direction": "Higher is better",
+    },
+    {
+        "Metric": "Functional_Coverage",
+        "Category": "Functional suitability",
+        "Definition": "Fraction of planned APIs with Functional Match Label = 1.",
+        "Direction": "Higher is better",
+    },
+    {
+        "Metric": "Total_Response_Time",
         "Category": "QoS quality",
-        "Definition": "Sum of response times in seconds across planned APIs",
+        "Definition": "Sum of response times across planned APIs.",
         "Direction": "Lower is better",
     },
     {
-        "Metric": "Bottleneck Throughput",
+        "Metric": "Bottleneck_Throughput",
         "Category": "QoS quality",
-        "Definition": "Minimum throughput across planned APIs",
+        "Definition": "Minimum throughput across planned APIs.",
         "Direction": "Higher is better",
     },
     {
-        "Metric": "Workflow Availability",
+        "Metric": "Average_Workflow_Availability",
         "Category": "QoS quality",
-        "Definition": "Product of availability values across planned APIs",
+        "Definition": "Average availability across planned APIs.",
         "Direction": "Higher is better",
     },
     {
-        "Metric": "Functional Coverage",
-        "Category": "Functional suitability",
-        "Definition": "Fraction of planned APIs with Functional Match Label = 1",
+        "Metric": "Normalized_QoS_Score",
+        "Category": "QoS quality",
+        "Definition": "Average of normalized response time, throughput, and availability scores.",
         "Direction": "Higher is better",
     },
     {
-        "Metric": "Composition Completeness",
-        "Category": "Planning quality",
-        "Definition": "Fraction of subtasks covered by the plan",
-        "Direction": "Higher is better",
-    },
-    {
-        "Metric": "Composition Validity",
-        "Category": "Planning quality",
-        "Definition": "Binary validity check based on schema, API IDs, and subtask order",
-        "Direction": "Higher is better",
-    },
-    {
-        "Metric": "QoS-Adjusted Composition Score",
+        "Metric": "QoS_Adjusted_Composition_Score",
         "Category": "Overall comparison",
-        "Definition": "Validity-gated weighted score: V * (0.4 * normalized QoS + 0.3 * functional coverage + 0.2 * completeness + 0.1)",
+        "Definition": "Completeness-gated weighted score using 70% functional coverage and 30% normalized QoS score.",
         "Direction": "Higher is better",
     },
 ]
@@ -110,6 +132,19 @@ DEFINITION_ROWS = [
 HEADER_FILL = PatternFill(fill_type="solid", fgColor="D9EAF7")
 BEST_FILL = PatternFill(fill_type="solid", fgColor="C6EFCE")
 INVALID_FILL = PatternFill(fill_type="solid", fgColor="FCE4D6")
+INCOMPLETE_FILL = PatternFill(fill_type="solid", fgColor="FFF2CC")
+COMPLETENESS_GATE_THRESHOLD = 0.999
+BEST_MODE_TOLERANCE = 1e-9
+
+BEST_METRIC_SPECS = [
+    ("qos_adjusted_composition_score", "QoS_Adjusted_Composition_Score", True, "Higher is better"),
+    ("functional_coverage", "Functional_Coverage", True, "Higher is better"),
+    ("normalized_qos_score", "Normalized_QoS_Score", True, "Higher is better"),
+    ("total_response_time", "Total_Response_Time", False, "Lower is better"),
+    ("bottleneck_throughput", "Bottleneck_Throughput", True, "Higher is better"),
+    ("average_workflow_availability", "Average_Workflow_Availability", True, "Higher is better"),
+    ("composition_completeness", "Composition_Completeness", True, "Higher is better"),
+]
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -148,11 +183,8 @@ def _as_float(value: Any) -> float | None:
         return None
 
 
-def _product(values: List[float]) -> float:
-    out = 1.0
-    for value in values:
-        out *= value
-    return out
+def _average(values: List[float]) -> float:
+    return sum(values) / len(values) if values else 0.0
 
 
 def _as_int_label(value: Any) -> int:
@@ -382,6 +414,8 @@ def _evaluate_mode(
             seen_reasons.append(reason)
 
     valid = 1 if not seen_reasons else 0
+    completeness = (len(covered_valid_subtasks) / total_subtasks) if total_subtasks else 0.0
+    completeness_gate = 1.0 if completeness >= COMPLETENESS_GATE_THRESHOLD else 0.0
     qos_available = valid == 1 and planned_api_count > 0 and not has_missing_qos and len(rt_values) == planned_api_count
     row = {
         "Query_ID": query_id,
@@ -391,11 +425,12 @@ def _evaluate_mode(
         "Planned_API_Count": planned_api_count,
         "Covered_Subtask_Count": len(covered_valid_subtasks),
         "Total_Subtask_Count": total_subtasks,
-        "Composition_Completeness": (len(covered_valid_subtasks) / total_subtasks) if total_subtasks else 0.0,
+        "Composition_Completeness": completeness,
+        "Composition_Completeness_Gate": completeness_gate,
         "Functional_Coverage": (functional_matches / planned_api_count) if planned_api_count else 0.0,
         "Total_Response_Time": round(sum(rt_values), 6) if qos_available else None,
         "Bottleneck_Throughput": round(min(tp_values), 6) if qos_available else None,
-        "Workflow_Availability": round(_product(av_values), 6) if qos_available else None,
+        "Average_Workflow_Availability": round(_average(av_values), 6) if qos_available else None,
         "Normalized_Response_Time_Score": 0.0 if valid == 0 or has_missing_qos else None,
         "Normalized_Throughput_Score": 0.0 if valid == 0 or has_missing_qos else None,
         "Normalized_Availability_Score": 0.0 if valid == 0 or has_missing_qos else None,
@@ -410,7 +445,7 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
     metric_specs = [
         ("Total_Response_Time", "Normalized_Response_Time_Score", False),
         ("Bottleneck_Throughput", "Normalized_Throughput_Score", True),
-        ("Workflow_Availability", "Normalized_Availability_Score", True),
+        ("Average_Workflow_Availability", "Normalized_Availability_Score", True),
     ]
     for raw_key, norm_key, higher_better in metric_specs:
         values = [_as_float(row.get(raw_key)) for row in rows if _as_float(row.get(raw_key)) is not None]
@@ -433,7 +468,7 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
                 row[norm_key] = round((max_value - raw) / (max_value - min_value), 6)
 
     for row in rows:
-        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time", "Bottleneck_Throughput", "Workflow_Availability"]):
+        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time", "Bottleneck_Throughput", "Average_Workflow_Availability"]):
             row["Normalized_QoS_Score"] = 0.0
         else:
             row["Normalized_QoS_Score"] = round(
@@ -446,17 +481,16 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
                 6,
             )
         validity = float(row.get("Composition_Validity") or 0.0)
-        if validity <= 0.0:
+        completeness_gate = float(row.get("Composition_Completeness_Gate") or 0.0)
+        # The final score uses completeness as a hard gate because incomplete workflows do not fully
+        # satisfy the user request. Among complete workflows, functional coverage is weighted higher
+        # than QoS because functional suitability is required before QoS optimization is meaningful.
+        if validity <= 0.0 or completeness_gate <= 0.0:
             row["QoS_Adjusted_Composition_Score"] = 0.0
         else:
             row["QoS_Adjusted_Composition_Score"] = round(
-                validity
-                * (
-                    0.4 * float(row.get("Normalized_QoS_Score") or 0.0)
-                    + 0.3 * float(row.get("Functional_Coverage") or 0.0)
-                    + 0.2 * float(row.get("Composition_Completeness") or 0.0)
-                    + 0.1
-                ),
+                0.7 * float(row.get("Functional_Coverage") or 0.0)
+                + 0.3 * float(row.get("Normalized_QoS_Score") or 0.0),
                 6,
             )
 
@@ -475,47 +509,70 @@ def _rank(rows: List[Dict[str, Any]], key: str, *, reverse: bool) -> Dict[str, i
     return ranks
 
 
+def get_best_modes(rows: List[Dict[str, Any]], metric: str, higher_is_better: bool = True, tolerance: float = BEST_MODE_TOLERANCE) -> Dict[str, Any]:
+    values: List[Tuple[str, float]] = []
+    mode_order = {mode: idx for idx, mode in enumerate(MODE_ORDER)}
+    for row in rows:
+        value = _as_float(row.get(metric))
+        if value is not None:
+            values.append((str(row.get("Mode") or ""), value))
+    if not values:
+        return {"best_value": None, "best_modes": [], "is_tie": False}
+
+    best_value = max(value for _, value in values) if higher_is_better else min(value for _, value in values)
+    best_modes = [
+        mode
+        for mode, value in values
+        if abs(value - best_value) <= tolerance
+    ]
+    best_modes = sorted(best_modes, key=lambda mode: mode_order.get(mode, len(mode_order)))
+    return {
+        "best_value": best_value,
+        "best_modes": best_modes,
+        "is_tie": len(best_modes) > 1,
+    }
+
+
 def _summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     score_ranks = _rank(rows, "QoS_Adjusted_Composition_Score", reverse=True)
-    rt_ranks = _rank(rows, "Total_Response_Time", reverse=False)
-    tp_ranks = _rank(rows, "Bottleneck_Throughput", reverse=True)
-    av_ranks = _rank(rows, "Workflow_Availability", reverse=True)
     best_score = min((rank for rank in score_ranks.values() if rank is not None), default=None)
-    best_rt = min((rank for rank in rt_ranks.values() if rank is not None), default=None)
-    best_tp = min((rank for rank in tp_ranks.values() if rank is not None), default=None)
-    best_av = min((rank for rank in av_ranks.values() if rank is not None), default=None)
+    best_score_modes = set(get_best_modes(rows, "QoS_Adjusted_Composition_Score", higher_is_better=True)["best_modes"])
+    score_tied = len(best_score_modes) > 1
 
     out: List[Dict[str, Any]] = []
     for row in rows:
         mode = row["Mode"]
+        complete = float(row.get("Composition_Completeness_Gate") or 0.0) >= 1.0
+        functional = float(row.get("Functional_Coverage") or 0.0)
+        normalized_qos = float(row.get("Normalized_QoS_Score") or 0.0)
         if row.get("Composition_Validity") == 0:
             interpretation = "Invalid composition plan"
-        elif score_ranks.get(mode) == best_score:
-            interpretation = "Best overall composition score"
-        elif rt_ranks.get(mode) == best_rt:
-            interpretation = "Lowest estimated response time"
-        elif tp_ranks.get(mode) == best_tp:
-            interpretation = "Highest estimated throughput"
-        elif av_ranks.get(mode) == best_av:
-            interpretation = "Highest estimated availability"
-        elif float(row.get("Functional_Coverage") or 0.0) < 1.0 and float(row.get("Normalized_QoS_Score") or 0.0) >= 0.5:
-            interpretation = "Lower functional coverage despite strong QoS"
+        elif not complete:
+            interpretation = "Incomplete workflow, final score gated to 0"
+        elif mode in best_score_modes or score_ranks.get(mode) == best_score:
+            interpretation = "Tied best overall composition score" if score_tied else "Best overall composition score"
+        elif normalized_qos >= 0.667 and functional < 0.9:
+            interpretation = "Strong QoS but weaker functional coverage"
+        elif functional >= 0.9 and normalized_qos < 0.667:
+            interpretation = "Strong functional coverage with moderate QoS"
+        elif functional >= 0.9:
+            interpretation = "Complete and functionally strong workflow"
         else:
-            interpretation = "Valid composition plan"
+            interpretation = "Complete workflow with mixed functional and QoS tradeoffs"
         out.append(
             {
                 "Mode": mode,
                 "Valid": "Yes" if row.get("Composition_Validity") == 1 else "No",
+                "Complete": "Yes" if complete else "No",
                 "QoS_Adjusted_Composition_Score": row.get("QoS_Adjusted_Composition_Score"),
                 "Rank_By_QoS_Adjusted_Score": score_ranks.get(mode),
-                "Total_Response_Time": row.get("Total_Response_Time"),
-                "Rank_By_Response_Time": rt_ranks.get(mode),
-                "Bottleneck_Throughput": row.get("Bottleneck_Throughput"),
-                "Rank_By_Throughput": tp_ranks.get(mode),
-                "Workflow_Availability": row.get("Workflow_Availability"),
-                "Rank_By_Availability": av_ranks.get(mode),
                 "Functional_Coverage": row.get("Functional_Coverage"),
+                "Normalized_QoS_Score": row.get("Normalized_QoS_Score"),
+                "Total_Response_Time": row.get("Total_Response_Time"),
+                "Bottleneck_Throughput": row.get("Bottleneck_Throughput"),
+                "Average_Workflow_Availability": row.get("Average_Workflow_Availability"),
                 "Composition_Completeness": row.get("Composition_Completeness"),
+                "Composition_Completeness_Gate": row.get("Composition_Completeness_Gate"),
                 "Composition_Validity": row.get("Composition_Validity"),
                 "Short_Interpretation": interpretation,
             }
@@ -542,15 +599,63 @@ def _validity_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             "covered_subtask_count": row.get("Covered_Subtask_Count"),
             "total_subtask_count": row.get("Total_Subtask_Count"),
             "composition_completeness": row.get("Composition_Completeness"),
+            "composition_completeness_gate": row.get("Composition_Completeness_Gate"),
             "functional_coverage": row.get("Functional_Coverage"),
         }
     return {
         "valid_mode_count": sum(1 for row in rows if int(row.get("Composition_Validity") or 0) == 1),
+        "complete_mode_count": sum(1 for row in rows if float(row.get("Composition_Completeness_Gate") or 0.0) >= 1.0),
         "invalid_mode_count": len(invalid_modes),
         "invalid_modes": invalid_modes,
         "invalid_reason_counts": invalid_reason_counts,
         "by_mode": by_mode,
     }
+
+
+def _best_mode_by(rows: List[Dict[str, Any]], key: str, *, higher_better: bool) -> Dict[str, Any] | None:
+    best = get_best_modes(rows, key, higher_is_better=higher_better)
+    if not best["best_modes"]:
+        return None
+    return {
+        "mode": best["best_modes"][0],
+        "value": best["best_value"],
+        "compatibility_note": "First best mode only; use best_modes_by_* fields for tie-aware reporting.",
+    }
+
+
+def _score_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    summary: Dict[str, Any] = {
+        "valid_mode_count": sum(1 for row in rows if int(row.get("Composition_Validity") or 0) == 1),
+        "complete_mode_count": sum(1 for row in rows if float(row.get("Composition_Completeness_Gate") or 0.0) >= 1.0),
+        "evaluated_modes": MODE_ORDER,
+        "scoring_formula": (
+            "QoS_Adjusted_Composition_Score = 0 if invalid or incomplete; otherwise "
+            "0.7 * Functional_Coverage + 0.3 * Normalized_QoS_Score"
+        ),
+    }
+    for slug, metric, higher_better, _ in BEST_METRIC_SPECS:
+        best = get_best_modes(rows, metric, higher_is_better=higher_better)
+        summary[f"best_modes_by_{slug}"] = best["best_modes"]
+        summary[f"best_{slug}"] = best["best_value"]
+        summary[f"is_{slug}_tie"] = best["is_tie"]
+        summary[f"best_mode_by_{slug}"] = _best_mode_by(rows, metric, higher_better=higher_better)
+    return summary
+
+
+def _best_mode_summary_rows(score_summary: Dict[str, Any]) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    for slug, metric, _, direction in BEST_METRIC_SPECS:
+        best_modes = score_summary.get(f"best_modes_by_{slug}") or []
+        rows.append(
+            {
+                "Metric": metric,
+                "Direction": direction,
+                "Best_Value": score_summary.get(f"best_{slug}"),
+                "Best_Modes": ", ".join(best_modes) if best_modes else "",
+                "Tie": "Yes" if score_summary.get(f"is_{slug}_tie") else "No",
+            }
+        )
+    return rows
 
 
 def _issue_log_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -629,9 +734,9 @@ def _highlight_main_sheet(ws, rows: List[Dict[str, Any]]) -> None:
     best_specs = [
         ("Total_Response_Time", False),
         ("Bottleneck_Throughput", True),
-        ("Workflow_Availability", True),
+        ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
-        ("Composition_Completeness", True),
+        ("Normalized_QoS_Score", True),
         ("QoS_Adjusted_Composition_Score", True),
     ]
     best_values: Dict[str, float] = {}
@@ -645,33 +750,41 @@ def _highlight_main_sheet(ws, rows: List[Dict[str, Any]]) -> None:
         if row.get("Composition_Validity") == 0:
             for col_idx in range(1, ws.max_column + 1):
                 ws.cell(row=row_idx, column=col_idx).fill = INVALID_FILL
+        elif float(row.get("Composition_Completeness_Gate") or 0.0) < 1.0:
+            for col_idx in range(1, ws.max_column + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = INCOMPLETE_FILL
         for key, best in best_values.items():
             value = _as_float(row.get(key))
-            if value is not None and value == best and key in header_to_col:
+            if value is not None and abs(value - best) <= BEST_MODE_TOLERANCE and key in header_to_col:
                 ws.cell(row=row_idx, column=header_to_col[key]).fill = BEST_FILL
 
 
-def _write_excel(path: Path, rows: List[Dict[str, Any]], summary: List[Dict[str, Any]], workflow: List[Dict[str, Any]]) -> None:
+def _write_excel(path: Path, rows: List[Dict[str, Any]], summary: List[Dict[str, Any]], workflow: List[Dict[str, Any]], score_summary: Dict[str, Any]) -> None:
     wb = Workbook()
     ws = wb.active
     ws.title = "Composition_Evaluation"
     numeric = {
         "Composition_Completeness",
+        "Composition_Completeness_Gate",
         "Functional_Coverage",
         "Total_Response_Time",
         "Bottleneck_Throughput",
-        "Workflow_Availability",
+        "Average_Workflow_Availability",
         "Normalized_Response_Time_Score",
         "Normalized_Throughput_Score",
         "Normalized_Availability_Score",
         "Normalized_QoS_Score",
         "QoS_Adjusted_Composition_Score",
+        "Best_Value",
     }
     _append_rows(ws, EVAL_COLUMNS, rows, numeric)
     _highlight_main_sheet(ws, rows)
 
     ws = wb.create_sheet("Mode_Summary")
     _append_rows(ws, SUMMARY_COLUMNS, summary, numeric)
+
+    ws = wb.create_sheet("Best_Mode_Summary")
+    _append_rows(ws, BEST_MODE_SUMMARY_COLUMNS, _best_mode_summary_rows(score_summary), numeric)
 
     ws = wb.create_sheet("Planned_Workflow")
     _append_rows(ws, WORKFLOW_COLUMNS, workflow, {"rt_ms", "tp_rps", "availability"})
@@ -711,6 +824,7 @@ def evaluate_composition_qos(*, query_dir: Path, query_id: str | None = None, ou
     _normalize(rows)
     summary_rows = _summary_rows(rows)
     validity_summary = _validity_summary(rows)
+    score_summary = _score_summary(rows)
     issue_rows = _issue_log_rows(rows)
 
     rows_path = output_dir / f"query_{query_id}_composition_qos_eval_rows.json"
@@ -722,21 +836,29 @@ def evaluate_composition_qos(*, query_dir: Path, query_id: str | None = None, ou
     _write_json(rows_path, rows)
     _write_json(issues_json_path, issue_rows)
     _write_issue_text_log(issues_log_path, issue_rows, query_id=query_id)
-    _write_json(
-        summary_path,
-        {
-            "query_id": query_id,
-            "rows_json": str(rows_path),
-            "excel": str(xlsx_path),
-            "composition_validity_issues_json": str(issues_json_path),
-            "composition_validity_issues_log": str(issues_log_path),
-            "candidate_api_rankings_rows_json": str(candidate_rows_path),
-            "modes": MODE_ORDER,
-            "composition_validity_summary": validity_summary,
-            "summary_rows": summary_rows,
-        },
-    )
-    _write_excel(xlsx_path, rows, summary_rows, workflow_rows)
+    summary_payload = {
+        "query_id": query_id,
+        "rows_json": str(rows_path),
+        "excel": str(xlsx_path),
+        "composition_validity_issues_json": str(issues_json_path),
+        "composition_validity_issues_log": str(issues_log_path),
+        "candidate_api_rankings_rows_json": str(candidate_rows_path),
+        "modes": MODE_ORDER,
+        "evaluated_modes": MODE_ORDER,
+        "scoring_formula": score_summary["scoring_formula"],
+        "valid_mode_count": score_summary["valid_mode_count"],
+        "complete_mode_count": score_summary["complete_mode_count"],
+        "composition_validity_summary": validity_summary,
+        "score_summary": score_summary,
+        "summary_rows": summary_rows,
+    }
+    for slug, _, _, _ in BEST_METRIC_SPECS:
+        for prefix in ("best_modes_by", "best", "is", "best_mode_by"):
+            key = f"{prefix}_{slug}" if prefix != "is" else f"is_{slug}_tie"
+            if key in score_summary:
+                summary_payload[key] = score_summary[key]
+    _write_json(summary_path, summary_payload)
+    _write_excel(xlsx_path, rows, summary_rows, workflow_rows, score_summary)
 
     return {
         "rows_json": rows_path,
@@ -747,6 +869,7 @@ def evaluate_composition_qos(*, query_dir: Path, query_id: str | None = None, ou
         "rows": rows,
         "summary_rows": summary_rows,
         "composition_validity_summary": validity_summary,
+        "score_summary": score_summary,
     }
 
 

@@ -369,6 +369,7 @@ Pipeline defaults are defined in `src/config/pipeline_config.py`. Common values:
 - `ranker_max_candidates`: ranker candidate cap.
 - `selector_top_n`: fallback number of APIs selected for planner input.
 - `planner_enabled`: enables planner generation.
+- `planner_temperature`: temperature used only for planner LLM calls.
 - `composition_qos_eval_enabled`: enables composition-level QoS evaluation.
 - `llm_validation_max_retries`: bounded retries for structurally invalid LLM outputs.
 

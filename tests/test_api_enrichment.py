@@ -123,8 +123,6 @@ class ApiEnrichmentTests(unittest.TestCase):
             config = SimpleNamespace(
                 catalog_enriched_path=enriched_path,
                 catalog_path=base_path,
-                catalog_no_qos_path=base_path,
-                catalog_with_qos_path=root / "missing_with_qos.jsonl",
                 api_qos_path=qos_path,
             )
 

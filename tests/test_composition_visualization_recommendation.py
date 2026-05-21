@@ -10,6 +10,7 @@ import pandas as pd
 from src.ui.composition_visualization_helpers import (
     build_dataflow_cards_html,
     build_bottleneck_replacement_simulations,
+    build_mode_comparison_figure,
     build_replacement_simulation_dot,
     build_winner_heatmap,
     api_health_status,
@@ -36,6 +37,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Composition_Validity": 1,
                     "QoS_Adjusted_Composition_Score": 0.756,
                     "Functional_Coverage": 1.0,
+                    "Composition_Completeness": 1.0,
                 },
                 {
                     "Query_ID": "q1",
@@ -43,6 +45,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Composition_Validity": 1,
                     "QoS_Adjusted_Composition_Score": 0.925,
                     "Functional_Coverage": 0.75,
+                    "Composition_Completeness": 1.0,
                 },
             ]
         )
@@ -82,6 +85,8 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         recommendation = get_recommended_mode(df, "q1")
 
         self.assertEqual(recommendation["mode"], "qos_topsis")
+        self.assertEqual(recommendation["modes"], ["qos_pure_llm", "qos_topsis"])
+        self.assertTrue(recommendation["is_tie"])
 
     def test_missing_scores_are_unavailable(self) -> None:
         df = pd.DataFrame(
@@ -109,6 +114,37 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
 
         self.assertEqual(recommendation["status"], "diagnostic")
         self.assertEqual(recommendation["mode"], "qos_hybrid")
+
+    def test_mode_comparison_colors_best_complete_functional_path_green(self) -> None:
+        workflows = {
+            "qos_topsis": pd.DataFrame(
+                [
+                    {"Step": 1, "Subtask_ID": "1", "API_ID": "api_a", "API_Name": "API A", "Functional_Match": 0, "API_QoS_Health": 1.0, "API_Risk_Label": "Low"},
+                    {"Step": 2, "Subtask_ID": "2", "API_ID": "api_b", "API_Name": "API B", "Functional_Match": 1, "API_QoS_Health": 1.0, "API_Risk_Label": "Low"},
+                ]
+            ),
+            "qos_hybrid": pd.DataFrame(
+                [
+                    {"Step": 1, "Subtask_ID": "1", "API_ID": "api_c", "API_Name": "API C", "Functional_Match": 1, "API_QoS_Health": 0.3, "API_Risk_Label": "High"},
+                    {"Step": 2, "Subtask_ID": "2", "API_ID": "api_d", "API_Name": "API D", "Functional_Match": 1, "API_QoS_Health": 0.3, "API_Risk_Label": "High"},
+                ]
+            ),
+        }
+        eval_rows = {
+            "qos_topsis": {"Composition_Validity": 1, "Composition_Completeness_Gate": 1, "QoS_Adjusted_Composition_Score": 0.5},
+            "qos_hybrid": {"Composition_Validity": 1, "Composition_Completeness_Gate": 1, "QoS_Adjusted_Composition_Score": 0.9},
+        }
+
+        fig = build_mode_comparison_figure(workflows, ["qos_topsis", "qos_hybrid"], eval_rows_by_mode=eval_rows)
+        marker_traces = [trace for trace in fig.data if getattr(trace, "mode", "") == "markers+text"]
+        colors = [trace.marker.color for trace in marker_traces]
+        hovertexts = [trace.hovertext[0] for trace in marker_traces]
+
+        self.assertEqual(colors[0], "#F4CCCC")
+        self.assertEqual(colors[2], "#C6EFCE")
+        self.assertEqual(colors[3], "#C6EFCE")
+        self.assertIn("Overall Status: Recommended", hovertexts[2])
+        self.assertIn("QoS Risk: High", hovertexts[2])
 
     def test_api_health_uses_local_normalized_qos_scores(self) -> None:
         workflow = normalize_api_qos_scores(
@@ -192,7 +228,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
             self.assertTrue(pd.isna(scored.iloc[1]["API_QoS_Health"]))
             self.assertEqual(scored.iloc[1]["API_Health_Status"], "gray")
 
-    def test_workflow_availability_summary_uses_product_fallback(self) -> None:
+    def test_workflow_availability_summary_uses_average_fallback(self) -> None:
         workflow = pd.DataFrame(
             [
                 {"Subtask_ID": "1", "availability": 0.9},
@@ -208,7 +244,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         )
         summary = {row["Metric"]: row["Value"] for row in rows}
 
-        self.assertEqual(summary["Workflow Availability"], "0.720")
+        self.assertEqual(summary["Average Workflow Availability"], "0.850")
         self.assertEqual(summary["Total Response Time (s)"], "0.300 s")
 
     def test_groups_bottlenecks_by_api_with_severity(self) -> None:
@@ -329,7 +365,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
 
         self.assertIn("Official Planner Workflow", dot)
         self.assertIn("What-If Replacement Workflow", dot)
-        self.assertIn("Current bottleneck", dot)
+        self.assertIn("Current risk contributor", dot)
         self.assertIn("Candidate replacement", dot)
         self.assertNotIn("Simulated Workflow", dot)
         self.assertNotIn("Suggested Replacement", dot)

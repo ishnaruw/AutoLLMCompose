@@ -5,17 +5,17 @@ from typing import Optional, List, Dict, Any
 
 from src.config import CONFIG
 
-CATALOG_WITH_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.with_qos.tooldesc.jsonl")
-CATALOG_NO_QOS_TOOLDESC = Path("data/processed/api_catalog_sample_balanced/misc/api_repo.no_qos.tooldesc.jsonl")
-CATALOG_WITH_QOS = Path("data/processed/api_catalog_sample_balanced/misc/deprecated_api_repo.with_qos.jsonl")
-CATALOG_NO_QOS = Path("data/processed/api_catalog_sample_balanced/misc/deprecated_api_repo.no_qos.jsonl")
 
+def catalog_path(with_qos: bool = False, *, prefer_enriched: bool = True) -> Path:
+    """Return the canonical functional catalog path.
 
-def catalog_path(with_qos: bool, *, prefer_enriched: bool = True) -> Path:
+    ``with_qos`` is retained for callers that ask for a no-QoS view, but QoS is
+    now stored in CONFIG.api_qos_path and merged by load_catalog_records().
+    """
     candidates = []
     if prefer_enriched:
         candidates.append(CONFIG.catalog_enriched_path)
-    candidates.extend([CONFIG.catalog_path, CONFIG.catalog_no_qos_path, CATALOG_NO_QOS_TOOLDESC, CATALOG_NO_QOS])
+    candidates.append(CONFIG.catalog_path)
 
     for path in candidates:
         if path.exists():
@@ -31,10 +31,8 @@ def iter_jsonl(path: Path):
                 yield json.loads(line)
 
 
-def _legacy_qos_by_id() -> Dict[str, Dict[str, Any]]:
-    path = CONFIG.catalog_with_qos_path if CONFIG.catalog_with_qos_path.exists() else CATALOG_WITH_QOS_TOOLDESC
-    if not path.exists():
-        path = CATALOG_WITH_QOS
+def load_qos_by_id(path: Path | None = None) -> Dict[str, Dict[str, Any]]:
+    path = path or CONFIG.api_qos_path
     if not path.exists():
         return {}
 
@@ -47,29 +45,13 @@ def _legacy_qos_by_id() -> Dict[str, Dict[str, Any]]:
     return out
 
 
-def load_qos_by_id(path: Path | None = None) -> Dict[str, Dict[str, Any]]:
-    path = path or CONFIG.api_qos_path
-    if not path.exists():
-        return _legacy_qos_by_id()
-
-    out: Dict[str, Dict[str, Any]] = {}
-    for row in iter_jsonl(path):
-        api_id = str(row.get("api_id") or "").strip()
-        qos = row.get("qos")
-        if api_id and isinstance(qos, dict):
-            out[api_id] = dict(qos)
-    return out
-
-
 def load_catalog_records(*, with_qos: bool = False, prefer_enriched: bool = True) -> List[Dict[str, Any]]:
-    path = catalog_path(with_qos=False, prefer_enriched=prefer_enriched)
+    path = catalog_path(prefer_enriched=prefer_enriched)
     if not path.exists():
         raise FileNotFoundError(f"Catalog not found: {path.resolve()}")
 
     items = [dict(row) for row in iter_jsonl(path)]
     if not with_qos:
-        for item in items:
-            item.pop("qos", None)
         return items
 
     qos_by_id = load_qos_by_id()

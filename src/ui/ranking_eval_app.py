@@ -1004,7 +1004,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         st.info("No composition rows match the selected filters.")
         return
 
-    availability_col = "Workflow_Availability"
+    availability_col = "Average_Workflow_Availability" if "Average_Workflow_Availability" in filtered else "Workflow_Availability"
     numeric_cols = [
         "Composition_Validity",
         "Composition_Completeness",
@@ -1539,7 +1539,10 @@ def render_sticky_table(
 COMPOSITION_METRIC_LABELS = {
     "rt_ms": viz.RESPONSE_TIME_LABEL,
     "Total_Response_Time": viz.TOTAL_RESPONSE_TIME_LABEL,
+    "Average_Workflow_Availability": viz.WORKFLOW_AVAILABILITY_LABEL,
     "Workflow_Availability": viz.WORKFLOW_AVAILABILITY_LABEL,
+    "Composition_Risk_API": "Composition Risk API",
+    "Risk_Summary": "Risk Summary",
     "tp_rps": "Throughput",
     "availability": "Availability",
 }
@@ -1557,27 +1560,32 @@ def _bottleneck_display_frame(df: pd.DataFrame) -> pd.DataFrame:
     display = _display_frame(df).copy()
     if "Metric" in display:
         display["Metric"] = display["Metric"].astype(str).map(_composition_metric_label)
-    return display.rename(columns={"Metric_Value": "Metric Value"})
+    return display.rename(
+        columns={
+            "Bottleneck_Type": "QoS Risk Type",
+            "Metric_Value": "Metric Value",
+            "Impact": "Risk Summary",
+        }
+    )
 
 
 def _render_grouped_bottlenecks(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) -> None:
     groups = viz.group_bottlenecks_by_api(workflow, bottlenecks)
     if not groups:
-        st.info("No grouped bottleneck APIs were identified.")
+        st.info("No grouped composition-risk APIs were identified.")
         return
 
     st.caption(
-        "Bottleneck severity explains how much the bottleneck API contributes to workflow-level QoS behavior. "
-        "Latency contribution is API response time divided by total workflow response time. "
-        "Throughput gap compares the bottleneck API with the highest-throughput selected API."
+        "Composition risk combines functional suitability and QoS signals. "
+        "Functional risk is based on Functional Match, while QoS risk summarizes latency, throughput, and availability signals."
     )
     for group in groups:
         api_name = group.get("api_name") or group.get("api_id") or viz.NA
         dimensions = ", ".join(group.get("dimensions", [])) or viz.NA
         title = f"{api_name} | {dimensions}"
         with st.expander(title, expanded=True):
-            st.markdown(f"**Bottleneck API:** {api_name}")
-            st.markdown(f"**Bottleneck dimensions:** {dimensions}")
+            st.markdown(f"**Risk-contributing API:** {api_name}")
+            st.markdown(f"**QoS Signal:** {dimensions}")
             subtask = group.get("subtask")
             subtask_id = group.get("subtask_id")
             if subtask_id and subtask_id != viz.NA:
@@ -1588,13 +1596,13 @@ def _render_grouped_bottlenecks(workflow: pd.DataFrame, bottlenecks: pd.DataFram
 
             reasons = group.get("reasons", [])
             if reasons:
-                st.markdown("**Reason:**")
+                st.markdown("**Risk Summary:**")
                 for reason in reasons:
                     st.markdown(f"- {reason}")
 
             severity_lines = group.get("severity_lines", [])
             if severity_lines:
-                st.markdown("**Severity:**")
+                st.markdown("**QoS Signal Details:**")
                 for line in severity_lines:
                     st.markdown(f"- {line}")
 
@@ -1620,7 +1628,7 @@ def _api_detail_rows(row: dict[str, Any] | pd.Series, *, dimensions: str | None 
         {"Field": "API QoS Health Source", "Value": row.get("API_QoS_Health_Source", viz.NA)},
     ]
     if dimensions is not None:
-        rows.append({"Field": "Bottleneck Dimensions", "Value": dimensions})
+        rows.append({"Field": "QoS Risk Dimensions", "Value": dimensions})
     if reason is not None:
         rows.append({"Field": "Why This Candidate Was Tested", "Value": reason})
     return pd.DataFrame(rows)
@@ -1640,7 +1648,7 @@ def _what_if_worsens_major_metric(current: dict[str, Any], tested: dict[str, Any
     specs = [
         ("Total_Response_Time", False),
         ("Bottleneck_Throughput", True),
-        ("Workflow_Availability", True),
+        ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
     ]
     for metric, higher_better in specs:
@@ -1666,9 +1674,9 @@ def _render_replacement_simulation(
     def available(value: Any) -> bool:
         return value is not None and not (isinstance(value, float) and pd.isna(value)) and value != viz.NA
 
-    st.subheader("What-If Bottleneck Replacement Analysis")
+    st.subheader("What-If Composition Risk Replacement Analysis")
     st.caption(
-        "This what-if analysis tests how workflow-level QoS might change if a bottleneck API were replaced with another candidate "
+        "This what-if analysis tests how workflow-level QoS might change if a risk-contributing API were replaced with another candidate "
         "from the same subtask pool. The replacement is selected by visualization logic for diagnostic comparison. It is not "
         "generated by the LLM planner, not an official pipeline output, and does not modify stored experiment results."
     )
@@ -1682,7 +1690,7 @@ def _render_replacement_simulation(
         mode=mode,
     )
     if not simulations:
-        st.info("No bottleneck APIs were available for what-if replacement analysis.")
+        st.info("No risk-contributing APIs were available for what-if replacement analysis.")
         return
 
     labels = []
@@ -1690,11 +1698,11 @@ def _render_replacement_simulation(
         group = simulation.get("group", {})
         dims = ", ".join(group.get("dimensions", [])) or viz.NA
         labels.append(f"{idx}. {group.get('api_name', viz.NA)} | {dims}")
-    selected_label = st.selectbox("Current Bottleneck API", labels, key=f"{key_prefix}_replacement_pick")
+    selected_label = st.selectbox("Current Risk-Contributing API", labels, key=f"{key_prefix}_replacement_pick")
     simulation = simulations[labels.index(selected_label)]
     group = simulation.get("group", {})
     if simulation.get("status") != "ok":
-        st.warning(simulation.get("message") or "No candidate replacement API available for this bottleneck API.")
+        st.warning(simulation.get("message") or "No candidate replacement API available for this risk-contributing API.")
         return
     if simulation.get("warning"):
         st.warning(simulation["warning"])
@@ -1710,7 +1718,7 @@ def _render_replacement_simulation(
     dimensions = ", ".join(group.get("dimensions", [])) or viz.NA
     left, right = st.columns(2)
     with left:
-        st.markdown("**Current Bottleneck API**")
+        st.markdown("**Current Risk-Contributing API**")
         st.dataframe(_display_frame(_api_detail_rows(current_row, dimensions=dimensions)), use_container_width=True, hide_index=True)
     with right:
         st.markdown("**Candidate Replacement API**")
@@ -1741,8 +1749,8 @@ def _render_replacement_simulation(
     after_tp = simulated_metrics.get("Bottleneck_Throughput")
     if available(before_tp) and available(after_tp) and before_tp != after_tp:
         explanation_lines.append(f"The candidate replacement changes bottleneck throughput from {viz.format_value(before_tp)} to {viz.format_value(after_tp)}.")
-    before_av = current_metrics.get("Workflow_Availability")
-    after_av = simulated_metrics.get("Workflow_Availability")
+    before_av = current_metrics.get("Average_Workflow_Availability", current_metrics.get("Workflow_Availability"))
+    after_av = simulated_metrics.get("Average_Workflow_Availability", simulated_metrics.get("Workflow_Availability"))
     if available(before_av) and available(after_av) and before_av != after_av:
         explanation_lines.append(f"The candidate replacement changes workflow availability from {viz.format_value(before_av)} to {viz.format_value(after_av)}.")
     if explanation_lines:
@@ -1752,7 +1760,7 @@ def _render_replacement_simulation(
 
     with st.expander("What-If Replacement Workflow Mini Graph", expanded=False):
         st.caption(
-            "The left side shows the official workflow generated by the selected mode. The right side shows a diagnostic what-if workflow where only the bottleneck API is replaced."
+            "The left side shows the official workflow generated by the selected mode. The right side shows a diagnostic what-if workflow where only the risk-contributing API is replaced."
         )
         st.graphviz_chart(
             viz.build_replacement_simulation_dot(workflow, simulation["simulated_workflow"], current_row, replacement_row),
@@ -2139,12 +2147,15 @@ def _render_summary_metrics(summary_rows: list[dict[str, str]]) -> None:
     cols = st.columns(4)
     for idx, label in enumerate(metric_order):
         cols[idx % 4].metric(label, summary.get(label, viz.NA))
-    st.markdown(f"**Bottleneck API:** {summary.get('Bottleneck API', viz.NA)}")
+    st.markdown(f"**Risk-contributing API:** {summary.get('Risk-contributing API', summary.get('Bottleneck API', viz.NA))}")
 
 
 def _render_recommendation_summary(recommendation: dict[str, Any]) -> None:
     row = recommendation.get("row") or {}
-    mode_label = recommendation.get("mode") or viz.NA
+    modes = [str(mode) for mode in recommendation.get("modes") or [] if str(mode)]
+    mode_label = ", ".join(modes) if recommendation.get("is_tie") and modes else recommendation.get("mode") or viz.NA
+    if recommendation.get("is_tie") and mode_label != viz.NA:
+        mode_label = f"{mode_label} (tie)"
     reason = recommendation.get("reason") or "Highest QoS-adjusted composition score among valid modes"
     mode_field = "Diagnostic Mode" if recommendation.get("status") == "diagnostic" else "Recommended Mode"
     workflow_availability = viz.workflow_availability_value(row)
@@ -2176,20 +2187,36 @@ def _render_quality_legend() -> None:
     st.caption(viz.API_HEALTH_HELP)
 
 
-def _render_color_chip_legend() -> None:
-    st.markdown(
+def _render_color_chip_legend(*, composition_status: bool = True) -> None:
+    if composition_status:
+        legend_items = """
+            <span class="legend-item"><span class="legend-chip legend-green"></span>Recommended composition path</span>
+            <span class="legend-item"><span class="legend-chip legend-orange"></span>Valid alternative path</span>
+            <span class="legend-item"><span class="legend-chip legend-red"></span>Functional or composition risk</span>
+            <span class="legend-item"><span class="legend-chip legend-gray"></span>Missing/unknown data</span>
         """
-        <div class="AutoLLMCompose-color-legend">
-            <span class="legend-title">Node color guide:</span>
+        caption = (
+            "Composition Recommendation Status. Functional suitability is prioritized first, "
+            "while QoS health is used as a secondary signal."
+        )
+    else:
+        legend_items = """
             <span class="legend-item"><span class="legend-chip legend-green"></span>Strong QoS / Low Risk</span>
             <span class="legend-item"><span class="legend-chip legend-orange"></span>Moderate QoS / Medium Risk</span>
             <span class="legend-item"><span class="legend-chip legend-red"></span>Weak QoS / High Risk</span>
             <span class="legend-item"><span class="legend-chip legend-gray"></span>Missing/unknown QoS data</span>
+        """
+        caption = "Composition evaluation rows are missing, so node colors fall back to API QoS Health."
+    st.markdown(
+        f"""
+        <div class="AutoLLMCompose-color-legend">
+            <span class="legend-title">Node color guide:</span>
+            {legend_items}
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.caption(viz.API_HEALTH_HELP)
+    st.caption(caption)
 
 
 def _render_qos_health_warnings(workflow: pd.DataFrame) -> None:
@@ -2210,15 +2237,18 @@ def _render_workflow_interpretation(workflow: pd.DataFrame, bottlenecks: pd.Data
     status_col = "API_Health_Status" if "API_Health_Status" in workflow else "Selection_Quality_Status" if "Selection_Quality_Status" in workflow else "Health_Status"
     status_counts = workflow[status_col].value_counts().to_dict() if status_col in workflow else {}
     mismatch_count = int((pd.to_numeric(workflow.get("Functional_Match"), errors="coerce") == 0).sum()) if "Functional_Match" in workflow else 0
+    functional_risk_counts = workflow["Functional_Risk"].value_counts().to_dict() if "Functional_Risk" in workflow else {}
+    qos_risk_counts = workflow["QoS_Risk"].value_counts().to_dict() if "QoS_Risk" in workflow else {}
     bottleneck_text = viz.bottleneck_group_summary(workflow, bottlenecks)
     rows = [
         {"Signal": "Selected APIs", "Interpretation": str(len(workflow))},
-        {"Signal": "Strong QoS / Low Risk APIs", "Interpretation": str(status_counts.get("green", 0))},
-        {"Signal": "Moderate QoS / Medium Risk APIs", "Interpretation": str(status_counts.get("orange", 0))},
-        {"Signal": "Weak QoS / High Risk APIs", "Interpretation": str(status_counts.get("red", 0))},
+        {"Signal": "Functional Risk Low APIs", "Interpretation": str(functional_risk_counts.get("Low", max(len(workflow) - mismatch_count, 0)))},
+        {"Signal": "Functional Risk High APIs", "Interpretation": str(functional_risk_counts.get("High", mismatch_count))},
+        {"Signal": "QoS Risk Low APIs", "Interpretation": str(qos_risk_counts.get("Low", status_counts.get("green", 0)))},
+        {"Signal": "QoS Risk Medium APIs", "Interpretation": str(qos_risk_counts.get("Medium", status_counts.get("orange", 0)))},
+        {"Signal": "QoS Risk High APIs", "Interpretation": str(qos_risk_counts.get("High", status_counts.get("red", 0)))},
         {"Signal": "Unknown QoS APIs", "Interpretation": str(status_counts.get("gray", 0))},
-        {"Signal": "Functional mismatches", "Interpretation": str(mismatch_count)},
-        {"Signal": "Bottleneck", "Interpretation": bottleneck_text},
+        {"Signal": "Risk-contributing API", "Interpretation": bottleneck_text},
     ]
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True, height=250)
 
@@ -2243,10 +2273,12 @@ def _render_step_cards(workflow: pd.DataFrame) -> None:
                     {"Field": "API QoS Health Source", "Value": row.get("API_QoS_Health_Source", viz.NA)},
                     {"Field": "API Selection Health", "Value": viz.format_api_health(row.get("API_Selection_Health"))},
                     {"Field": "API Health Label", "Value": row.get("API_Health_Label", viz.NA)},
-                    {"Field": "API Risk Label", "Value": row.get("API_Risk_Label", viz.NA)},
+                    {"Field": "Functional Risk", "Value": row.get("Functional_Risk", viz.NA)},
+                    {"Field": "QoS Risk", "Value": row.get("QoS_Risk", row.get("API_Risk_Label", viz.NA))},
+                    {"Field": "Composition Risk", "Value": row.get("Composition_Risk", viz.NA)},
                     {"Field": "QoS LLM Score", "Value": viz.format_value(row.get("QoS_LLM_Score"))},
                     {"Field": "TOPSIS Score", "Value": viz.format_value(row.get("TOPSIS_Score"))},
-                    {"Field": "Bottleneck Dimensions", "Value": row.get("Bottleneck_Dimensions", viz.NA)},
+                    {"Field": "QoS Risk Dimensions", "Value": row.get("Bottleneck_Dimensions", viz.NA)},
                     {"Field": "Action", "Value": row.get("Action", viz.NA)},
                     {"Field": "Why", "Value": row.get("Why", viz.NA)},
                 ]
@@ -2271,6 +2303,9 @@ def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
         "API_Selection_Health",
         "API_Health_Label",
         "API_Risk_Label",
+        "Functional_Risk",
+        "QoS_Risk",
+        "Composition_Risk",
         "QoS_LLM_Score",
         "TOPSIS_Score",
         "Bottleneck_Dimensions",
@@ -2294,10 +2329,13 @@ def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
             "API_QoS_Health_Source": "API QoS Health Source",
             "API_Selection_Health": "API Selection Health",
             "API_Health_Label": "API Health",
-            "API_Risk_Label": "Risk",
+            "API_Risk_Label": "QoS Risk",
+            "Functional_Risk": "Functional Risk",
+            "QoS_Risk": "QoS Risk",
+            "Composition_Risk": "Composition Risk",
             "QoS_LLM_Score": "QoS LLM Score",
             "TOPSIS_Score": "TOPSIS Score",
-            "Bottleneck_Dimensions": "Bottleneck Dimensions",
+            "Bottleneck_Dimensions": "QoS Risk Dimensions",
         }
     )
 
@@ -2334,16 +2372,24 @@ def _render_mode_comparison(
             mode=mode,
         )
 
-    _render_color_chip_legend()
+    has_eval_rows = viz.mode_comparison_has_eval_rows(eval_rows_by_mode)
+    _render_color_chip_legend(composition_status=has_eval_rows)
+    if not has_eval_rows:
+        st.warning("Composition evaluation rows are missing for this run, so the Mode Comparison graph is falling back to API QoS health colors.")
     for mode_workflow in workflows_by_mode.values():
         _render_qos_health_warnings(mode_workflow)
     st.plotly_chart(
-        viz.build_mode_comparison_figure(workflows_by_mode, modes),
+        viz.build_mode_comparison_figure(workflows_by_mode, modes, eval_rows_by_mode=eval_rows_by_mode),
         use_container_width=True,
         config=_plotly_config(),
         key=f"{key_prefix}_matrix",
     )
-    st.caption("Node colors show API QoS Health. Bottleneck changes are listed in the tables and bottleneck analysis so red does not imply every bottleneck is a functional failure.")
+    st.caption(
+        "Node colors show composition recommendation status. Functional suitability is prioritized first, "
+        "while QoS health is used as a secondary signal. Green indicates the recommended composition path "
+        "for the query, red indicates invalid, incomplete, or functionally weak steps, and orange indicates "
+        "valid alternatives with lower final score or QoS risk."
+    )
 
     st.subheader("Compact Comparison Table")
     difference_df = viz.workflow_difference_table(workflows_by_mode, modes)
@@ -2523,7 +2569,7 @@ def render_composition_visualizations() -> None:
     tabs = st.tabs(
         [
             "Selected Mode Workflow",
-            "Bottleneck Analysis",
+            "Composition Risk Analysis",
             "Recommended Composition Path",
             "Mode Comparison",
             "Observability and Diagnostics",
@@ -2564,12 +2610,12 @@ def render_composition_visualizations() -> None:
                 _render_qos_health_warnings(workflow)
                 _render_workflow_interpretation(workflow, bottlenecks)
             if not bottlenecks.empty:
-                st.subheader("Grouped Bottlenecks")
+                st.subheader("Grouped Composition Risks")
                 _render_grouped_bottlenecks(workflow, bottlenecks)
 
     with tabs[1]:
         if bottlenecks.empty:
-            st.info("No response time, throughput, or availability bottlenecks could be inferred from available workflow metrics.")
+            st.info("No response time, throughput, or availability composition risks could be inferred from available workflow metrics.")
         else:
             st.plotly_chart(
                 viz.build_bottleneck_figure(workflow, bottlenecks),
@@ -2578,14 +2624,14 @@ def render_composition_visualizations() -> None:
                 key=f"{chart_key_prefix}_bottleneck",
             )
             _render_workflow_interpretation(workflow, bottlenecks)
-            st.subheader("Grouped Bottleneck Details")
+            st.subheader("Grouped Composition Risk Details")
             _render_grouped_bottlenecks(workflow, bottlenecks)
-            st.subheader("Raw Bottleneck Rows")
+            st.subheader("Raw Composition Risk Rows")
             display_cols = ["Bottleneck_Type", "API", "Subtask_ID", "Reason", "Metric", "Metric_Value", "Impact"]
             render_sticky_table(
                 _bottleneck_display_frame(bottlenecks[[col for col in display_cols if col in bottlenecks.columns]]),
                 height=240,
-                sticky_columns=["Bottleneck_Type", "API"],
+                sticky_columns=["QoS Risk Type", "API"],
                 key=f"{chart_key_prefix}_raw_bottleneck_rows",
             )
         if not workflow.empty:
@@ -2650,7 +2696,7 @@ def render_composition_visualizations() -> None:
                 "and the selected API for each subtask is shown to the right."
             )
             if not recommended_bottlenecks.empty:
-                st.subheader("Grouped Bottlenecks")
+                st.subheader("Grouped Composition Risks")
                 _render_grouped_bottlenecks(recommended_workflow, recommended_bottlenecks)
             st.subheader("Recommended Composition Path Steps")
             step_cols = [
@@ -2668,6 +2714,9 @@ def render_composition_visualizations() -> None:
                 "API_Selection_Health",
                 "API_Health_Label",
                 "API_Risk_Label",
+                "Functional_Risk",
+                "QoS_Risk",
+                "Composition_Risk",
                 "QoS_LLM_Score",
                 "TOPSIS_Score",
                 "Bottleneck_Dimensions",
@@ -2691,10 +2740,13 @@ def render_composition_visualizations() -> None:
                         "API_QoS_Health_Source": "API QoS Health Source",
                         "API_Selection_Health": "API Selection Health",
                         "API_Health_Label": "API Health",
-                        "API_Risk_Label": "Risk",
+                        "API_Risk_Label": "QoS Risk",
+                        "Functional_Risk": "Functional Risk",
+                        "QoS_Risk": "QoS Risk",
+                        "Composition_Risk": "Composition Risk",
                         "QoS_LLM_Score": "QoS LLM Score",
                         "TOPSIS_Score": "TOPSIS Score",
-                        "Bottleneck_Dimensions": "Bottleneck Dimensions",
+                        "Bottleneck_Dimensions": "QoS Risk Dimensions",
                     }
                 ),
                 sticky_columns=["Step", "API_Name", "API Name"],
@@ -2786,10 +2838,10 @@ def render_composition_visualizations() -> None:
             height=260,
             key=f"{chart_key_prefix}_raw_eval_row",
         )
-        st.subheader("Bottleneck Rows")
+        st.subheader("Composition Risk Rows")
         render_sticky_table(
             _bottleneck_display_frame(bottlenecks),
-            sticky_columns=["Bottleneck_Type", "API"],
+            sticky_columns=["QoS Risk Type", "API"],
             height=420,
             key=f"{chart_key_prefix}_raw_bottlenecks",
         )

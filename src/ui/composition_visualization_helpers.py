@@ -17,8 +17,8 @@ NA = "N/A"
 
 RESPONSE_TIME_LABEL = "Response Time (s)"
 TOTAL_RESPONSE_TIME_LABEL = "Total Response Time (s)"
-WORKFLOW_AVAILABILITY_LABEL = "Workflow Availability"
-WORKFLOW_AVAILABILITY_HELP = "Product of selected API availability values."
+WORKFLOW_AVAILABILITY_LABEL = "Average Workflow Availability"
+WORKFLOW_AVAILABILITY_HELP = "Average of selected API availability values."
 API_HEALTH_HELP = (
     "API QoS Health is normalized within each subtask's candidate pool. This means each selected "
     "API is compared only against alternative APIs for the same subtask, not against APIs from "
@@ -47,6 +47,24 @@ HEALTH_BORDER_COLORS = {
     "subtask": "#94A3B8",
     "final": "#548235",
 }
+
+COMPOSITION_STATUS_COLORS = {
+    "recommended": HEALTH_COLORS["green"],
+    "valid_alternative": "#FFF2CC",
+    "qos_risk": HEALTH_COLORS["orange"],
+    "risk": HEALTH_COLORS["red"],
+    "missing": HEALTH_COLORS["gray"],
+}
+
+COMPOSITION_STATUS_BORDERS = {
+    "recommended": HEALTH_BORDER_COLORS["green"],
+    "valid_alternative": "#B7791F",
+    "qos_risk": HEALTH_BORDER_COLORS["orange"],
+    "risk": HEALTH_BORDER_COLORS["red"],
+    "missing": HEALTH_BORDER_COLORS["gray"],
+}
+COMPLETENESS_GATE_THRESHOLD = 0.999
+BEST_MODE_TOLERANCE = 1e-9
 
 
 def _is_missing(value: Any) -> bool:
@@ -235,11 +253,11 @@ def _selection_color(row: pd.Series) -> str:
 
 
 def workflow_availability_value(eval_row: dict[str, Any] | pd.Series | None, workflow: pd.DataFrame | None = None) -> Any:
-    value = _first_value(eval_row, "Workflow_Availability")
+    value = _first_value(eval_row, "Average_Workflow_Availability", "Workflow_Availability")
     if _is_missing(value) and workflow is not None and not workflow.empty and "availability" in workflow:
         availability_values = pd.to_numeric(workflow["availability"], errors="coerce").dropna()
         if not availability_values.empty:
-            value = float(availability_values.prod())
+            value = float(availability_values.mean())
     return value
 
 
@@ -270,6 +288,37 @@ def classify_api_health(score: Any) -> tuple[str, str, str, str]:
     if parsed >= 0.40:
         return "orange", "Moderate QoS / Medium Risk", "Medium", HEALTH_COLORS["orange"]
     return "red", "Weak QoS / High Risk", "High", HEALTH_COLORS["red"]
+
+
+def functional_risk_label(value: Any) -> str:
+    label = _as_match_label(value)
+    if label == 1:
+        return "Low"
+    if label == 0:
+        return "High"
+    return "Unknown"
+
+
+def qos_risk_label(row: pd.Series | dict[str, Any]) -> str:
+    explicit = str(_first_value(row, "API_Risk_Label", "QoS_Risk") or "").strip().title()
+    if explicit in {"Low", "Medium", "High", "Unknown"}:
+        return explicit
+    _, _, risk, _ = classify_api_health(_first_value(row, "API_QoS_Health"))
+    return risk
+
+
+def _composition_validity(eval_row: dict[str, Any] | pd.Series | None) -> int | None:
+    return _as_match_label(_first_value(eval_row, "Composition_Validity", "Valid"))
+
+
+def _composition_completeness_gate(eval_row: dict[str, Any] | pd.Series | None) -> float | None:
+    gate = _as_float(_first_value(eval_row, "Composition_Completeness_Gate"))
+    if gate is not None:
+        return 1.0 if gate >= 1.0 else 0.0
+    completeness = _as_float(_first_value(eval_row, "Composition_Completeness"))
+    if completeness is None:
+        return None
+    return 1.0 if completeness >= COMPLETENESS_GATE_THRESHOLD else 0.0
 
 
 def format_api_health(score: Any) -> str:
@@ -462,6 +511,19 @@ def _append_api_health_columns(
     out.at[index, "API_QoS_Health_Warning"] = warning
 
 
+def _append_composition_risk_columns(out: pd.DataFrame) -> pd.DataFrame:
+    if out.empty:
+        return out
+    out = out.copy()
+    out["Functional_Risk"] = [functional_risk_label(row.get("Functional_Match")) for _, row in out.iterrows()]
+    out["QoS_Risk"] = [qos_risk_label(row) for _, row in out.iterrows()]
+    out["Composition_Risk"] = [
+        "Functional Risk" if row.get("Functional_Risk") == "High" else "QoS Risk" if row.get("QoS_Risk") == "High" else "Low"
+        for _, row in out.iterrows()
+    ]
+    return out
+
+
 def normalize_workflow_api_qos_scores_by_subtask_candidates(
     rows: pd.DataFrame | list[dict[str, Any]],
     *,
@@ -542,7 +604,7 @@ def _hover_for_step(row: pd.Series, *, title: str | None = None) -> str:
         f"API health: {escape(str(row.get('API_Health_Label') or row.get('Selection_Quality_Reason') or row.get('Health_Reason') or NA))}",
     ]
     if not _is_missing(row.get("Bottleneck_Dimensions")):
-        parts.append(f"Bottleneck: {escape(str(row.get('Bottleneck_Dimensions')))}")
+        parts.append(f"QoS Signal: {escape(str(row.get('Bottleneck_Dimensions')))}")
     if not _is_missing(row.get("API_QoS_Health_Warning")):
         parts.append(escape(str(row.get("API_QoS_Health_Warning"))))
     if not _is_missing(row.get("Subtask")):
@@ -849,10 +911,13 @@ def get_recommended_mode(
     filtered["_mode_order"] = filtered["Mode"].astype(str).map({mode: idx for idx, mode in enumerate(MODE_ORDER)}).fillna(len(MODE_ORDER))
     validity_col = "Composition_Validity" if "Composition_Validity" in filtered else "Valid" if "Valid" in filtered else None
     filtered["_validity"] = filtered[validity_col].apply(_as_match_label) if validity_col else None
+    filtered["_complete"] = filtered.apply(lambda row: _composition_completeness_gate(row), axis=1)
     filtered["_score"] = pd.to_numeric(filtered.get("QoS_Adjusted_Composition_Score"), errors="coerce")
     valid_rows = filtered[filtered["_validity"] == 1].copy()
+    complete_valid_rows = filtered[(filtered["_validity"] == 1) & (filtered["_complete"] == 1.0)].copy()
+    has_complete_valid = not complete_valid_rows.empty
     has_valid = not valid_rows.empty
-    candidates = valid_rows if has_valid else filtered.copy()
+    candidates = complete_valid_rows if has_complete_valid else valid_rows if has_valid else filtered.copy()
 
     scored = candidates[candidates["_score"].notna()].copy()
     if scored.empty:
@@ -863,6 +928,7 @@ def get_recommended_mode(
             "reason": "Recommendation unavailable.",
             "warning": "All QoS-adjusted composition scores are missing for this query.",
             "valid_candidate_count": int(len(valid_rows)),
+            "complete_candidate_count": int(len(complete_valid_rows)),
         }
 
     tie_specs = [
@@ -871,7 +937,7 @@ def get_recommended_mode(
         ("Normalized_QoS_Score", False),
         ("Total_Response_Time", True),
         ("Bottleneck_Throughput", False),
-        ("Workflow_Availability", False),
+        ("Average_Workflow_Availability", False),
     ]
     for col, _ in tie_specs:
         if col not in scored:
@@ -880,27 +946,42 @@ def get_recommended_mode(
 
     sort_cols = ["_score"] + [f"_{col}" for col, _ in tie_specs] + ["_mode_order"]
     ascending = [False] + [ascending for _, ascending in tie_specs] + [True]
+    best_score = scored["_score"].max()
+    tied = scored[(scored["_score"] - best_score).abs() <= BEST_MODE_TOLERANCE].copy()
+    best_modes = sorted(
+        tied["Mode"].dropna().astype(str).unique().tolist(),
+        key=lambda mode: MODE_ORDER.index(mode) if mode in MODE_ORDER else len(MODE_ORDER),
+    )
     best = scored.sort_values(sort_cols, ascending=ascending, na_position="last", kind="mergesort").iloc[0]
-    status = "recommended" if has_valid else "diagnostic"
+    status = "recommended" if has_complete_valid else "diagnostic"
+    is_tie = len(best_modes) > 1
     result: dict[str, Any] = {
         "status": status,
         "mode": str(best.get("Mode") or NA),
+        "modes": best_modes,
+        "best_value": best_score,
+        "is_tie": is_tie,
         "row": {key: value for key, value in best.to_dict().items() if not str(key).startswith("_")},
         "reason": (
-            "Highest QoS-adjusted composition score among valid modes"
-            if has_valid
-            else "All workflows are invalid; showing highest-scoring invalid mode for diagnostics"
+            "Tied highest QoS-adjusted composition score among valid complete modes"
+            if has_complete_valid and is_tie
+            else "Highest QoS-adjusted composition score among valid complete modes"
+            if has_complete_valid
+            else "No valid complete workflow is available; showing tied highest-scoring diagnostic modes"
+            if is_tie
+            else "No valid complete workflow is available; showing the highest-scoring diagnostic mode"
         ),
         "valid_candidate_count": int(len(valid_rows)),
+        "complete_candidate_count": int(len(complete_valid_rows)),
     }
 
-    if has_valid:
+    if has_complete_valid:
         recommended_fc = _as_float(best.get("Functional_Coverage"))
-        valid_rows = valid_rows.copy()
-        valid_rows["_fc"] = pd.to_numeric(valid_rows.get("Functional_Coverage"), errors="coerce")
+        complete_valid_rows = complete_valid_rows.copy()
+        complete_valid_rows["_fc"] = pd.to_numeric(complete_valid_rows.get("Functional_Coverage"), errors="coerce")
         higher_fc = pd.DataFrame()
         if recommended_fc is not None:
-            higher_fc = valid_rows[valid_rows["_fc"].notna()]
+            higher_fc = complete_valid_rows[complete_valid_rows["_fc"].notna()]
             higher_fc = higher_fc[higher_fc["_fc"] > recommended_fc]
         if not higher_fc.empty:
             best_fc = higher_fc.sort_values(["_fc", "_score", "_mode_order"], ascending=[False, False, True], na_position="last").iloc[0]
@@ -1014,6 +1095,7 @@ def enrich_workflow_for_selection(
         ", ".join(bottleneck_map.get((_normalize_id(row.get("Subtask_ID")), str(row.get("API_ID") or "")), [])) or NA
         for _, row in enriched.iterrows()
     ]
+    enriched = _append_composition_risk_columns(enriched)
     return enriched, bottlenecks
 
 
@@ -1215,7 +1297,8 @@ def _workflow_metrics(workflow: pd.DataFrame, eval_row: dict[str, Any] | None = 
     return {
         "Total_Response_Time": float(rt_values.sum()) if not rt_values.empty else None,
         "Bottleneck_Throughput": float(tp_values.min()) if not tp_values.empty else None,
-        "Workflow_Availability": float(av_values.prod()) if not av_values.empty else None,
+        "Average_Workflow_Availability": float(av_values.mean()) if not av_values.empty else None,
+        "Workflow_Availability": float(av_values.mean()) if not av_values.empty else None,
         "Functional_Coverage": float((functional == 1).sum() / len(workflow)) if len(workflow) else None,
         "Composition_Completeness": _first_value(eval_row, "Composition_Completeness"),
         "Composition_Validity": _first_value(eval_row, "Composition_Validity"),
@@ -1278,11 +1361,11 @@ def build_bottleneck_replacement_simulations(
     for group in groups:
         current_row = _workflow_row_for_bottleneck(workflow, group.get("api_id"), group.get("subtask_id"))
         if current_row is None:
-            simulations.append({"group": group, "status": "unavailable", "message": "Current bottleneck API was not found in the workflow rows."})
+            simulations.append({"group": group, "status": "unavailable", "message": "Current risk-contributing API was not found in the workflow rows."})
             continue
         candidates = find_replacement_candidates(run_dir=run_dir, query_id=query_id, mode=mode, current_row=current_row)
         if candidates.empty:
-            simulations.append({"group": group, "current_row": current_row.to_dict(), "status": "unavailable", "message": "No candidate replacement API available for this bottleneck API."})
+            simulations.append({"group": group, "current_row": current_row.to_dict(), "status": "unavailable", "message": "No candidate replacement API available for this risk-contributing API."})
             continue
         functional_candidates = candidates[pd.to_numeric(candidates.get("Functional_Match"), errors="coerce") == 1].copy()
         candidate_pool = functional_candidates if not functional_candidates.empty else candidates.copy()
@@ -1332,7 +1415,7 @@ def _simulation_has_improvement(current: dict[str, Any], simulated: dict[str, An
     specs = [
         ("Total_Response_Time", False),
         ("Bottleneck_Throughput", True),
-        ("Workflow_Availability", True),
+        ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
     ]
     for metric, higher_better in specs:
@@ -1348,7 +1431,7 @@ def _simulation_has_improvement(current: dict[str, Any], simulated: dict[str, An
 def _replacement_reason(current_row: pd.Series, replacement: pd.Series, has_improvement: bool) -> str:
     functional = _as_match_label(replacement.get("Functional_Match"))
     if has_improvement and functional == 1:
-        return "Tested because it is functionally relevant and has stronger QoS metrics than the current bottleneck API."
+        return "Tested because it is functionally relevant and has stronger QoS metrics than the current risk-contributing API."
     if has_improvement:
         return "Tested as a diagnostic QoS improvement, but functional relevance is not confirmed."
     return "No clear improvement detected; this candidate was tested by the visualization heuristic."
@@ -1358,7 +1441,7 @@ def simulation_metric_rows(current: dict[str, Any], simulated: dict[str, Any]) -
     specs = [
         ("Total_Response_Time", TOTAL_RESPONSE_TIME_LABEL, False, format_response_time),
         ("Bottleneck_Throughput", "Bottleneck Throughput", True, format_value),
-        ("Workflow_Availability", WORKFLOW_AVAILABILITY_LABEL, True, format_value),
+        ("Average_Workflow_Availability", WORKFLOW_AVAILABILITY_LABEL, True, format_value),
         ("Functional_Coverage", "Functional Coverage", True, lambda value: format_value(value, percent=True)),
         ("QoS_Adjusted_Composition_Score", "QoS-Adjusted Composition Score", True, format_value),
     ]
@@ -1413,7 +1496,7 @@ def build_replacement_simulation_dot(current_workflow: pd.DataFrame, simulated_w
             node = f"{prefix}_{idx}"
             node_label = f"Subtask {sid}\\n{api}"
             if is_replaced:
-                node_label += "\\nCandidate replacement" if prefix == "sim" else "\\nCurrent bottleneck"
+                node_label += "\\nCandidate replacement" if prefix == "sim" else "\\nCurrent risk contributor"
             lines.append(f'  {node} [label="{_dot_escape(node_label)}", fillcolor="{fill}", color="{border}"];')
             lines.append(f"  {previous} -> {node};")
             previous = node
@@ -1791,7 +1874,7 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
         ("Best QoS-adjusted score", "QoS_Adjusted_Composition_Score", False),
         (f"Lowest {TOTAL_RESPONSE_TIME_LABEL}", "Total_Response_Time", True),
         ("Highest bottleneck throughput", "Bottleneck_Throughput", False),
-        (f"Highest {WORKFLOW_AVAILABILITY_LABEL}", "Workflow_Availability", False),
+        (f"Highest {WORKFLOW_AVAILABILITY_LABEL}", "Average_Workflow_Availability", False),
         ("Best functional coverage", "Functional_Coverage", False),
         ("Best composition completeness", "Composition_Completeness", False),
         ("Best normalized QoS score", "Normalized_QoS_Score", False),
@@ -1822,7 +1905,10 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
                     winner_text = NA
                 else:
                     best_value = scored[metric].min() if ascending else scored[metric].max()
-                    winners = sorted(scored[scored[metric] == best_value]["Mode"].dropna().astype(str).unique().tolist(), key=lambda value: MODE_ORDER.index(value) if value in MODE_ORDER else len(MODE_ORDER))
+                    winners = sorted(
+                        scored[(scored[metric] - best_value).abs() <= BEST_MODE_TOLERANCE]["Mode"].dropna().astype(str).unique().tolist(),
+                        key=lambda value: MODE_ORDER.index(value) if value in MODE_ORDER else len(MODE_ORDER),
+                    )
                     winner_text = ", ".join(winners) if winners else NA
             out_row[label_name] = winner_text
             for mode in [part.strip() for part in winner_text.split(",") if part.strip() and part.strip() not in {NA, "No valid mode"}]:
@@ -1936,7 +2022,7 @@ def recommended_summary_rows(
         (WORKFLOW_AVAILABILITY_LABEL, format_value(workflow_availability)),
         ("Normalized QoS Score", format_value(_first_value(eval_row, "Normalized_QoS_Score"))),
         ("QoS-Adjusted Composition Score", format_value(_first_value(eval_row, "QoS_Adjusted_Composition_Score"))),
-        ("Bottleneck API", bottleneck_group_summary(workflow, bottlenecks)),
+        ("Risk-contributing API", bottleneck_group_summary(workflow, bottlenecks)),
     ]
     return [{"Metric": label, "Value": value if not _is_missing(value) else NA} for label, value in fields]
 
@@ -1972,7 +2058,7 @@ def _api_node_label(row: pd.Series, *, compact: bool) -> str:
         return "\n".join(parts[:6])
     parts.append(f"health: {_shorten(row.get('API_Health_Label') or row.get('Selection_Quality_Reason') or row.get('Health_Reason'), 40)}")
     if not _is_missing(row.get("Bottleneck_Dimensions")):
-        parts.append(f"bottleneck: {_shorten(row.get('Bottleneck_Dimensions'), 40)}")
+        parts.append(f"qos signal: {_shorten(row.get('Bottleneck_Dimensions'), 40)}")
     return "\n".join(parts)
 
 
@@ -2155,7 +2241,7 @@ def build_workflow_figure(
             f"Risk: {row.get('API_Risk_Label') or NA}"
         )
         if not _is_missing(row.get("Bottleneck_Dimensions")):
-            api_label += f"<br>Bottleneck: {_wrap_text(row.get('Bottleneck_Dimensions'), width=34, max_lines=1)}"
+            api_label += f"<br>QoS Signal: {_wrap_text(row.get('Bottleneck_Dimensions'), width=34, max_lines=1)}"
         sub_pos = (left_x, y)
         api_pos = (api_x, y)
         _add_box(
@@ -2287,11 +2373,134 @@ def build_sequence_figure(workflow: pd.DataFrame, *, kind: str) -> go.Figure:
     return _finish_diagram_layout(fig, height=max(620, 95 * len(items)), title=title)
 
 
-def build_mode_comparison_figure(workflows_by_mode: dict[str, pd.DataFrame], modes: list[str]) -> go.Figure:
+def best_composition_modes(eval_rows_by_mode: dict[str, dict[str, Any]], modes: list[str]) -> set[str]:
+    candidates: list[tuple[str, float]] = []
+    for mode in modes:
+        eval_row = eval_rows_by_mode.get(mode) or {}
+        if _composition_validity(eval_row) != 1:
+            continue
+        if _composition_completeness_gate(eval_row) != 1.0:
+            continue
+        score = _as_float(_first_value(eval_row, "QoS_Adjusted_Composition_Score"))
+        if score is not None:
+            candidates.append((mode, score))
+    if not candidates:
+        return set()
+    best_score = max(score for _, score in candidates)
+    return {mode for mode, score in candidates if abs(score - best_score) <= BEST_MODE_TOLERANCE}
+
+
+def mode_comparison_has_eval_rows(eval_rows_by_mode: dict[str, dict[str, Any]] | None) -> bool:
+    return bool(eval_rows_by_mode) and any(bool(row) for row in eval_rows_by_mode.values())
+
+
+def _mode_comparison_status(
+    row: pd.Series,
+    *,
+    mode: str,
+    eval_row: dict[str, Any] | None,
+    recommended_modes: set[str],
+    use_composition_status: bool,
+) -> dict[str, str]:
+    functional_risk = functional_risk_label(row.get("Functional_Match"))
+    qos_risk = qos_risk_label(row)
+    if not use_composition_status:
+        status = str(row.get("API_Health_Status") or row.get("Health_Status") or "gray").lower()
+        return {
+            "fill": _selection_fill(row),
+            "border": _selection_border(row),
+            "overall_status": row.get("API_Health_Label") or "Missing Data",
+            "functional_risk": functional_risk,
+            "qos_risk": qos_risk,
+            "composition_risk": "Missing composition evaluation data",
+            "reason": "Composition evaluation rows were unavailable, so this graph is temporarily using API QoS health colors.",
+            "legend_key": status if status in {"green", "orange", "red", "gray"} else "gray",
+        }
+
+    validity = _composition_validity(eval_row)
+    complete = _composition_completeness_gate(eval_row)
+    functional = _as_match_label(row.get("Functional_Match"))
+    if not eval_row:
+        key = "missing"
+        overall = "Missing Data"
+        reason = "Composition evaluation row is missing for this mode."
+    elif validity == 0:
+        key = "risk"
+        overall = "Invalid"
+        reason = "Composition_Validity is 0 for this mode."
+    elif complete == 0.0:
+        key = "risk"
+        overall = "Incomplete"
+        reason = "Composition_Completeness_Gate is 0 for this mode."
+    elif functional == 0:
+        key = "risk"
+        overall = "Functional Risk"
+        reason = "Functional Match is No for this planned API."
+    elif mode in recommended_modes:
+        key = "recommended"
+        overall = "Recommended"
+        reason = "This mode has the best QoS-adjusted composition score among valid complete modes."
+    elif functional == 1 and qos_risk == "High":
+        key = "qos_risk"
+        overall = "Valid Alternative with QoS Risk"
+        reason = "The mode is valid and complete, but this API has high QoS risk."
+    elif functional is None:
+        key = "missing"
+        overall = "Missing Data"
+        reason = "Functional Match is missing for this planned API."
+    else:
+        key = "valid_alternative"
+        overall = "Valid Alternative"
+        reason = "The mode is valid and complete but is not the best final composition score for this query."
+
+    return {
+        "fill": COMPOSITION_STATUS_COLORS[key],
+        "border": COMPOSITION_STATUS_BORDERS[key],
+        "overall_status": overall,
+        "functional_risk": functional_risk,
+        "qos_risk": qos_risk,
+        "composition_risk": overall,
+        "reason": reason,
+        "legend_key": key,
+    }
+
+
+def _hover_for_mode_comparison(row: pd.Series, *, mode: str, idx: int, status: dict[str, str]) -> str:
+    api_name = row.get("API_Name") or row.get("API_ID") or NA
+    return "<br>".join(
+        [
+            f"<b>{escape(str(api_name))}</b>",
+            f"Mode: {escape(str(mode))}",
+            f"Step / Subtask: {escape(str(row.get('Step') or idx))} / {escape(str(row.get('Subtask_ID') or NA))}",
+            f"API name: {escape(str(api_name))}",
+            f"API ID: {escape(str(row.get('API_ID') or NA))}",
+            f"Functional Match: {format_functional_fit(row.get('Functional_Match'))}",
+            f"Composition Risk: {escape(status['composition_risk'])}",
+            f"Functional Risk: {escape(status['functional_risk'])}",
+            f"QoS Risk: {escape(status['qos_risk'])}",
+            f"QoS Health: {format_api_health(row.get('API_QoS_Health'))}",
+            f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_ms'))}",
+            f"Throughput: {format_value(row.get('tp_rps'))}",
+            f"Availability: {format_value(row.get('availability'))}",
+            f"Overall Status: {escape(status['overall_status'])}",
+            f"Reason: {escape(status['reason'])}",
+        ]
+    )
+
+
+def build_mode_comparison_figure(
+    workflows_by_mode: dict[str, pd.DataFrame],
+    modes: list[str],
+    *,
+    eval_rows_by_mode: dict[str, dict[str, Any]] | None = None,
+) -> go.Figure:
     fig = go.Figure()
     max_steps = max((len(df) for df in workflows_by_mode.values() if not df.empty), default=0)
     if max_steps == 0:
         return _finish_diagram_layout(fig, height=420, title="Mode Comparison")
+    eval_rows_by_mode = eval_rows_by_mode or {}
+    use_composition_status = mode_comparison_has_eval_rows(eval_rows_by_mode)
+    recommended_modes = best_composition_modes(eval_rows_by_mode, modes) if use_composition_status else set()
     for mode_idx, mode in enumerate(modes):
         workflow = workflows_by_mode.get(mode, pd.DataFrame())
         if workflow.empty:
@@ -2311,6 +2520,13 @@ def build_mode_comparison_figure(workflows_by_mode: dict[str, pd.DataFrame], mod
         )
         for idx, (_, row) in enumerate(workflow.iterrows(), start=1):
             label = f"S{idx}<br>{_wrap_text(row.get('API_Name') or row.get('API_ID'), width=18, max_lines=1)}"
+            status = _mode_comparison_status(
+                row,
+                mode=mode,
+                eval_row=eval_rows_by_mode.get(mode),
+                recommended_modes=recommended_modes,
+                use_composition_status=use_composition_status,
+            )
             fig.add_trace(
                 go.Scatter(
                     x=[idx],
@@ -2319,13 +2535,13 @@ def build_mode_comparison_figure(workflows_by_mode: dict[str, pd.DataFrame], mod
                     marker=dict(
                         symbol="square",
                         size=72,
-                        color=_selection_fill(row),
-                        line=dict(color=_selection_border(row), width=2),
+                        color=status["fill"],
+                        line=dict(color=status["border"], width=2),
                     ),
                     text=[label],
                     textposition="middle center",
                     textfont=dict(size=11, color="#111827"),
-                    hovertext=[_hover_for_step(row, title=f"{mode} step {idx}")],
+                    hovertext=[_hover_for_mode_comparison(row, mode=mode, idx=idx, status=status)],
                     hoverinfo="text",
                     showlegend=False,
                 )
@@ -2629,10 +2845,11 @@ def mode_summary_table(
                 "Functional_Coverage": _first_value(eval_row, "Functional_Coverage") if eval_row else NA,
                 "Total_Response_Time": _first_value(eval_row, "Total_Response_Time") if eval_row else NA,
                 "Bottleneck_Throughput": _first_value(eval_row, "Bottleneck_Throughput") if eval_row else NA,
-                "Workflow_Availability": workflow_availability_value(eval_row, workflow) if eval_row else NA,
+                "Average_Workflow_Availability": workflow_availability_value(eval_row, workflow) if eval_row else NA,
                 "Normalized_QoS_Score": _first_value(eval_row, "Normalized_QoS_Score") if eval_row else NA,
                 "QoS_Adjusted_Composition_Score": _first_value(eval_row, "QoS_Adjusted_Composition_Score") if eval_row else NA,
-                "Bottleneck_API": bottleneck_group_summary(workflow, bottlenecks_by_mode.get(mode, pd.DataFrame())),
+                "Composition_Risk_API": bottleneck_group_summary(workflow, bottlenecks_by_mode.get(mode, pd.DataFrame())),
+                "Risk_Summary": bottleneck_group_summary(workflow, bottlenecks_by_mode.get(mode, pd.DataFrame())),
             }
         )
     return pd.DataFrame(rows)
@@ -2658,11 +2875,12 @@ def comparison_highlights(summary: pd.DataFrame, differences: pd.DataFrame) -> l
         if values.dropna().empty:
             continue
         target = values.max() if higher_better else values.min()
-        modes = summary.loc[values == target, "Mode"].astype(str).tolist()
+        modes = summary.loc[(values - target).abs() <= BEST_MODE_TOLERANCE, "Mode"].astype(str).tolist()
         highlights.append(f"{label}: {', '.join(modes)} ({format_value(target)}).")
 
-    if not summary.empty and "Bottleneck_API" in summary:
-        bottlenecks = [value for value in summary["Bottleneck_API"].astype(str).tolist() if value and value != NA]
-        if len(set(bottlenecks)) > 1:
-            highlights.append("Bottleneck APIs change across ranking modes.")
+    risk_col = "Composition_Risk_API" if "Composition_Risk_API" in summary else "Bottleneck_API" if "Bottleneck_API" in summary else None
+    if risk_col:
+        risk_apis = [value for value in summary[risk_col].astype(str).tolist() if value and value != NA]
+        if len(set(risk_apis)) > 1:
+            highlights.append("Risk-contributing APIs change across ranking modes.")
     return highlights
