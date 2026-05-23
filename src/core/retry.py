@@ -58,6 +58,13 @@ def _is_retryable_error(exc: Exception) -> tuple[bool, str]:
             "504",
         ],
         "network_transient": [
+            "upstream connect error",
+            "disconnect/reset before headers",
+            "reset reason",
+            "connection termination",
+            "request timed out",
+            "read timeout",
+            "connect timeout",
             "timeout",
             "timed out",
             "connection reset",

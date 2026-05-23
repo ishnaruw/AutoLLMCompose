@@ -9,7 +9,7 @@ from typing import Any, Dict, Optional
 from src.eval.audit_api_duplicates import collect_duplicate_audit_for_run
 from src.eval.audit_api_hallucinations import collect_hallucination_audit_for_run
 from src.eval.composition_qos_eval import evaluate_composition_qos
-from src.eval.functional_match_eval import evaluate_query, evaluate_retrieval_functional_match
+from src.eval.functional_match_eval import evaluate_query
 from src.eval.mode_anomaly_report import collect_ranking_anomaly_audit_for_run, write_mode_anomaly_excel
 
 
@@ -30,25 +30,6 @@ class EvaluationAgent:
     catalog_no_qos_path: Path
     name: str = "evaluation_agent"
     description: str = "Deterministic AutoLLMCompose evaluation and audit agent"
-
-    def evaluate_retrieval_functional_match(
-        self,
-        *,
-        query_dir: Path,
-        query_id: Optional[str],
-        provider: str,
-        model: Optional[str],
-        output_dir: Path,
-        cache_path: Path,
-    ) -> Path:
-        return evaluate_retrieval_functional_match(
-            query_dir=query_dir,
-            query_id=query_id,
-            provider=provider,
-            model=model,
-            output_dir=output_dir,
-            cache_path=cache_path,
-        )
 
     def build_evaluation_outputs(
         self,

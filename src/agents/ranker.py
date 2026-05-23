@@ -154,15 +154,37 @@ def _write_ranker_debug(debug_raw_path: str | None, raw: str, attempt: int) -> N
     path.write_text(raw or "", encoding="utf-8")
 
 
+_LLM_TRANSPORT_ERROR_SIGNALS = [
+    "request timed out",
+    "timed out",
+    "timeout",
+    "upstream connect error",
+    "disconnect/reset before headers",
+    "reset reason",
+    "connection termination",
+    "connection reset",
+    "connection aborted",
+    "server disconnected",
+    "remote protocol error",
+    "temporarily unavailable",
+    "service unavailable",
+    "bad gateway",
+    "gateway timeout",
+    "502",
+    "503",
+    "504",
+]
+
+
 def _exception_reason(exc: Exception) -> str:
     text = str(exc).lower()
     if "groq_prompt_too_large" in text or "request too large for model" in text:
         return "groq_prompt_too_large"
-    if "timeout" in text or "timed out" in text:
-        return "timeout"
+    if any(signal in text for signal in _LLM_TRANSPORT_ERROR_SIGNALS):
+        return "llm_transport_error"
     if "json" in text:
         return "invalid_json"
-    return "parse_error"
+    return "llm_call_error"
 
 
 def _parse_ranked_output(
@@ -643,14 +665,18 @@ def _ranker_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
 
 def _failure_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str, Any]:
     reason = str(issue.get("reason") or "parse_error")
-    failure_reason = reason if reason == "timeout" or not after_retries else f"{reason}_after_retries"
-    return {
+    stable_retry_reasons = {"llm_transport_error", "timeout", "groq_prompt_too_large"}
+    failure_reason = reason if reason in stable_retry_reasons or not after_retries else f"{reason}_after_retries"
+    metadata = {
         "failure_flag": True,
         "failure_stage": "llm_ranking",
         "failure_reason": failure_reason,
         "exclude_from_ranking_eval": True,
         **issue,
     }
+    if after_retries:
+        metadata["retry_exhausted"] = True
+    return metadata
 
 
 def rank_subtask(

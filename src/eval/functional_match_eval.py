@@ -857,7 +857,19 @@ def _evaluate_batches(
     return batch_results
 
 
-def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[str], provider: str, model: Optional[str] = None, output_dir: Path, cache_path: Path) -> Path:
+def evaluate_retrieval_functional_match(
+    *,
+    query_dir: Path,
+    query_id: Optional[str],
+    provider: str,
+    model: Optional[str] = None,
+    output_dir: Path,
+    cache_path: Path,
+    stage_name: str = "retrieval_functional_match",
+    progress_filename: str = "retrieval_functional_match_progress.json",
+    summary_metadata: Optional[Dict[str, Any]] = None,
+    write_functional_refinement_summary: bool = False,
+) -> Path:
     meta = _load_meta(query_dir)
     main_task = str(meta.get("user_goal") or "")
     query_id = query_id or str(meta.get("query_id") or query_dir.name)
@@ -879,8 +891,8 @@ def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[s
         provider=provider,
         model=model,
         cache_path=cache_path,
-        progress_path=output_dir / "retrieval_functional_match_progress.json",
-        stage_name="retrieval_functional_match",
+        progress_path=output_dir / progress_filename,
+        stage_name=stage_name,
     )
 
     rows: List[Dict[str, Any]] = []
@@ -910,19 +922,29 @@ def evaluate_retrieval_functional_match(*, query_dir: Path, query_id: Optional[s
     output_dir.mkdir(parents=True, exist_ok=True)
     rows_path = output_dir / f"query_{query_id}_retrieval_functional_match_rows.json"
     rows_path.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    functional_match_count = sum(1 for row in rows if _functional_match_value(row) == 1)
+    functional_mismatch_count = len(rows) - functional_match_count
+    summary = {
+        "query_id": query_id,
+        "rows_json": str(rows_path),
+        "cache": str(cache_path),
+        "total_rows": len(rows),
+        "total_subtasks": len(subtasks),
+        "total_candidates_labeled": len(rows),
+        "functional_match_count": functional_match_count,
+        "functional_mismatch_count": functional_mismatch_count,
+        "functional_match_rate": round(functional_match_count / len(rows), 6) if rows else 0.0,
+    }
+    if summary_metadata:
+        summary.update(summary_metadata)
     summary_path = output_dir / f"query_{query_id}_retrieval_functional_match_summary.json"
     summary_path.write_text(
-        json.dumps(
-            {
-                "query_id": query_id,
-                "rows_json": str(rows_path),
-                "cache": str(cache_path),
-                "total_rows": len(rows),
-            },
-            indent=2,
-        ),
+        json.dumps(summary, indent=2),
         encoding="utf-8",
     )
+    if write_functional_refinement_summary:
+        refinement_summary_path = output_dir / f"query_{query_id}_functional_refinement_summary.json"
+        refinement_summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     return rows_path
 
 

@@ -323,8 +323,14 @@ def _evaluate_mode(
     selected_ids = set(selected_rows.keys())
     planner_path = query_dir / mode / "4_planner.json"
     planner, planner_error = _read_json_with_error(planner_path)
+    planner_failure = _read_json(query_dir / mode / "planner_failure.json", {})
     workflow_rows: List[Dict[str, Any]] = []
     reasons: List[str] = list(selected_issues)
+
+    if isinstance(planner_failure, dict) and planner_failure:
+        failure_stage = str(planner_failure.get("failure_stage") or "planner")
+        failure_reason = str(planner_failure.get("failure_reason") or "unknown")
+        reasons.append(f"{failure_stage}:{failure_reason}")
 
     if planner_error == "missing_file":
         reasons.append("missing_planner_output")

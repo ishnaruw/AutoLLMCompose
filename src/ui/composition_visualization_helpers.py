@@ -1721,7 +1721,7 @@ def build_agent_observability_summary(
     fm_path = run_dir / "evaluation" / f"query_{query_id}_retrieval_functional_match_rows.json"
     fm_payload = _read_json(fm_path, [])
     fm_count = len(fm_payload) if isinstance(fm_payload, list) else 0
-    rows.append(_stage_row("Functional match labeling", stage_status("retrieval_functional_match_evaluation", fm_path.exists()), str(fm_path.relative_to(run_dir)) if fm_path.exists() else "Rows file missing", f"{fm_count or NA} rows"))
+    rows.append(_stage_row("Functional refinement", stage_status("functional_refinement", fm_path.exists()), str(fm_path.relative_to(run_dir)) if fm_path.exists() else "Rows file missing", f"{fm_count or NA} rows"))
 
     ranked_files = sorted((run_dir / mode).glob("2_ranked_s*.json"))
     ranked_count = 0

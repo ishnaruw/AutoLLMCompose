@@ -1,9 +1,11 @@
 # src/agents/planner.py
 from copy import deepcopy
 import json
+import re
 
 from src.core.json_parsing import parse_llm_json
 from src.core.output_schemas import PlannerOutput, validate_output_schema
+from src.core.run_logging import log_line, log_warning_event
 
 
 def _json_text(value):
@@ -12,6 +14,12 @@ def _json_text(value):
     if isinstance(value, (dict, list, tuple)):
         return json.dumps(value, ensure_ascii=False, sort_keys=True)
     return str(value)
+
+
+def _compact_json_text(value):
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return _json_text(value)
 
 
 def _derive_selected_api_ids(steps):
@@ -23,6 +31,120 @@ def _derive_selected_api_ids(steps):
         if isinstance(api_id, str) and api_id.strip() and api_id not in selected:
             selected.append(api_id)
     return selected
+
+
+def _normalize_subtask_id(value):
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text if text else None
+
+
+def _subtask_text_by_id(subtasks):
+    by_id = {}
+    for subtask in subtasks if isinstance(subtasks, list) else []:
+        if not isinstance(subtask, dict):
+            continue
+        subtask_id = _normalize_subtask_id(subtask.get("id") or subtask.get("subtask_id"))
+        if not subtask_id:
+            continue
+        description = subtask.get("description") or subtask.get("task") or subtask.get("title") or ""
+        by_id[subtask_id] = str(description)
+    return by_id
+
+
+_MULTI_API_SUBTASK_PATTERNS = (
+    r"\bmultiple\s+apis?\b",
+    r"\bmore\s+than\s+one\s+apis?\b",
+    r"\btwo\s+apis?\b",
+    r"\bboth\s+apis?\b",
+    r"\bcombine\s+(?:data|results|outputs)\s+from\b",
+    r"\baggregate\s+(?:data|results|outputs)\s+from\b",
+    r"\bcross[-\s]?reference\b",
+)
+
+_CLEAR_MULTI_API_JUSTIFICATION_PATTERNS = (
+    r"\bexplicitly\s+requires\s+multiple\s+apis?\b",
+    r"\brequires\s+multiple\s+apis?\b",
+    r"\brequires\s+more\s+than\s+one\s+apis?\b",
+    r"\bneeds\s+more\s+than\s+one\s+apis?\b",
+    r"\bmust\s+use\s+multiple\s+apis?\b",
+    r"\bno\s+single\s+apis?\s+(?:can|covers|provides|supports)\b",
+    r"\bone\s+apis?\s+(?:cannot|does\s+not)\b",
+)
+
+
+def _matches_any_pattern(text, patterns):
+    normalized = str(text or "").lower()
+    return any(re.search(pattern, normalized) for pattern in patterns)
+
+
+def _has_clear_multi_api_justification(subtask_text, steps):
+    if _matches_any_pattern(subtask_text, _MULTI_API_SUBTASK_PATTERNS):
+        return True
+
+    fragments = [subtask_text]
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        for field in ("action", "why", "input_from_previous_step", "output_to_next_step"):
+            value = step.get(field)
+            if value is not None:
+                fragments.append(str(value))
+    return _matches_any_pattern(" ".join(fragments), _CLEAR_MULTI_API_JUSTIFICATION_PATTERNS)
+
+
+def _over_composed_subtasks(plan, subtasks):
+    if not isinstance(plan, dict):
+        return []
+
+    primary_plan = plan.get("primary_plan")
+    if not isinstance(primary_plan, dict):
+        return []
+
+    steps = primary_plan.get("steps")
+    if not isinstance(steps, list):
+        return []
+
+    by_subtask = {}
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        subtask_id = _normalize_subtask_id(step.get("subtask_id"))
+        api_id = step.get("api_id")
+        if not subtask_id or not isinstance(api_id, str) or not api_id.strip():
+            continue
+        by_subtask.setdefault(subtask_id, []).append(step)
+
+    subtask_descriptions = _subtask_text_by_id(subtasks)
+    over_composed = []
+    for subtask_id, subtask_steps in by_subtask.items():
+        api_ids = [
+            step.get("api_id").strip()
+            for step in subtask_steps
+            if isinstance(step.get("api_id"), str) and step.get("api_id").strip()
+        ]
+        if len(api_ids) <= 1:
+            continue
+        if _has_clear_multi_api_justification(subtask_descriptions.get(subtask_id, ""), subtask_steps):
+            continue
+        over_composed.append({
+            "subtask_id": subtask_id,
+            "step_count": len(api_ids),
+            "api_ids": api_ids,
+        })
+    return over_composed
+
+
+def _log_over_composition(over_composed, prompt_path):
+    payload = {
+        "event_type": "planner_over_composition_detected",
+        "warning_type": "planner_over_composition_detected",
+        "prompt_path": str(prompt_path),
+        "over_composed_subtasks": over_composed,
+    }
+    log_line(f"[planner] warning: planner_over_composition_detected {json.dumps(over_composed, ensure_ascii=False)}")
+    log_warning_event(payload)
 
 
 def _candidate_rank(row):
@@ -197,6 +319,20 @@ def _repair_planner_payload(payload):
         if "overall_rationale" not in repaired:
             repaired["overall_rationale"] = primary_plan.get("overall_rationale", "")
 
+    execution_workflow = repaired.get("execution_workflow")
+    if isinstance(execution_workflow, dict):
+        steps = execution_workflow.get("steps")
+        if isinstance(steps, list):
+            for step in steps:
+                if not isinstance(step, dict):
+                    continue
+                for field in ("input_mapping", "output_mapping"):
+                    value = step.get(field)
+                    if value is None:
+                        step[field] = ""
+                    elif isinstance(value, (dict, list, tuple)):
+                        step[field] = _compact_json_text(value)
+
     return repaired
 
 
@@ -211,11 +347,26 @@ def _schema_retry_prompt(prompt, issue):
         "- Put plan_id, summary, steps, and subtask_coverage inside primary_plan.\n"
         "- Put type and steps inside execution_workflow.\n"
         "- Each execution_workflow step must include step, api_id, method, url, required_parameters, optional_parameters, depends_on, input_mapping, output_mapping, and expected_output.\n"
+        "- execution_workflow.steps[*].input_mapping must be a string, never null.\n"
+        "- execution_workflow.steps[*].output_mapping must be a string, never null.\n"
+        "- For the first step, use \"none\" or \"\" for input_mapping instead of null.\n"
+        "- Use \"none\" or \"\" for output_mapping if no explicit output mapping is needed.\n"
         "- Copy method, url, and endpoint parameter details from the matching Candidate API service when available.\n"
         "- Every step.api_id must be a non-empty string copied exactly from the provided Candidate APIs.\n"
         "- Never use null for api_id. If a subtask seems internal/UI/local, choose the closest suitable provided API and describe the local work in action/why.\n"
         "- input_from_previous_step and output_to_next_step must be strings or null, never objects or arrays.\n"
         "- Do not invent APIs and do not reorder subtasks.\n"
+    )
+
+
+def _over_composition_retry_prompt(prompt, over_composed):
+    issue_text = json.dumps(over_composed, ensure_ascii=False, sort_keys=True)
+    return (
+        f"{prompt}\n\n"
+        "Your previous plan used multiple APIs for the same subtask without necessity. "
+        "Revise the workflow so each subtask uses exactly one API unless multiple APIs are explicitly required.\n"
+        f"Over-composed subtasks:\n{issue_text}\n\n"
+        "Return exactly one primary plan as JSON only.\n"
     )
 
 
@@ -346,9 +497,17 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
             raise ValueError(schema_issue)
         return repaired
 
-    resp = llm_call(prompt)
-    try:
-        return _parse_plan(resp)
-    except ValueError as first_error:
-        retry_resp = llm_call(_schema_retry_prompt(prompt, first_error.args[0] if first_error.args else str(first_error)))
-        return _parse_plan(retry_resp)
+    def _call_and_parse_with_schema_retry(base_prompt):
+        resp = llm_call(base_prompt)
+        try:
+            return _parse_plan(resp)
+        except ValueError as first_error:
+            retry_resp = llm_call(_schema_retry_prompt(base_prompt, first_error.args[0] if first_error.args else str(first_error)))
+            return _parse_plan(retry_resp)
+
+    plan = _call_and_parse_with_schema_retry(prompt)
+    over_composed = _over_composed_subtasks(plan, subtasks)
+    if over_composed:
+        _log_over_composition(over_composed, prompt_path)
+        plan = _call_and_parse_with_schema_retry(_over_composition_retry_prompt(prompt, over_composed))
+    return plan

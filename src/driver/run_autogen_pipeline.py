@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Tuple
 
 from src.agents.decomposer import decompose_goal
 from src.agents.evaluator import EvaluationAgent
+from src.agents.functional_refiner import FunctionalRefinerAgent
 from src.agents.planner import planner_call
 from src.agents.ranker import InvalidRankingOutput, rank_subtask
 from src.agents.qos_scorer_llm import InvalidQosScoringOutput, score_qos_llm
@@ -75,6 +76,13 @@ PROVIDER_POLICY = {
     "lmstudio_qwen": {"sleep_after_query": 0.0},
     "_default": {"sleep_after_query": 0.4},
 }
+
+
+class PlannerPrecheckFailure(RuntimeError):
+    def __init__(self, message: str, payload: Dict[str, Any], selection_trace: Dict[str, Dict[str, Any]]) -> None:
+        self.payload = payload
+        self.selection_trace = selection_trace
+        super().__init__(message)
 
 
 def load_queries(path: Path) -> List[Dict[str, Any]]:
@@ -807,12 +815,14 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
     reason = str(record.get("failure_reason") or "")
     if reason.endswith("_after_retries"):
         reason = reason[: -len("_after_retries")]
-    if record.get("error") and reason not in {"timeout", "groq_prompt_too_large"}:
+    if record.get("error") and reason not in {"timeout", "llm_transport_error", "groq_prompt_too_large"}:
         return False
     expected_reasons = {
         "empty_response",
         "parse_error",
         "invalid_json",
+        "llm_transport_error",
+        "llm_call_error",
         "missing_required_key",
         "wrong_json_type",
         "timeout",
@@ -939,6 +949,8 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
     mode_dir = out_dir / mode_name
     selected_all = []
     selection_trace: Dict[str, Dict[str, Any]] = {}
+    missing_due_to_ranking_failure: List[str] = []
+    subtask_failure_reasons: Dict[str, str] = {}
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         ranked_rows = ranked_full.get(sub_id, [])
@@ -951,6 +963,11 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         top_n_source = "retrieval_functional_match_k" if dynamic_top_n > 0 else "selector_top_n_fallback"
         selected = []
         for idx, r in enumerate(selected_rows, start=1):
+            if r.get("failure_flag") or r.get("invalid_output_row"):
+                continue
+            api_id = str(r.get("api_id") or "").strip()
+            if not api_id:
+                continue
             row = dict(r)
             row["selected_rank"] = idx
             row["selection_order"] = idx
@@ -963,6 +980,14 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             row["fallback_used"] = fallback_used
             selected.append(row)
         selected_all.extend(selected)
+        invalid_ranked_reasons = [
+            str(r.get("failure_reason") or r.get("ranking_anomaly_reason") or "ranking_failure")
+            for r in ranked_rows
+            if isinstance(r, dict) and (r.get("failure_flag") or r.get("invalid_output_row"))
+        ]
+        if not selected and invalid_ranked_reasons:
+            missing_due_to_ranking_failure.append(sub_id)
+            subtask_failure_reasons[sub_id] = invalid_ranked_reasons[0]
         _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
         _write_json(
             mode_dir / f"3_selected_trace_s{sub_id}.json",
@@ -974,6 +999,7 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
                 "fallback_used": fallback_used,
                 "available_ranked": len(ranked_rows),
                 "selected_count": len(selected),
+                "invalid_ranked_rows": len(invalid_ranked_reasons),
             },
         )
         selection_trace[sub_id] = {
@@ -984,7 +1010,25 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
             "fallback_used": fallback_used,
             "available_ranked": len(ranked_rows),
             "selected_count": len(selected),
+            "invalid_ranked_rows": len(invalid_ranked_reasons),
         }
+    if missing_due_to_ranking_failure:
+        missing_text = ", ".join(missing_due_to_ranking_failure)
+        message = (
+            f"Skipping planner for mode {mode_name} because selected APIs are missing for "
+            f"required subtask(s): {missing_text}. Cause: upstream ranking failure."
+        )
+        failure_payload = {
+            "failure_stage": "planner_precheck",
+            "failure_reason": "missing_selected_apis_due_to_ranking_failure",
+            "mode": mode_name,
+            "missing_subtask_ids": missing_due_to_ranking_failure,
+            "subtask_failure_reasons": subtask_failure_reasons,
+            "planner_called": False,
+        }
+        _write_json(mode_dir / "planner_failure.json", failure_payload)
+        (mode_dir / "planner_error.txt").write_text(message, encoding="utf-8")
+        raise PlannerPrecheckFailure(message, failure_payload, selection_trace)
     planner_role = f"planner_{mode_name}"
     planner = planner_call(llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
     _write_json(mode_dir / "4_planner.json", planner)
@@ -1076,6 +1120,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     functional_match_map: Dict[tuple[str, str], Dict[str, Any]] = {}
     planner_top_n: Dict[str, int] = {}
     retrieval_functional_match_rows_path: Path | None = None
+    functional_refinement_summary_path: Path | None = None
     eval_out: Path | None = None
     mode_anomaly_xlsx: Path | None = None
     ranking_anomaly_audit_json: Path | None = None
@@ -1151,6 +1196,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 "modes": MODE_ORDER,
                 "retrieval_agent": "RagRetrieverAgent",
                 "retrieval_agent_mode": "deterministic_faiss",
+                "functional_refiner_agent": "FunctionalRefinerAgent",
+                "functional_refiner_agent_mode": "llm_binary_functional_labeling",
                 "evaluation_agent": "EvaluationAgent",
                 "evaluation_agent_mode": "deterministic_adapter",
                 "model_usage_file": _to_run_relative(current_model_usage_path(), out_dir),
@@ -1179,35 +1226,65 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         eval_dir.mkdir(parents=True, exist_ok=True)
         eval_cache = eval_dir / "functional_match_cache.json"
         evaluation_agent = EvaluationAgent(catalog_no_qos_path=catalog_path(with_qos=False))
-        meta_tracker.start_stage("retrieval_functional_match_evaluation")
-        log_line(f"[{run_label}] starting Functional Candidate Refinement labeling")
-        try:
-            retrieval_functional_match_rows_path = evaluation_agent.evaluate_retrieval_functional_match(
-                query_dir=out_dir,
-                query_id=query_id,
-                output_dir=eval_dir,
-                cache_path=eval_cache,
-                provider=provider or "azure",
-                model=model,
+        functional_refiner_agent = FunctionalRefinerAgent()
+        functional_refinement_summary_path = eval_dir / f"query_{query_id or out_dir.name}_functional_refinement_summary.json"
+        if CONFIG.functional_refinement_enabled:
+            meta_tracker.start_stage("functional_refinement")
+            log_line(f"[{run_label}] starting Functional Refiner Agent")
+            try:
+                retrieval_functional_match_rows_path = functional_refiner_agent.refine_candidates(
+                    query_dir=out_dir,
+                    query_id=query_id,
+                    output_dir=eval_dir,
+                    cache_path=eval_cache,
+                    provider=provider or "azure",
+                    model=model,
+                )
+                functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
+                meta_tracker.update(
+                    functional_refinement_status="completed",
+                    functional_refinement_rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
+                    functional_refinement_summary_json=_to_run_relative(functional_refinement_summary_path, out_dir)
+                    if functional_refinement_summary_path.exists()
+                    else None,
+                )
+                meta_tracker.finish_stage(
+                    "functional_refinement",
+                    rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
+                    summary_json=_to_run_relative(functional_refinement_summary_path, out_dir)
+                    if functional_refinement_summary_path.exists()
+                    else None,
+                    functional_refiner_agent="FunctionalRefinerAgent",
+                    functional_refiner_agent_mode="llm_binary_functional_labeling",
+                    functional_refinement_status="completed",
+                )
+                log_line(f"[{run_label}] finished Functional Refiner Agent")
+            except Exception as e:
+                (out_dir / "functional_refinement_error.txt").write_text(str(e), encoding="utf-8")
+                meta_tracker.update(functional_refinement_status="failed")
+                meta_tracker.finish_stage(
+                    "functional_refinement",
+                    status="failed",
+                    error_file="functional_refinement_error.txt",
+                    functional_refiner_agent="FunctionalRefinerAgent",
+                    functional_refiner_agent_mode="llm_binary_functional_labeling",
+                    functional_refinement_status="failed",
+                )
+                if run_status == "completed":
+                    run_status = "completed_with_warnings"
+                log_line(f"[{run_label}] Functional Refiner Agent failed: {e}")
+        else:
+            meta_tracker.update(functional_refinement_status="skipped")
+            meta_tracker.set_stage(
+                "functional_refinement",
+                {
+                    "status": "skipped",
+                    "reason": "functional_refinement_enabled is false",
+                    "functional_refiner_agent": "FunctionalRefinerAgent",
+                    "functional_refinement_status": "skipped",
+                },
             )
-            functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
-            meta_tracker.finish_stage(
-                "retrieval_functional_match_evaluation",
-                rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
-                evaluation_agent="EvaluationAgent",
-                evaluation_agent_mode="deterministic_adapter",
-            )
-            log_line(f"[{run_label}] finished Functional Candidate Refinement labeling")
-        except Exception as e:
-            (out_dir / "retrieval_functional_match_error.txt").write_text(str(e), encoding="utf-8")
-            meta_tracker.finish_stage(
-                "retrieval_functional_match_evaluation",
-                status="failed",
-                error_file="retrieval_functional_match_error.txt",
-            )
-            if run_status == "completed":
-                run_status = "completed_with_warnings"
-            log_line(f"[{run_label}] Functional Candidate Refinement labeling failed: {e}")
+            log_line(f"[{run_label}] skipped Functional Refiner Agent")
 
         meta_tracker.start_stage("ranking")
         log_line(f"[{run_label}] starting ranking stages")
@@ -1364,7 +1441,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             eval_out = evaluation_outputs["candidate_api_rankings_excel"]
             log_line(f"[{run_label}] finished building final functional match report outputs")
             retrieval_functional_match_rows_path = evaluation_outputs["retrieval_functional_match_rows_json"]
-            if retrieval_functional_match_rows_path.exists():
+            if retrieval_functional_match_rows_path and retrieval_functional_match_rows_path.exists():
                 planner_top_n = _load_planner_top_n_from_retrieval_match(retrieval_functional_match_rows_path)
 
             _write_json(
@@ -1373,7 +1450,9 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     "evaluation_dir": _to_run_relative(evaluation_outputs["evaluation_dir"], out_dir),
                     "candidate_api_rankings_excel": _to_run_relative(evaluation_outputs["candidate_api_rankings_excel"], out_dir),
                     "candidate_api_rankings_rows_json": _to_run_relative(evaluation_outputs["candidate_api_rankings_rows_json"], out_dir),
-                    "retrieval_functional_match_rows_json": _to_run_relative(evaluation_outputs["retrieval_functional_match_rows_json"], out_dir),
+                    "retrieval_functional_match_rows_json": _to_run_relative(evaluation_outputs["retrieval_functional_match_rows_json"], out_dir)
+                    if evaluation_outputs["retrieval_functional_match_rows_json"]
+                    else None,
                     "duplicate_audit_json": _to_run_relative(evaluation_outputs["duplicate_audit_json"], out_dir),
                     "hallucination_audit_json": _to_run_relative(evaluation_outputs["hallucination_audit_json"], out_dir),
                     "ranking_anomaly_audit_json": _to_run_relative(evaluation_outputs["ranking_anomaly_audit_json"], out_dir),
@@ -1409,7 +1488,11 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     summary_selected[f"{mode}_selected"] = len(result["selected"])
                     planner_selection_k_by_mode_subtask[mode] = result.get("selection_trace", {})
                 except Exception as exc:
-                    failure = {"mode": mode, "failure_reason": type(exc).__name__, "error": str(exc)}
+                    if isinstance(exc, PlannerPrecheckFailure):
+                        failure = {**exc.payload, "error": str(exc)}
+                        planner_selection_k_by_mode_subtask[mode] = exc.selection_trace
+                    else:
+                        failure = {"mode": mode, "failure_reason": type(exc).__name__, "error": str(exc)}
                     planner_failures.append(failure)
                     summary_selected[f"{mode}_planner_status"] = "failed"
                     summary_selected[f"{mode}_planner_error"] = str(exc)
@@ -1422,7 +1505,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                             "event_type": "planner_mode_failure",
                             "query_id": query_id,
                             "mode": mode,
-                            "failure_stage": "planner",
+                            "failure_stage": failure.get("failure_stage", "planner"),
                             **failure,
                         }
                     )

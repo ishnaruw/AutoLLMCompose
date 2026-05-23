@@ -80,7 +80,8 @@ K_HELP = (
 
 STAGE_LABELS = [
     ("Decomposition", ("decomposer",)),
-    ("Retrieval", ("retrieval", "retrieval_functional_match_evaluation")),
+    ("Retrieval", ("retrieval",)),
+    ("Functional Refinement", ("functional_refinement", "retrieval_functional_match_evaluation")),
     ("Ranking", ("ranking", "ranker_no_qos", "ranker_qos_pure_llm", "qos_scorer", "qos_topsis", "qos_hybrid")),
     ("Selection", ("selection", "selector")),
     ("Planning", ("planner",)),

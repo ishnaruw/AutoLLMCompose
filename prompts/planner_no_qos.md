@@ -16,6 +16,7 @@ Candidate APIs:
 Rules:
 - Use only the provided candidates.
 - Candidate APIs are already selected and ordered. Lower "selection_order" means higher priority within the selected set.
+- Choose exactly one API per subtask unless the subtask explicitly requires multiple APIs. Do not use multiple APIs for the same subtask when one API is sufficient. Extra APIs reduce workflow quality. Preserve subtask order and use only provided APIs.
 - Keep workflows sequential.
 - Return exactly one primary plan.
 - Return a machine-readable execution workflow in addition to the human-readable primary plan.
@@ -29,6 +30,9 @@ Rules:
 - In required_parameters and optional_parameters, include each parameter name and describe its source, such as "user_goal", "previous_step_output", "constant/default", or "unknown_needed_from_user".
 - Use depends_on to identify previous workflow step numbers needed before a step can run; use [] for the first independent step.
 - Use input_mapping and output_mapping to describe how values flow between steps.
+- execution_workflow.steps[*].input_mapping must always be a string. For the first step, use "none" or an empty string instead of null.
+- execution_workflow.steps[*].output_mapping must always be a string. Use "none" or an empty string if there is no output mapping.
+- Do not return null, objects, arrays, or nested JSON for execution_workflow input_mapping or output_mapping.
 - Never use null, "none", "internal", "local", or invented placeholders for "api_id".
 - Do not create internal-only, UI-only, formatting-only, or local-computation-only steps without an API.
 - If a subtask seems internal, describe the internal transformation inside the "action" of the closest selected API step or choose the closest suitable provided API for that subtask.

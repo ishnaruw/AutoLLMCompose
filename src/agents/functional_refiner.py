@@ -11,14 +11,9 @@ from src.eval.functional_match_eval import evaluate_retrieval_functional_match
 @dataclass
 class FunctionalRefinerAgent:
     """
-    Functional candidate refinement agent for the AutoLLMCompose pipeline.
-
-    This agent labels the shared retrieved API pool for each subtask with a
-    binary Functional Match value. The label is computed once and reused by
-    downstream ranking, selection, planning, and evaluation stages.
-
-    The agent does not rank, select, or optimize QoS. It only determines
-    whether a retrieved API is functionally suitable for the target subtask.
+    The Functional Refiner Agent assigns binary functional suitability labels
+    to retrieved API candidates. It does not rank or select APIs; it provides a
+    reusable functional signal for ranking, selection, planning, and evaluation.
     """
 
     name: str = "functional_refiner_agent"
@@ -59,4 +54,5 @@ class FunctionalRefinerAgent:
                 "legacy_stage": self.legacy_stage_name,
                 "agent_mode": "llm_binary_functional_labeling",
             },
+            write_functional_refinement_summary=True,
         )
