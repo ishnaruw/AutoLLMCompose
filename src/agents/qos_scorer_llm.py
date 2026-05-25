@@ -430,17 +430,17 @@ def _qos_preference_context() -> Dict[str, Any]:
 def _qos_formula_context(payload: List[Dict[str, Any]]) -> Dict[str, Any]:
     rt_values = [
         value
-        for value in (_finite_float(item.get("rt_ms")) for item in payload)
+        for value in (_finite_float(item.get("rt_s")) for item in payload)
         if value is not None
     ]
     tp_values = [
         value
-        for value in (_finite_float(item.get("tp_rps")) for item in payload)
+        for value in (_finite_float(item.get("tp_kbps")) for item in payload)
         if value is not None
     ]
     return {
-        "max_rt_ms": max(rt_values) if rt_values else 0.0,
-        "max_tp_rps": max(tp_values) if tp_values else 0.0,
+        "max_rt_s": max(rt_values) if rt_values else 0.0,
+        "max_tp_kbps": max(tp_values) if tp_values else 0.0,
         "total_candidate_count": len(payload),
     }
 
@@ -453,16 +453,16 @@ def _apply_normalization_context(prompt: str, context: Dict[str, Any]) -> str:
 
 
 def _score_from_formula(item: Dict[str, Any], context: Dict[str, Any]) -> float:
-    rt_ms = _finite_float(item.get("rt_ms"))
-    tp_rps = _finite_float(item.get("tp_rps"))
+    rt_s = _finite_float(item.get("rt_s"))
+    tp_kbps = _finite_float(item.get("tp_kbps"))
     availability = _finite_float(item.get("availability"))
-    if rt_ms is None or tp_rps is None or availability is None:
+    if rt_s is None or tp_kbps is None or availability is None:
         return 0.0
 
-    max_rt = _finite_float(context.get("max_rt_ms")) or 0.0
-    max_tp = _finite_float(context.get("max_tp_rps")) or 0.0
-    norm_rt = 0.0 if max_rt <= 0 else max(0.0, min(1.0, 1.0 - (rt_ms / max_rt)))
-    norm_tp = 0.0 if max_tp <= 0 else max(0.0, min(1.0, tp_rps / max_tp))
+    max_rt = _finite_float(context.get("max_rt_s")) or 0.0
+    max_tp = _finite_float(context.get("max_tp_kbps")) or 0.0
+    norm_rt = 0.0 if max_rt <= 0 else max(0.0, min(1.0, 1.0 - (rt_s / max_rt)))
+    norm_tp = 0.0 if max_tp <= 0 else max(0.0, min(1.0, tp_kbps / max_tp))
     norm_availability = max(0.0, min(1.0, availability))
     return round((norm_rt + norm_tp + norm_availability) / 3.0, 4)
 
@@ -739,8 +739,8 @@ def score_qos_llm(
         candidate_rows.append(
             {
                 "api_id": api_id,
-                "rt_ms": c.get("rt_ms"),
-                "tp_rps": c.get("tp_rps"),
+                "rt_s": c.get("rt_s"),
+                "tp_kbps": c.get("tp_kbps"),
                 "availability": c.get("availability"),
             }
         )
@@ -749,8 +749,8 @@ def score_qos_llm(
     prompt_payload = [
         {
             "candidate_id": item.get("candidate_id"),
-            "rt_ms": item.get("rt_ms"),
-            "tp_rps": item.get("tp_rps"),
+            "rt_s": item.get("rt_s"),
+            "tp_kbps": item.get("tp_kbps"),
             "availability": item.get("availability"),
         }
         for item in candidate_rows_with_ids

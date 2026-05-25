@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 import os
 import re
 import subprocess
@@ -40,6 +41,17 @@ from src.eval.ranking_metrics import (  # noqa: E402
 )
 from src.llm.backends import fireworks_model_options  # noqa: E402
 from src.ui import composition_visualization_helpers as viz  # noqa: E402
+
+if not hasattr(viz, "THROUGHPUT_LABEL") or not hasattr(viz, "format_throughput"):
+    viz = importlib.reload(viz)
+if not hasattr(viz, "THROUGHPUT_LABEL"):
+    viz.THROUGHPUT_LABEL = "Throughput (kbps)"
+if not hasattr(viz, "BOTTLENECK_THROUGHPUT_LABEL"):
+    viz.BOTTLENECK_THROUGHPUT_LABEL = "Bottleneck Throughput (kbps)"
+if not hasattr(viz, "format_throughput"):
+    viz.format_throughput = lambda value: (
+        viz.NA if viz.format_value(value) == viz.NA else f"{viz.format_value(value)} kbps"
+    )
 
 DEFAULT_RUN_EXPLORER_PARENT = PROJECT_ROOT / "results/logs"
 DEFAULT_PARENT = DEFAULT_RUN_EXPLORER_PARENT
@@ -1010,8 +1022,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         "Composition_Validity",
         "Composition_Completeness",
         "Functional_Coverage",
-        "Total_Response_Time",
-        "Bottleneck_Throughput",
+        "Total_Response_Time_s",
+        "Bottleneck_Throughput_kbps",
         availability_col,
         "Normalized_Response_Time_Score",
         "Normalized_Throughput_Score",
@@ -1034,8 +1046,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                     "Composition_Validity",
                     "Composition_Completeness",
                     "Functional_Coverage",
-                    "Total_Response_Time",
-                    "Bottleneck_Throughput",
+                    "Total_Response_Time_s",
+                    "Bottleneck_Throughput_kbps",
                     availability_col,
                     "Normalized_QoS_Score",
                     "QoS_Adjusted_Composition_Score",
@@ -1187,8 +1199,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
 
     with raw_tab:
         raw_cols = [
-            "Total_Response_Time",
-            "Bottleneck_Throughput",
+            "Total_Response_Time_s",
+            "Bottleneck_Throughput_kbps",
             availability_col,
         ]
         raw_long = filtered.melt(
@@ -1234,8 +1246,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
 
         rank_cols = {
             "QoS_Adjusted_Composition_Score": False,
-            "Total_Response_Time": True,
-            "Bottleneck_Throughput": False,
+            "Total_Response_Time_s": True,
+            "Bottleneck_Throughput_kbps": False,
             availability_col: False,
         }
         rank_rows: list[dict] = []
@@ -1286,7 +1298,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
         if workflow_view.empty:
             st.info("No planned workflow rows found for the selected composition reports.")
             return
-        for col in ["Step", "rt_ms", "tp_rps", "availability", "Functional_Match"]:
+        for col in ["Step", "rt_s", "tp_kbps", "availability", "Functional_Match"]:
             if col in workflow_view:
                 workflow_view[col] = pd.to_numeric(workflow_view[col], errors="coerce")
 
@@ -1302,8 +1314,8 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
                         "Subtask_ID",
                         "API_ID",
                         "Functional_Match",
-                        "rt_ms",
-                        "tp_rps",
+                        "rt_s",
+                        "tp_kbps",
                         "availability",
                         "Action",
                     ]
@@ -1331,7 +1343,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             timeline_fig.update_layout(height=460, margin=dict(l=10, r=10, t=55, b=10), yaxis_title="Mode / Run")
             st.plotly_chart(timeline_fig, use_container_width=True)
 
-        step_metric_options = [col for col in ["rt_ms", "tp_rps", "availability"] if col in workflow_view.columns]
+        step_metric_options = [col for col in ["rt_s", "tp_kbps", "availability"] if col in workflow_view.columns]
         if not step_metric_options:
             st.info("No step-level QoS columns found for this workflow report.")
             return
@@ -1538,13 +1550,13 @@ def render_sticky_table(
 
 
 COMPOSITION_METRIC_LABELS = {
-    "rt_ms": viz.RESPONSE_TIME_LABEL,
-    "Total_Response_Time": viz.TOTAL_RESPONSE_TIME_LABEL,
+    "rt_s": viz.RESPONSE_TIME_LABEL,
+    "Total_Response_Time_s": viz.TOTAL_RESPONSE_TIME_LABEL,
     "Average_Workflow_Availability": viz.WORKFLOW_AVAILABILITY_LABEL,
     "Workflow_Availability": viz.WORKFLOW_AVAILABILITY_LABEL,
     "Composition_Risk_API": "Composition Risk API",
     "Risk_Summary": "Risk Summary",
-    "tp_rps": "Throughput",
+    "tp_kbps": viz.THROUGHPUT_LABEL,
     "availability": "Availability",
 }
 
@@ -1610,7 +1622,7 @@ def _render_grouped_bottlenecks(workflow: pd.DataFrame, bottlenecks: pd.DataFram
             raw = group.get("raw_metrics", {})
             raw_rows = [
                 {"Metric": viz.RESPONSE_TIME_LABEL, "Value": viz.format_response_time(raw.get("response_time_s"))},
-                {"Metric": "Throughput", "Value": viz.format_value(raw.get("throughput"))},
+                {"Metric": viz.THROUGHPUT_LABEL, "Value": viz.format_throughput(raw.get("throughput_kbps"))},
                 {"Metric": "Availability", "Value": viz.format_value(raw.get("availability"))},
             ]
             st.dataframe(pd.DataFrame(raw_rows), use_container_width=True, hide_index=True)
@@ -1622,8 +1634,8 @@ def _api_detail_rows(row: dict[str, Any] | pd.Series, *, dimensions: str | None 
         {"Field": "API", "Value": row.get("API_Name") or row.get("API_ID") or viz.NA},
         {"Field": "Functional Fit", "Value": viz.format_functional_fit(row.get("Functional_Match"))},
         {"Field": "Rank", "Value": viz.format_value(row.get("Mode_Rank"), 0)},
-        {"Field": viz.RESPONSE_TIME_LABEL, "Value": viz.format_response_time(row.get("rt_ms"))},
-        {"Field": "Throughput", "Value": viz.format_value(row.get("tp_rps"))},
+        {"Field": viz.RESPONSE_TIME_LABEL, "Value": viz.format_response_time(row.get("rt_s"))},
+        {"Field": viz.THROUGHPUT_LABEL, "Value": viz.format_throughput(row.get("tp_kbps"))},
         {"Field": "Availability", "Value": viz.format_value(row.get("availability"))},
         {"Field": "API QoS Health", "Value": viz.format_api_health(row.get("API_QoS_Health"))},
         {"Field": "API QoS Health Source", "Value": row.get("API_QoS_Health_Source", viz.NA)},
@@ -1647,8 +1659,8 @@ def _optional_float(value: Any) -> float | None:
 
 def _what_if_worsens_major_metric(current: dict[str, Any], tested: dict[str, Any]) -> bool:
     specs = [
-        ("Total_Response_Time", False),
-        ("Bottleneck_Throughput", True),
+        ("Total_Response_Time_s", False),
+        ("Bottleneck_Throughput_kbps", True),
         ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
     ]
@@ -1746,8 +1758,8 @@ def _render_replacement_simulation(
     explanation_lines = list(severity_lines)
     current_metrics = simulation.get("current_metrics", {})
     simulated_metrics = simulation.get("simulated_metrics", {})
-    before_tp = current_metrics.get("Bottleneck_Throughput")
-    after_tp = simulated_metrics.get("Bottleneck_Throughput")
+    before_tp = current_metrics.get("Bottleneck_Throughput_kbps")
+    after_tp = simulated_metrics.get("Bottleneck_Throughput_kbps")
     if available(before_tp) and available(after_tp) and before_tp != after_tp:
         explanation_lines.append(f"The candidate replacement changes bottleneck throughput from {viz.format_value(before_tp)} to {viz.format_value(after_tp)}.")
     before_av = current_metrics.get("Average_Workflow_Availability", current_metrics.get("Workflow_Availability"))
@@ -2140,7 +2152,7 @@ def _render_summary_metrics(summary_rows: list[dict[str, str]]) -> None:
         "Composition Completeness",
         "Functional Coverage",
         viz.TOTAL_RESPONSE_TIME_LABEL,
-        "Bottleneck Throughput",
+        viz.BOTTLENECK_THROUGHPUT_LABEL,
         viz.WORKFLOW_AVAILABILITY_LABEL,
         "Normalized QoS Score",
         "QoS-Adjusted Composition Score",
@@ -2167,8 +2179,8 @@ def _render_recommendation_summary(recommendation: dict[str, Any]) -> None:
         ("Functional Coverage", viz.format_value(row.get("Functional_Coverage"), percent=True)),
         ("Composition Completeness", viz.format_value(row.get("Composition_Completeness"), percent=True)),
         ("Normalized QoS Score", viz.format_value(row.get("Normalized_QoS_Score"))),
-        (viz.TOTAL_RESPONSE_TIME_LABEL, viz.format_response_time(row.get("Total_Response_Time"))),
-        ("Bottleneck Throughput", viz.format_value(row.get("Bottleneck_Throughput"))),
+        (viz.TOTAL_RESPONSE_TIME_LABEL, viz.format_response_time(row.get("Total_Response_Time_s"))),
+        (viz.BOTTLENECK_THROUGHPUT_LABEL, viz.format_throughput(row.get("Bottleneck_Throughput_kbps"))),
         (viz.WORKFLOW_AVAILABILITY_LABEL, viz.format_value(workflow_availability)),
     ]
     st.dataframe(_display_frame(pd.DataFrame(fields, columns=["Metric", "Value"])), use_container_width=True, hide_index=True)
@@ -2262,8 +2274,8 @@ def _render_step_cards(workflow: pd.DataFrame) -> None:
         with st.expander(title, expanded=False):
             cols = st.columns(4)
             cols[0].metric("Functional Fit", viz.format_functional_fit(row.get("Functional_Match")))
-            cols[1].metric(viz.RESPONSE_TIME_LABEL, viz.format_response_time(row.get("rt_ms")))
-            cols[2].metric("Throughput", viz.format_value(row.get("tp_rps")))
+            cols[1].metric(viz.RESPONSE_TIME_LABEL, viz.format_response_time(row.get("rt_s")))
+            cols[2].metric(viz.THROUGHPUT_LABEL, viz.format_throughput(row.get("tp_kbps")))
             cols[3].metric("Availability", viz.format_value(row.get("availability")))
             detail = pd.DataFrame(
                 [
@@ -2295,8 +2307,8 @@ def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
         "API_Name",
         "API_ID",
         "Functional_Match",
-        "rt_ms",
-        "tp_rps",
+        "rt_s",
+        "tp_kbps",
         "availability",
         "Mode_Rank",
         "API_QoS_Health",
@@ -2322,8 +2334,8 @@ def _workflow_detail_view(workflow: pd.DataFrame) -> pd.DataFrame:
         columns={
             "Subtask_ID": "Subtask ID",
             "Functional_Match": "Functional Fit",
-            "rt_ms": viz.RESPONSE_TIME_LABEL,
-            "tp_rps": "Throughput",
+            "rt_s": viz.RESPONSE_TIME_LABEL,
+            "tp_kbps": viz.THROUGHPUT_LABEL,
             "availability": "Availability",
             "Mode_Rank": "Mode Rank",
             "API_QoS_Health": "API QoS Health",
@@ -2706,8 +2718,8 @@ def render_composition_visualizations() -> None:
                 "Subtask",
                 "API_Name",
                 "Functional_Match",
-                "rt_ms",
-                "tp_rps",
+                "rt_s",
+                "tp_kbps",
                 "availability",
                 "Mode_Rank",
                 "API_QoS_Health",
@@ -2733,8 +2745,8 @@ def render_composition_visualizations() -> None:
                     columns={
                         "Subtask_ID": "Subtask ID",
                         "Functional_Match": "Functional Fit",
-                        "rt_ms": viz.RESPONSE_TIME_LABEL,
-                        "tp_rps": "Throughput",
+                        "rt_s": viz.RESPONSE_TIME_LABEL,
+                        "tp_kbps": viz.THROUGHPUT_LABEL,
                         "availability": "Availability",
                         "Mode_Rank": "Mode Rank",
                         "API_QoS_Health": "API QoS Health",

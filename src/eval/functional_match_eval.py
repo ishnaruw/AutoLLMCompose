@@ -1028,8 +1028,8 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                     "Unknown API IDs": _format_list_field(item.get("unknown_api_ids")),
                     "Ranking Anomaly": 1 if _truthy(item.get("ranking_anomaly")) else 0,
                     "Ranking Anomaly Reason": item.get("ranking_anomaly_reason", ""),
-                    "QoS_RT": qos.get("rt_ms"),
-                    "QoS_TP": qos.get("tp_rps"),
+                    "QoS_RT_s": qos.get("rt_s"),
+                    "QoS_TP_kbps": qos.get("tp_kbps"),
                     "QoS Availability": qos.get("availability"),
                     "Comments": rel_info.get("comment", item.get("failure_reason", "invalid ranking case")),
                 })
@@ -1089,8 +1089,8 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Unknown API IDs": _format_list_field(item.get("unknown_api_ids")),
                 "Ranking Anomaly": 1 if _truthy(item.get("ranking_anomaly")) else 0,
                 "Ranking Anomaly Reason": item.get("ranking_anomaly_reason", ""),
-                "QoS_RT": qos.get("rt_ms"),
-                "QoS_TP": qos.get("tp_rps"),
+                "QoS_RT_s": qos.get("rt_s"),
+                "QoS_TP_kbps": qos.get("tp_kbps"),
                 "QoS Availability": qos.get("availability"),
                 "Comments": rel_info.get("comment", ""),
             })

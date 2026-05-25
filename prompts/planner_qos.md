@@ -7,14 +7,14 @@ Priority order:
 4) Compare QoS at the workflow level, not only at the individual API level.
 
 QoS meanings:
-- rt_ms = response time in milliseconds, lower is better
-- tp_rps = throughput in requests per second, higher is better
+- rt_s = response time in seconds, lower is better
+- tp_kbps = throughput in kilobits per second (kbps), higher is better
 - availability = value out of 1, higher is better
 
 Workflow-level QoS reasoning:
 - Evaluate the full sequential workflow before deciding.
-- Total workflow response time is approximately the sum of step rt_ms values.
-- Workflow throughput is limited by the bottleneck step, so it is approximately the minimum tp_rps across steps.
+- Total workflow response time is approximately the sum of step rt_s values.
+- Workflow throughput is limited by the bottleneck step, so it is approximately the minimum tp_kbps across steps.
 - Workflow availability should favor workflows whose steps are consistently reliable; do not overvalue one strong API if another step is fragile.
 - Do not assume the API with the best local QoS for one subtask yields the best overall workflow.
 - A huge throughput advantage in one step does not help much if a later step becomes the bottleneck.
@@ -79,7 +79,7 @@ Return JSON only:
         "input_from_previous_step": "...",
         "output_to_next_step": "...",
         "why": "...",
-        "qos": {"rt_ms": 0.123, "tp_rps": 10.0, "availability": 0.99, "valid_qos": true}
+        "qos": {"rt_s": 0.123, "tp_kbps": 10.0, "availability": 0.99, "valid_qos": true}
       }
     ],
     "subtask_coverage": [

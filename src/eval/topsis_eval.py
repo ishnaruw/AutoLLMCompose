@@ -10,19 +10,19 @@ from pyDecision.algorithm import topsis_method
 
 
 def _extract_qos(qos: Dict[str, Any]) -> Optional[List[float]]:
-    """Return [rt_ms, tp_rps, availability] if all are valid positive numeric values."""
+    """Return [rt_s, tp_kbps, availability] if all are valid positive numeric values."""
     try:
-        rt_ms = qos.get("rt_ms")
-        tp_rps = qos.get("tp_rps")
+        rt_s = qos.get("rt_s")
+        tp_kbps = qos.get("tp_kbps")
         availability = qos.get("availability")
-        if rt_ms is None or tp_rps is None or availability is None:
+        if rt_s is None or tp_kbps is None or availability is None:
             return None
-        rt_ms = float(rt_ms)
-        tp_rps = float(tp_rps)
+        rt_s = float(rt_s)
+        tp_kbps = float(tp_kbps)
         availability = float(availability)
-        if rt_ms <= 0 or tp_rps <= 0 or availability <= 0:
+        if rt_s <= 0 or tp_kbps <= 0 or availability <= 0:
             return None
-        return [rt_ms, tp_rps, availability]
+        return [rt_s, tp_kbps, availability]
     except Exception:
         return None
 
@@ -31,8 +31,8 @@ def _run_topsis_pydecision(X: np.ndarray, weights: List[float]) -> Tuple[np.ndar
     """Run standard TOPSIS using pyDecision.
 
     Criteria directions:
-      rt_ms        -> cost (min)
-      tp_rps       -> benefit (max)
+      rt_s        -> cost (min)
+      tp_kbps       -> benefit (max)
       availability -> benefit (max)
 
     Supports pyDecision variants that return either:

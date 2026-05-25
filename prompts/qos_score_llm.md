@@ -6,8 +6,8 @@ Each candidate has:
 The real api_id is intentionally not provided for QoS scoring.
 
 QoS meanings:
-- rt_ms = response time in milliseconds, lower is better
-- tp_rps = throughput in requests per second, higher is better
+- rt_s = response time in seconds, lower is better
+- tp_kbps = throughput in kilobits per second (kbps), higher is better
 - availability = value out of 1 (0.0-1.0), higher is better
 
 QoS preference:
@@ -17,8 +17,8 @@ Task:
 - Assign a QoS score from 0.0 to 1.0 for each candidate.
 - Use the provided QoS metrics to judge overall operational quality.
 - Candidates with stronger QoS should receive higher scores.
-- Lower rt_ms should improve the score.
-- Higher tp_rps should improve the score.
+- Lower rt_s should improve the score.
+- Higher tp_kbps should improve the score.
 - Higher availability should improve the score.
 - If no special QoS preference weights are provided, treat response time, throughput, and availability as equally important.
 - If QoS preference weights are provided, follow those weights when assigning scores.

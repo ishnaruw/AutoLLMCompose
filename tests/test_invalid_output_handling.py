@@ -154,8 +154,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
                 score_qos_llm(
                     incomplete_qos_llm,
                     candidates=[
-                        {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                        {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                        {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                        {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                     ],
                     prompt_path=str(prompt),
                     batch_size=0,
@@ -280,8 +280,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
             scores = score_qos_llm(
                 candidate_qos_llm,
                 candidates=[
-                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                 ],
                 prompt_path=str(prompt),
                 batch_size=0,
@@ -313,8 +313,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
             scores = score_qos_llm(
                 judgment_qos_llm,
                 candidates=[
-                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                 ],
                 prompt_path=str(prompt),
                 batch_size=0,
@@ -323,7 +323,7 @@ class InvalidOutputHandlingTests(unittest.TestCase):
 
         self.assertEqual(len(seen_prompts), 1)
         self.assertIn('"weights_provided": false', seen_prompts[0])
-        self.assertNotIn('"max_rt_ms"', seen_prompts[0])
+        self.assertNotIn('"max_rt_s"', seen_prompts[0])
         self.assertEqual(scores["api_b"]["qos_llm_rank"], 1)
         self.assertEqual(scores["api_a"]["qos_llm_score"], 0.1)
 
@@ -349,8 +349,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
             scores = score_qos_llm(
                 retry_qos_llm,
                 candidates=[
-                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                    {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                 ],
                 prompt_path=str(prompt),
                 batch_size=0,
@@ -383,8 +383,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
                 score_qos_llm(
                     mismatched_qos_llm,
                     candidates=[
-                        {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                        {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                        {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                        {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                     ],
                     prompt_path=str(prompt),
                     batch_size=0,
@@ -419,8 +419,8 @@ class InvalidOutputHandlingTests(unittest.TestCase):
                 scores = score_qos_llm(
                     mismatched_qos_llm,
                     candidates=[
-                        {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                        {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
+                        {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                        {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
                     ],
                     prompt_path=str(prompt),
                     batch_size=0,
@@ -456,9 +456,9 @@ class InvalidOutputHandlingTests(unittest.TestCase):
             scores = score_qos_llm(
                 batched_qos_llm,
                 candidates=[
-                    {"api_id": "api_a", "rt_ms": 10, "tp_rps": 10, "availability": 0.99},
-                    {"api_id": "api_b", "rt_ms": 20, "tp_rps": 5, "availability": 0.95},
-                    {"api_id": "api_c", "rt_ms": 30, "tp_rps": 4, "availability": 0.9},
+                    {"api_id": "api_a", "rt_s": 10, "tp_kbps": 10, "availability": 0.99},
+                    {"api_id": "api_b", "rt_s": 20, "tp_kbps": 5, "availability": 0.95},
+                    {"api_id": "api_c", "rt_s": 30, "tp_kbps": 4, "availability": 0.9},
                 ],
                 prompt_path=str(prompt),
                 batch_size=None,

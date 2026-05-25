@@ -71,7 +71,7 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     if param_names:
         slim["param_names"] = param_names
 
-    for key in ["rt_ms", "tp_rps", "availability", "qos_score", "qos_rank", "topsis_score", "topsis_rank", "qos_llm_score", "qos_llm_rank"]:
+    for key in ["rt_s", "tp_kbps", "availability", "qos_score", "qos_rank", "topsis_score", "topsis_rank", "qos_llm_score", "qos_llm_rank"]:
         val = c.get(key)
         if val is None:
             val = qos.get(key)

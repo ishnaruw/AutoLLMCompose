@@ -67,7 +67,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Functional_Coverage": 0.75,
                     "Composition_Completeness": 1.0,
                     "Normalized_QoS_Score": 0.7,
-                    "Total_Response_Time": 15,
+                    "Total_Response_Time_s": 15,
                 },
                 {
                     "Query_ID": "q1",
@@ -77,7 +77,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Functional_Coverage": 0.75,
                     "Composition_Completeness": 1.0,
                     "Normalized_QoS_Score": 0.7,
-                    "Total_Response_Time": 10,
+                    "Total_Response_Time_s": 10,
                 },
             ]
         )
@@ -150,9 +150,9 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         workflow = normalize_api_qos_scores(
             pd.DataFrame(
                 [
-                    {"Functional_Match": 1, "rt_ms": 0.4, "tp_rps": 20, "availability": 0.99},
-                    {"Functional_Match": 1, "rt_ms": 0.8, "tp_rps": 10, "availability": 0.95},
-                    {"Functional_Match": 1, "rt_ms": 1.2, "tp_rps": 1, "availability": 0.90},
+                    {"Functional_Match": 1, "rt_s": 0.4, "tp_kbps": 20, "availability": 0.99},
+                    {"Functional_Match": 1, "rt_s": 0.8, "tp_kbps": 10, "availability": 0.95},
+                    {"Functional_Match": 1, "rt_s": 1.2, "tp_kbps": 1, "availability": 0.90},
                 ]
             )
         )
@@ -167,7 +167,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         self.assertAlmostEqual(workflow.iloc[0]["API_Selection_Health"], 1.0)
 
     def test_api_health_handles_single_api_and_missing_qos(self) -> None:
-        single = normalize_api_qos_scores(pd.DataFrame([{"Functional_Match": 1, "rt_ms": 0.5, "tp_rps": 7, "availability": 0.98}]))
+        single = normalize_api_qos_scores(pd.DataFrame([{"Functional_Match": 1, "rt_s": 0.5, "tp_kbps": 7, "availability": 0.98}]))
         missing = normalize_api_qos_scores(pd.DataFrame([{"Functional_Match": 1}]))
 
         self.assertEqual(single.iloc[0]["API_QoS_Health"], 1.0)
@@ -180,10 +180,10 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
             run_dir = Path(tmp)
             (run_dir / "evaluation").mkdir(parents=True)
             candidate_rows = [
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "1", "Selected_API": "geo_selected", "Functional Match (0/1)": 1, "QoS_RT": 10.0, "QoS_TP": 1.0, "QoS Availability": 0.8},
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "1", "Selected_API": "geo_alt", "Functional Match (0/1)": 1, "QoS_RT": 1.0, "QoS_TP": 10.0, "QoS Availability": 0.99},
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "2", "Selected_API": "sms_selected", "Functional Match (0/1)": 1, "QoS_RT": 100.0, "QoS_TP": 1.0, "QoS Availability": 0.9},
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "2", "Selected_API": "sms_alt", "Functional Match (0/1)": 1, "QoS_RT": 200.0, "QoS_TP": 1.0, "QoS Availability": 0.9},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "1", "Selected_API": "geo_selected", "Functional Match (0/1)": 1, "QoS_RT_s": 10.0, "QoS_TP_kbps": 1.0, "QoS Availability": 0.8},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "1", "Selected_API": "geo_alt", "Functional Match (0/1)": 1, "QoS_RT_s": 1.0, "QoS_TP_kbps": 10.0, "QoS Availability": 0.99},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "2", "Selected_API": "sms_selected", "Functional Match (0/1)": 1, "QoS_RT_s": 100.0, "QoS_TP_kbps": 1.0, "QoS Availability": 0.9},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Sub Task": "2", "Selected_API": "sms_alt", "Functional Match (0/1)": 1, "QoS_RT_s": 200.0, "QoS_TP_kbps": 1.0, "QoS Availability": 0.9},
             ]
             (run_dir / "evaluation" / "query_q1_candidate_api_rankings_rows.json").write_text(json.dumps(candidate_rows), encoding="utf-8")
             workflow_df = pd.DataFrame(
@@ -211,7 +211,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
             rows = pd.DataFrame(
                 [
                     {"Query_ID": "q1", "Mode": "qos_hybrid", "Subtask_ID": "1", "API_ID": "api_a", "Functional_Match": 1, "TOPSIS_Score": 0.55},
-                    {"Query_ID": "q1", "Mode": "qos_hybrid", "Subtask_ID": "2", "API_ID": "api_b", "Functional_Match": 1, "rt_ms": 1.0, "tp_rps": 10.0, "availability": 0.99},
+                    {"Query_ID": "q1", "Mode": "qos_hybrid", "Subtask_ID": "2", "API_ID": "api_b", "Functional_Match": 1, "rt_s": 1.0, "tp_kbps": 10.0, "availability": 0.99},
                 ]
             )
 
@@ -237,7 +237,7 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         )
 
         rows = recommended_summary_rows(
-            {"Composition_Validity": 1, "Total_Response_Time": 0.3},
+            {"Composition_Validity": 1, "Total_Response_Time_s": 0.3},
             workflow,
             pd.DataFrame(),
             mode="qos_topsis",
@@ -250,8 +250,8 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
     def test_groups_bottlenecks_by_api_with_severity(self) -> None:
         workflow = pd.DataFrame(
             [
-                {"Subtask_ID": "1", "API_ID": "api_a", "API_Name": "API A", "rt_ms": 0.1, "tp_rps": 10.0, "availability": 0.99},
-                {"Subtask_ID": "2", "API_ID": "api_b", "API_Name": "API B", "rt_ms": 0.9, "tp_rps": 2.0, "availability": 0.90},
+                {"Subtask_ID": "1", "API_ID": "api_a", "API_Name": "API A", "rt_s": 0.1, "tp_kbps": 10.0, "availability": 0.99},
+                {"Subtask_ID": "2", "API_ID": "api_b", "API_Name": "API B", "rt_s": 0.9, "tp_kbps": 2.0, "availability": 0.90},
             ]
         )
         bottlenecks = pd.DataFrame(
@@ -284,8 +284,8 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Selected_API": "api_b",
                     "Functional Match (0/1)": 1,
                     "Mode Rank": 2,
-                    "QoS_RT": 0.9,
-                    "QoS_TP": 2.0,
+                    "QoS_RT_s": 0.9,
+                    "QoS_TP_kbps": 2.0,
                     "QoS Availability": 0.9,
                 },
                 {
@@ -295,21 +295,21 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                     "Selected_API": "api_c",
                     "Functional Match (0/1)": 1,
                     "Mode Rank": 1,
-                    "QoS_RT": 0.2,
-                    "QoS_TP": 9.0,
+                    "QoS_RT_s": 0.2,
+                    "QoS_TP_kbps": 9.0,
                     "QoS Availability": 0.99,
                 },
             ]
             (run_dir / "evaluation" / "query_q1_candidate_api_rankings_rows.json").write_text(json.dumps(candidate_rows), encoding="utf-8")
             ranked_rows = [
-                {"api_id": "api_c", "mode_rank": 1, "service": {"name": "Replacement API", "tool_name": "Weather Tool", "qos": {"rt_ms": 0.2, "tp_rps": 9.0, "availability": 0.99}}},
+                {"api_id": "api_c", "mode_rank": 1, "service": {"name": "Replacement API", "tool_name": "Weather Tool", "qos": {"rt_s": 0.2, "tp_kbps": 9.0, "availability": 0.99}}},
             ]
             (run_dir / "qos_hybrid" / "2_ranked_s2.json").write_text(json.dumps(ranked_rows), encoding="utf-8")
             workflow = normalize_api_qos_scores(
                 pd.DataFrame(
                     [
-                        {"Query_ID": "q1", "Mode": "qos_hybrid", "Step": 1, "Subtask_ID": "1", "API_ID": "api_a", "API_Name": "API A", "Functional_Match": 1, "rt_ms": 0.1, "tp_rps": 10.0, "availability": 0.99},
-                        {"Query_ID": "q1", "Mode": "qos_hybrid", "Step": 2, "Subtask_ID": "2", "API_ID": "api_b", "API_Name": "API B", "Functional_Match": 1, "rt_ms": 0.9, "tp_rps": 2.0, "availability": 0.90},
+                        {"Query_ID": "q1", "Mode": "qos_hybrid", "Step": 1, "Subtask_ID": "1", "API_ID": "api_a", "API_Name": "API A", "Functional_Match": 1, "rt_s": 0.1, "tp_kbps": 10.0, "availability": 0.99},
+                        {"Query_ID": "q1", "Mode": "qos_hybrid", "Step": 2, "Subtask_ID": "2", "API_ID": "api_b", "API_Name": "API B", "Functional_Match": 1, "rt_s": 0.9, "tp_kbps": 2.0, "availability": 0.90},
                     ]
                 )
             )
@@ -331,13 +331,13 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
 
             self.assertEqual(simulations[0]["status"], "ok")
             self.assertEqual(simulations[0]["replacement_row"]["API_ID"], "api_c")
-            self.assertLess(simulations[0]["simulated_metrics"]["Total_Response_Time"], simulations[0]["current_metrics"]["Total_Response_Time"])
-            self.assertGreater(simulations[0]["simulated_metrics"]["Bottleneck_Throughput"], simulations[0]["current_metrics"]["Bottleneck_Throughput"])
+            self.assertLess(simulations[0]["simulated_metrics"]["Total_Response_Time_s"], simulations[0]["current_metrics"]["Total_Response_Time_s"])
+            self.assertGreater(simulations[0]["simulated_metrics"]["Bottleneck_Throughput_kbps"], simulations[0]["current_metrics"]["Bottleneck_Throughput_kbps"])
 
     def test_what_if_replacement_labels_avoid_recommendation_language(self) -> None:
         rows = simulation_metric_rows(
-            {"Total_Response_Time": 2.0, "Bottleneck_Throughput": 1.0, "Workflow_Availability": 0.8, "Functional_Coverage": 1.0},
-            {"Total_Response_Time": 1.0, "Bottleneck_Throughput": 2.0, "Workflow_Availability": 0.9, "Functional_Coverage": 1.0},
+            {"Total_Response_Time_s": 2.0, "Bottleneck_Throughput_kbps": 1.0, "Workflow_Availability": 0.8, "Functional_Coverage": 1.0},
+            {"Total_Response_Time_s": 1.0, "Bottleneck_Throughput_kbps": 2.0, "Workflow_Availability": 0.9, "Functional_Coverage": 1.0},
         )
         self.assertIn("Official Planner Workflow", rows[0])
         self.assertIn("What-If Replacement Workflow", rows[0])
@@ -387,9 +387,9 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
     def test_winner_heatmap_prefers_valid_workflows_and_marks_invalid_only(self) -> None:
         rows = pd.DataFrame(
             [
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.7, "Total_Response_Time": 2.0},
-                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.9, "Total_Response_Time": 3.0},
-                {"Query_ID": "q2", "Mode": "qos_hybrid", "Composition_Validity": 0, "QoS_Adjusted_Composition_Score": 1.0, "Total_Response_Time": 0.1},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.7, "Total_Response_Time_s": 2.0},
+                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.9, "Total_Response_Time_s": 3.0},
+                {"Query_ID": "q2", "Mode": "qos_hybrid", "Composition_Validity": 0, "QoS_Adjusted_Composition_Score": 1.0, "Total_Response_Time_s": 0.1},
             ]
         )
 

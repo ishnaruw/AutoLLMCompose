@@ -116,7 +116,7 @@ class ApiEnrichmentTests(unittest.TestCase):
             enriched_path.write_text("\n".join(json.dumps(row) for row in rows) + "\n", encoding="utf-8")
             base_path.write_text(enriched_path.read_text(encoding="utf-8"), encoding="utf-8")
             qos_path.write_text(
-                json.dumps({"api_id": "api_a", "qos": {"rt_ms": 1.2, "tp_rps": 3.4, "availability": 0.99}})
+                json.dumps({"api_id": "api_a", "qos": {"rt_s": 1.2, "tp_kbps": 3.4, "availability": 0.99}})
                 + "\n",
                 encoding="utf-8",
             )

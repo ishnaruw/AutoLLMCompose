@@ -108,7 +108,7 @@ GROQ_MULTI_MODELS=llama-3.3-70b-versatile,openai/gpt-oss-120b,openai/gpt-oss-20b
 # Fireworks AI
 FIREWORKS_API_KEY=
 FIREWORKS_BASE_URL=https://api.fireworks.ai/inference/v1
-FIREWORKS_MODEL=accounts/fireworks/models/deepseek-v3p1
+FIREWORKS_MODEL=accounts/fireworks/models/gpt-oss-120b
 
 # Together AI
 TOGETHER_API_KEY=

@@ -1333,8 +1333,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     qos = (svc.get("qos") or {}) if isinstance(svc.get("qos"), dict) else {}
                     pure_qos_candidates.append({
                         "api_id": api_id,
-                        "rt_ms": qos.get("rt_ms"),
-                        "tp_rps": qos.get("tp_rps"),
+                        "rt_s": qos.get("rt_s"),
+                        "tp_kbps": qos.get("tp_kbps"),
                         "availability": qos.get("availability"),
                     })
                 try:

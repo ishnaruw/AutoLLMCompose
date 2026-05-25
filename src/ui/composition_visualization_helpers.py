@@ -17,6 +17,8 @@ NA = "N/A"
 
 RESPONSE_TIME_LABEL = "Response Time (s)"
 TOTAL_RESPONSE_TIME_LABEL = "Total Response Time (s)"
+THROUGHPUT_LABEL = "Throughput (kbps)"
+BOTTLENECK_THROUGHPUT_LABEL = "Bottleneck Throughput (kbps)"
 WORKFLOW_AVAILABILITY_LABEL = "Average Workflow Availability"
 WORKFLOW_AVAILABILITY_HELP = "Average of selected API availability values."
 API_HEALTH_HELP = (
@@ -331,8 +333,8 @@ def normalize_api_qos_scores(rows: pd.DataFrame | list[dict[str, Any]]) -> pd.Da
         return out
 
     metric_specs = [
-        ("rt_ms", "Normalized_Response_Time_Score", False),
-        ("tp_rps", "Normalized_Throughput_Score", True),
+        ("rt_s", "Normalized_Response_Time_Score", False),
+        ("tp_kbps", "Normalized_Throughput_Score", True),
         ("availability", "Normalized_Availability_Score", True),
     ]
     for raw_col, norm_col, higher_is_better in metric_specs:
@@ -464,8 +466,8 @@ def _candidate_qos_row(
         "Subtask_ID": _candidate_subtask_id(candidate) or subtask_id,
         "API_ID": _candidate_api_id(candidate),
         "Functional_Match": _as_match_label(candidate.get("Functional Match (0/1)", candidate.get("Functional_Match"))),
-        "rt_ms": _as_float(candidate.get("QoS_RT")) if _as_float(candidate.get("QoS_RT")) is not None else _as_float(qos.get("rt_ms")),
-        "tp_rps": _as_float(candidate.get("QoS_TP")) if _as_float(candidate.get("QoS_TP")) is not None else _as_float(qos.get("tp_rps")),
+        "rt_s": _as_float(candidate.get("QoS_RT_s")) if _as_float(candidate.get("QoS_RT_s")) is not None else _as_float(qos.get("rt_s")),
+        "tp_kbps": _as_float(candidate.get("QoS_TP_kbps")) if _as_float(candidate.get("QoS_TP_kbps")) is not None else _as_float(qos.get("tp_kbps")),
         "availability": _as_float(candidate.get("QoS Availability")) if _as_float(candidate.get("QoS Availability")) is not None else _as_float(qos.get("availability")),
         "TOPSIS_Score": topsis_score,
         "QoS_LLM_Score": qos_llm_score,
@@ -479,8 +481,8 @@ def _selected_row_for_qos_context(row: pd.Series | dict[str, Any]) -> dict[str, 
         "Subtask_ID": _first_value(row, "Subtask_ID", "Sub Task", "subtask_id"),
         "API_ID": _first_value(row, "API_ID", "Selected_API", "api_id"),
         "Functional_Match": _first_value(row, "Functional_Match", "Functional Match (0/1)"),
-        "rt_ms": _first_value(row, "rt_ms", "QoS_RT"),
-        "tp_rps": _first_value(row, "tp_rps", "QoS_TP"),
+        "rt_s": _first_value(row, "rt_s", "QoS_RT_s"),
+        "tp_kbps": _first_value(row, "tp_kbps", "QoS_TP_kbps"),
         "availability": _first_value(row, "availability", "QoS Availability"),
         "TOPSIS_Score": _first_value(row, "TOPSIS_Score", "topsis_score"),
         "QoS_LLM_Score": _first_value(row, "QoS_LLM_Score", "qos_llm_score"),
@@ -592,8 +594,8 @@ def _hover_for_step(row: pd.Series, *, title: str | None = None) -> str:
         f"API ID: {escape(str(row.get('API_ID') or NA))}",
         f"Functional fit: {format_functional_fit(row.get('Functional_Match'))}",
         f"Mode rank: {format_value(row.get('Mode_Rank'), 0)}",
-        f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_ms'))}",
-        f"Throughput: {format_value(row.get('tp_rps'))}",
+        f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_s'))}",
+        f"{THROUGHPUT_LABEL}: {format_throughput(row.get('tp_kbps'))}",
         f"Availability: {format_value(row.get('availability'))}",
         f"API QoS Health: {format_api_health(row.get('API_QoS_Health'))}",
         f"API QoS Health source: {escape(str(row.get('API_QoS_Health_Source') or NA))}",
@@ -638,6 +640,11 @@ def format_value(value: Any, decimals: int = 3, *, percent: bool = False) -> str
 def format_response_time(value: Any) -> str:
     formatted = format_value(value)
     return NA if formatted == NA else f"{formatted} s"
+
+
+def format_throughput(value: Any) -> str:
+    formatted = format_value(value)
+    return NA if formatted == NA else f"{formatted} kbps"
 
 
 def format_flag(value: Any) -> str:
@@ -935,8 +942,8 @@ def get_recommended_mode(
         ("Functional_Coverage", False),
         ("Composition_Completeness", False),
         ("Normalized_QoS_Score", False),
-        ("Total_Response_Time", True),
-        ("Bottleneck_Throughput", False),
+        ("Total_Response_Time_s", True),
+        ("Bottleneck_Throughput_kbps", False),
         ("Average_Workflow_Availability", False),
     ]
     for col, _ in tie_specs:
@@ -1022,17 +1029,17 @@ def enrich_workflow_for_selection(
         if functional is None:
             functional = _as_match_label(_first_value(candidate, "Functional Match (0/1)", "Functional_Match"))
 
-        rt_ms = _as_float(_first_value(step, "rt_ms", "QoS_RT"))
-        tp_rps = _as_float(_first_value(step, "tp_rps", "QoS_TP"))
+        rt_s = _as_float(_first_value(step, "rt_s", "QoS_RT_s"))
+        tp_kbps = _as_float(_first_value(step, "tp_kbps", "QoS_TP_kbps"))
         availability = _as_float(_first_value(step, "availability", "QoS Availability"))
-        if rt_ms is None:
-            rt_ms = _as_float(_first_value(candidate, "QoS_RT", "rt_ms"))
-            if rt_ms is None:
-                rt_ms = _qos_from_service(selected, "rt_ms")
-        if tp_rps is None:
-            tp_rps = _as_float(_first_value(candidate, "QoS_TP", "tp_rps"))
-            if tp_rps is None:
-                tp_rps = _qos_from_service(selected, "tp_rps")
+        if rt_s is None:
+            rt_s = _as_float(_first_value(candidate, "QoS_RT_s", "rt_s"))
+            if rt_s is None:
+                rt_s = _qos_from_service(selected, "rt_s")
+        if tp_kbps is None:
+            tp_kbps = _as_float(_first_value(candidate, "QoS_TP_kbps", "tp_kbps"))
+            if tp_kbps is None:
+                tp_kbps = _qos_from_service(selected, "tp_kbps")
         if availability is None:
             availability = _as_float(_first_value(candidate, "QoS Availability", "availability"))
             if availability is None:
@@ -1055,8 +1062,8 @@ def enrich_workflow_for_selection(
                 "API_ID": api_id,
                 "API_Name": _api_name(selected, api_id),
                 "Functional_Match": functional,
-                "rt_ms": rt_ms,
-                "tp_rps": tp_rps,
+                "rt_s": rt_s,
+                "tp_kbps": tp_kbps,
                 "availability": availability,
                 "Mode_Rank": _first_value(selected, "mode_rank", "Mode Rank") or _first_value(candidate, "Mode Rank", "mode_rank"),
                 "Selected_Rank": _first_value(selected, "selected_rank"),
@@ -1147,12 +1154,12 @@ def group_bottlenecks_by_api(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) 
     max_tp = None
     max_av = None
     if not workflow.empty:
-        if "rt_ms" in workflow:
-            rt_values = pd.to_numeric(workflow["rt_ms"], errors="coerce").dropna()
+        if "rt_s" in workflow:
+            rt_values = pd.to_numeric(workflow["rt_s"], errors="coerce").dropna()
             if not rt_values.empty:
                 total_rt = float(rt_values.sum())
-        if "tp_rps" in workflow:
-            tp_values = pd.to_numeric(workflow["tp_rps"], errors="coerce").dropna()
+        if "tp_kbps" in workflow:
+            tp_values = pd.to_numeric(workflow["tp_kbps"], errors="coerce").dropna()
             if not tp_values.empty:
                 max_tp = float(tp_values.max())
         if "availability" in workflow:
@@ -1191,12 +1198,12 @@ def group_bottlenecks_by_api(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) 
     for key, group in groups.items():
         api_id, subtask_id = key
         workflow_row = _workflow_row_for_bottleneck(workflow, api_id, subtask_id)
-        rt = _as_float(workflow_row.get("rt_ms")) if workflow_row is not None else None
-        tp = _as_float(workflow_row.get("tp_rps")) if workflow_row is not None else None
+        rt = _as_float(workflow_row.get("rt_s")) if workflow_row is not None else None
+        tp = _as_float(workflow_row.get("tp_kbps")) if workflow_row is not None else None
         av = _as_float(workflow_row.get("availability")) if workflow_row is not None else None
         group["raw_metrics"] = {
             "response_time_s": rt,
-            "throughput": tp,
+            "throughput_kbps": tp,
             "availability": av,
         }
 
@@ -1268,8 +1275,8 @@ def _candidate_to_workflow_row(
         "API_ID": api_id,
         "API_Name": _candidate_display_name(candidate, ranked_row),
         "Functional_Match": _as_match_label(candidate.get("Functional Match (0/1)", candidate.get("Functional_Match"))),
-        "rt_ms": _as_float(candidate.get("QoS_RT")) if _as_float(candidate.get("QoS_RT")) is not None else _as_float(qos.get("rt_ms")),
-        "tp_rps": _as_float(candidate.get("QoS_TP")) if _as_float(candidate.get("QoS_TP")) is not None else _as_float(qos.get("tp_rps")),
+        "rt_s": _as_float(candidate.get("QoS_RT_s")) if _as_float(candidate.get("QoS_RT_s")) is not None else _as_float(qos.get("rt_s")),
+        "tp_kbps": _as_float(candidate.get("QoS_TP_kbps")) if _as_float(candidate.get("QoS_TP_kbps")) is not None else _as_float(qos.get("tp_kbps")),
         "availability": _as_float(candidate.get("QoS Availability")) if _as_float(candidate.get("QoS Availability")) is not None else _as_float(qos.get("availability")),
         "Mode_Rank": _first_value(candidate, "Mode Rank", "mode_rank") or _first_value(ranked_row, "mode_rank"),
         "Selected_Rank": None,
@@ -1290,13 +1297,13 @@ def _candidate_to_workflow_row(
 
 def _workflow_metrics(workflow: pd.DataFrame, eval_row: dict[str, Any] | None = None) -> dict[str, Any]:
     eval_row = eval_row or {}
-    rt_values = pd.to_numeric(workflow.get("rt_ms"), errors="coerce").dropna() if "rt_ms" in workflow else pd.Series(dtype=float)
-    tp_values = pd.to_numeric(workflow.get("tp_rps"), errors="coerce").dropna() if "tp_rps" in workflow else pd.Series(dtype=float)
+    rt_values = pd.to_numeric(workflow.get("rt_s"), errors="coerce").dropna() if "rt_s" in workflow else pd.Series(dtype=float)
+    tp_values = pd.to_numeric(workflow.get("tp_kbps"), errors="coerce").dropna() if "tp_kbps" in workflow else pd.Series(dtype=float)
     av_values = pd.to_numeric(workflow.get("availability"), errors="coerce").dropna() if "availability" in workflow else pd.Series(dtype=float)
     functional = pd.to_numeric(workflow.get("Functional_Match"), errors="coerce").dropna() if "Functional_Match" in workflow else pd.Series(dtype=float)
     return {
-        "Total_Response_Time": float(rt_values.sum()) if not rt_values.empty else None,
-        "Bottleneck_Throughput": float(tp_values.min()) if not tp_values.empty else None,
+        "Total_Response_Time_s": float(rt_values.sum()) if not rt_values.empty else None,
+        "Bottleneck_Throughput_kbps": float(tp_values.min()) if not tp_values.empty else None,
         "Average_Workflow_Availability": float(av_values.mean()) if not av_values.empty else None,
         "Workflow_Availability": float(av_values.mean()) if not av_values.empty else None,
         "Functional_Coverage": float((functional == 1).sum() / len(workflow)) if len(workflow) else None,
@@ -1337,7 +1344,7 @@ def find_replacement_candidates(
             continue
         ranked_row = ranked_lookup.get(api_id)
         row = _candidate_to_workflow_row(candidate, ranked_row, current_row, mode=mode, query_id=query_id)
-        if _as_float(row.get("rt_ms")) is None and _as_float(row.get("tp_rps")) is None and _as_float(row.get("availability")) is None:
+        if _as_float(row.get("rt_s")) is None and _as_float(row.get("tp_kbps")) is None and _as_float(row.get("availability")) is None:
             continue
         rows.append(row)
     return normalize_api_qos_scores(pd.DataFrame(rows))
@@ -1413,8 +1420,8 @@ def build_bottleneck_replacement_simulations(
 
 def _simulation_has_improvement(current: dict[str, Any], simulated: dict[str, Any]) -> bool:
     specs = [
-        ("Total_Response_Time", False),
-        ("Bottleneck_Throughput", True),
+        ("Total_Response_Time_s", False),
+        ("Bottleneck_Throughput_kbps", True),
         ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
     ]
@@ -1439,8 +1446,8 @@ def _replacement_reason(current_row: pd.Series, replacement: pd.Series, has_impr
 
 def simulation_metric_rows(current: dict[str, Any], simulated: dict[str, Any]) -> list[dict[str, str]]:
     specs = [
-        ("Total_Response_Time", TOTAL_RESPONSE_TIME_LABEL, False, format_response_time),
-        ("Bottleneck_Throughput", "Bottleneck Throughput", True, format_value),
+        ("Total_Response_Time_s", TOTAL_RESPONSE_TIME_LABEL, False, format_response_time),
+        ("Bottleneck_Throughput_kbps", BOTTLENECK_THROUGHPUT_LABEL, True, format_throughput),
         ("Average_Workflow_Availability", WORKFLOW_AVAILABILITY_LABEL, True, format_value),
         ("Functional_Coverage", "Functional Coverage", True, lambda value: format_value(value, percent=True)),
         ("QoS_Adjusted_Composition_Score", "QoS-Adjusted Composition Score", True, format_value),
@@ -1872,8 +1879,8 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
         return {"winners": pd.DataFrame(), "counts": pd.DataFrame()}
     metric_specs = [
         ("Best QoS-adjusted score", "QoS_Adjusted_Composition_Score", False),
-        (f"Lowest {TOTAL_RESPONSE_TIME_LABEL}", "Total_Response_Time", True),
-        ("Highest bottleneck throughput", "Bottleneck_Throughput", False),
+        (f"Lowest {TOTAL_RESPONSE_TIME_LABEL}", "Total_Response_Time_s", True),
+        (f"Highest {BOTTLENECK_THROUGHPUT_LABEL.lower()}", "Bottleneck_Throughput_kbps", False),
         (f"Highest {WORKFLOW_AVAILABILITY_LABEL}", "Average_Workflow_Availability", False),
         ("Best functional coverage", "Functional_Coverage", False),
         ("Best composition completeness", "Composition_Completeness", False),
@@ -1946,8 +1953,8 @@ def identify_bottlenecks(workflow: pd.DataFrame) -> pd.DataFrame:
     if workflow.empty:
         return pd.DataFrame()
     specs = [
-        ("Latency", "rt_ms", False, f"Highest {RESPONSE_TIME_LABEL.lower()}", "Increases total workflow response time"),
-        ("Throughput", "tp_rps", True, "Lowest throughput", "Limits end-to-end workflow throughput"),
+        ("Latency", "rt_s", False, f"Highest {RESPONSE_TIME_LABEL.lower()}", "Increases total workflow response time"),
+        ("Throughput", "tp_kbps", True, "Lowest throughput (kbps)", "Limits end-to-end workflow throughput"),
         ("Availability", "availability", True, "Lowest availability", "Lowers expected workflow reliability"),
     ]
     rows: list[dict[str, Any]] = []
@@ -2017,8 +2024,8 @@ def recommended_summary_rows(
         ("Composition Validity", validity_text),
         ("Composition Completeness", format_value(_first_value(eval_row, "Composition_Completeness"), percent=True)),
         ("Functional Coverage", format_value(_first_value(eval_row, "Functional_Coverage"), percent=True)),
-        (TOTAL_RESPONSE_TIME_LABEL, format_response_time(_first_value(eval_row, "Total_Response_Time"))),
-        ("Bottleneck Throughput", format_value(_first_value(eval_row, "Bottleneck_Throughput"))),
+        (TOTAL_RESPONSE_TIME_LABEL, format_response_time(_first_value(eval_row, "Total_Response_Time_s"))),
+        (BOTTLENECK_THROUGHPUT_LABEL, format_throughput(_first_value(eval_row, "Bottleneck_Throughput_kbps"))),
         (WORKFLOW_AVAILABILITY_LABEL, format_value(workflow_availability)),
         ("Normalized QoS Score", format_value(_first_value(eval_row, "Normalized_QoS_Score"))),
         ("QoS-Adjusted Composition Score", format_value(_first_value(eval_row, "QoS_Adjusted_Composition_Score"))),
@@ -2037,8 +2044,8 @@ def _api_node_label(row: pd.Series, *, compact: bool) -> str:
     parts.append(
         " | ".join(
             [
-                f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_ms'))}",
-                f"Throughput: {format_value(row.get('tp_rps'))}",
+                f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_s'))}",
+                f"{THROUGHPUT_LABEL}: {format_throughput(row.get('tp_kbps'))}",
             ]
         )
     )
@@ -2236,7 +2243,7 @@ def build_workflow_figure(
             f"<b>Selected API {idx}</b><br>"
             f"{_wrap_text(row.get('API_Name') or row.get('API_ID'), width=40, max_lines=2)}<br>"
             f"Fit: {format_functional_fit(row.get('Functional_Match'))} | Rank: {format_value(row.get('Mode_Rank'), 0)}<br>"
-            f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_ms'))} | TP: {format_value(row.get('tp_rps'))} | Avail: {format_value(row.get('availability'))}<br>"
+            f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_s'))} | TP (kbps): {format_throughput(row.get('tp_kbps'))} | Avail: {format_value(row.get('availability'))}<br>"
             f"QoS Health: {format_api_health(row.get('API_QoS_Health'))} | Selection: {format_api_health(row.get('API_Selection_Health'))}<br>"
             f"Risk: {row.get('API_Risk_Label') or NA}"
         )
@@ -2479,8 +2486,8 @@ def _hover_for_mode_comparison(row: pd.Series, *, mode: str, idx: int, status: d
             f"Functional Risk: {escape(status['functional_risk'])}",
             f"QoS Risk: {escape(status['qos_risk'])}",
             f"QoS Health: {format_api_health(row.get('API_QoS_Health'))}",
-            f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_ms'))}",
-            f"Throughput: {format_value(row.get('tp_rps'))}",
+            f"{RESPONSE_TIME_LABEL}: {format_response_time(row.get('rt_s'))}",
+            f"{THROUGHPUT_LABEL}: {format_throughput(row.get('tp_kbps'))}",
             f"Availability: {format_value(row.get('availability'))}",
             f"Overall Status: {escape(status['overall_status'])}",
             f"Reason: {escape(status['reason'])}",
@@ -2573,8 +2580,8 @@ def build_bottleneck_figure(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) -
         for _, row in workflow.iterrows()
     ]
     specs = [
-        ("rt_ms", RESPONSE_TIME_LABEL, "Higher is worse"),
-        ("tp_rps", "Throughput", "Lower is worse"),
+        ("rt_s", RESPONSE_TIME_LABEL, "Higher is worse"),
+        ("tp_kbps", THROUGHPUT_LABEL, "Lower is worse"),
         ("availability", "Availability", "Lower is worse"),
     ]
     fig = make_subplots(
@@ -2599,11 +2606,11 @@ def build_bottleneck_figure(workflow: pd.DataFrame, bottlenecks: pd.DataFrame) -
                 y=values,
                 marker_color=colors,
                 hovertext=[
-                    _hover_for_step(row, title=f"{title}: {format_response_time(row.get(metric))}" if metric == "rt_ms" else f"{title}: {format_value(row.get(metric))}")
+                    _hover_for_step(row, title=f"{title}: {format_response_time(row.get(metric))}" if metric == "rt_s" else f"{title}: {format_throughput(row.get(metric))}" if metric == "tp_kbps" else f"{title}: {format_value(row.get(metric))}")
                     for _, row in workflow.iterrows()
                 ],
                 hoverinfo="text",
-                text=[format_response_time(value) if metric == "rt_ms" else format_value(value) for value in values],
+                text=[format_response_time(value) if metric == "rt_s" else format_throughput(value) if metric == "tp_kbps" else format_value(value) for value in values],
                 textposition="outside",
                 cliponaxis=False,
             ),
@@ -2843,8 +2850,8 @@ def mode_summary_table(
                 "Composition_Validity": _first_value(eval_row, "Composition_Validity") if eval_row else NA,
                 "Composition_Completeness": _first_value(eval_row, "Composition_Completeness") if eval_row else NA,
                 "Functional_Coverage": _first_value(eval_row, "Functional_Coverage") if eval_row else NA,
-                "Total_Response_Time": _first_value(eval_row, "Total_Response_Time") if eval_row else NA,
-                "Bottleneck_Throughput": _first_value(eval_row, "Bottleneck_Throughput") if eval_row else NA,
+                "Total_Response_Time_s": _first_value(eval_row, "Total_Response_Time_s") if eval_row else NA,
+                "Bottleneck_Throughput_kbps": _first_value(eval_row, "Bottleneck_Throughput_kbps") if eval_row else NA,
                 "Average_Workflow_Availability": workflow_availability_value(eval_row, workflow) if eval_row else NA,
                 "Normalized_QoS_Score": _first_value(eval_row, "Normalized_QoS_Score") if eval_row else NA,
                 "QoS_Adjusted_Composition_Score": _first_value(eval_row, "QoS_Adjusted_Composition_Score") if eval_row else NA,
@@ -2864,7 +2871,7 @@ def comparison_highlights(summary: pd.DataFrame, differences: pd.DataFrame) -> l
 
     metric_specs = [
         ("QoS_Adjusted_Composition_Score", "Highest QoS-adjusted composition score", True),
-        ("Total_Response_Time", "Lowest total response time (s)", False),
+        ("Total_Response_Time_s", "Lowest total response time (s)", False),
         ("Functional_Coverage", "Highest functional coverage", True),
         ("Normalized_QoS_Score", "Highest normalized QoS score", True),
     ]

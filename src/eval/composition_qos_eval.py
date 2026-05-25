@@ -20,8 +20,8 @@ EVAL_COLUMNS = [
     "Composition_Completeness",
     "Composition_Completeness_Gate",
     "Functional_Coverage",
-    "Total_Response_Time",
-    "Bottleneck_Throughput",
+    "Total_Response_Time_s",
+    "Bottleneck_Throughput_kbps",
     "Average_Workflow_Availability",
     "Normalized_Response_Time_Score",
     "Normalized_Throughput_Score",
@@ -39,8 +39,8 @@ SUMMARY_COLUMNS = [
     "Rank_By_QoS_Adjusted_Score",
     "Functional_Coverage",
     "Normalized_QoS_Score",
-    "Total_Response_Time",
-    "Bottleneck_Throughput",
+    "Total_Response_Time_s",
+    "Bottleneck_Throughput_kbps",
     "Average_Workflow_Availability",
     "Composition_Completeness",
     "Composition_Completeness_Gate",
@@ -63,8 +63,8 @@ WORKFLOW_COLUMNS = [
     "Subtask_ID",
     "API_ID",
     "Functional_Match",
-    "rt_ms",
-    "tp_rps",
+    "rt_s",
+    "tp_kbps",
     "availability",
     "Action",
     "Input_From_Previous_Step",
@@ -98,13 +98,13 @@ DEFINITION_ROWS = [
         "Direction": "Higher is better",
     },
     {
-        "Metric": "Total_Response_Time",
+        "Metric": "Total_Response_Time_s",
         "Category": "QoS quality",
         "Definition": "Sum of response times across planned APIs.",
         "Direction": "Lower is better",
     },
     {
-        "Metric": "Bottleneck_Throughput",
+        "Metric": "Bottleneck_Throughput_kbps",
         "Category": "QoS quality",
         "Definition": "Minimum throughput across planned APIs.",
         "Direction": "Higher is better",
@@ -140,8 +140,8 @@ BEST_METRIC_SPECS = [
     ("qos_adjusted_composition_score", "QoS_Adjusted_Composition_Score", True, "Higher is better"),
     ("functional_coverage", "Functional_Coverage", True, "Higher is better"),
     ("normalized_qos_score", "Normalized_QoS_Score", True, "Higher is better"),
-    ("total_response_time", "Total_Response_Time", False, "Lower is better"),
-    ("bottleneck_throughput", "Bottleneck_Throughput", True, "Higher is better"),
+    ("total_response_time", "Total_Response_Time_s", False, "Lower is better"),
+    ("bottleneck_throughput", "Bottleneck_Throughput_kbps", True, "Higher is better"),
     ("average_workflow_availability", "Average_Workflow_Availability", True, "Higher is better"),
     ("composition_completeness", "Composition_Completeness", True, "Higher is better"),
 ]
@@ -276,7 +276,7 @@ def _qos_from_selected(row: Dict[str, Any] | None) -> Tuple[float | None, float 
         qos = service.get("qos")
     if not isinstance(qos, dict):
         qos = {}
-    return _as_float(qos.get("rt_ms")), _as_float(qos.get("tp_rps")), _as_float(qos.get("availability"))
+    return _as_float(qos.get("rt_s")), _as_float(qos.get("tp_kbps")), _as_float(qos.get("availability"))
 
 
 def _metrics_for_step(
@@ -289,8 +289,8 @@ def _metrics_for_step(
 ) -> Tuple[int, float | None, float | None, float | None]:
     candidate = candidate_rows.get((mode, subtask_id, api_id))
     functional = _as_int_label(candidate.get("Functional Match (0/1)")) if isinstance(candidate, dict) else 0
-    rt = _as_float(candidate.get("QoS_RT")) if isinstance(candidate, dict) else None
-    tp = _as_float(candidate.get("QoS_TP")) if isinstance(candidate, dict) else None
+    rt = _as_float(candidate.get("QoS_RT_s")) if isinstance(candidate, dict) else None
+    tp = _as_float(candidate.get("QoS_TP_kbps")) if isinstance(candidate, dict) else None
     av = _as_float(candidate.get("QoS Availability")) if isinstance(candidate, dict) else None
     fallback_rt, fallback_tp, fallback_av = _qos_from_selected(selected_rows.get(api_id))
     return functional, rt if rt is not None else fallback_rt, tp if tp is not None else fallback_tp, av if av is not None else fallback_av
@@ -404,8 +404,8 @@ def _evaluate_mode(
                 "Subtask_ID": sid,
                 "API_ID": api_id,
                 "Functional_Match": functional,
-                "rt_ms": rt,
-                "tp_rps": tp,
+                "rt_s": rt,
+                "tp_kbps": tp,
                 "availability": av,
                 "Action": step.get("action", ""),
                 "Input_From_Previous_Step": step.get("input_from_previous_step", ""),
@@ -434,8 +434,8 @@ def _evaluate_mode(
         "Composition_Completeness": completeness,
         "Composition_Completeness_Gate": completeness_gate,
         "Functional_Coverage": (functional_matches / planned_api_count) if planned_api_count else 0.0,
-        "Total_Response_Time": round(sum(rt_values), 6) if qos_available else None,
-        "Bottleneck_Throughput": round(min(tp_values), 6) if qos_available else None,
+        "Total_Response_Time_s": round(sum(rt_values), 6) if qos_available else None,
+        "Bottleneck_Throughput_kbps": round(min(tp_values), 6) if qos_available else None,
         "Average_Workflow_Availability": round(_average(av_values), 6) if qos_available else None,
         "Normalized_Response_Time_Score": 0.0 if valid == 0 or has_missing_qos else None,
         "Normalized_Throughput_Score": 0.0 if valid == 0 or has_missing_qos else None,
@@ -449,8 +449,8 @@ def _evaluate_mode(
 
 def _normalize(rows: List[Dict[str, Any]]) -> None:
     metric_specs = [
-        ("Total_Response_Time", "Normalized_Response_Time_Score", False),
-        ("Bottleneck_Throughput", "Normalized_Throughput_Score", True),
+        ("Total_Response_Time_s", "Normalized_Response_Time_Score", False),
+        ("Bottleneck_Throughput_kbps", "Normalized_Throughput_Score", True),
         ("Average_Workflow_Availability", "Normalized_Availability_Score", True),
     ]
     for raw_key, norm_key, higher_better in metric_specs:
@@ -474,7 +474,7 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
                 row[norm_key] = round((max_value - raw) / (max_value - min_value), 6)
 
     for row in rows:
-        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time", "Bottleneck_Throughput", "Average_Workflow_Availability"]):
+        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time_s", "Bottleneck_Throughput_kbps", "Average_Workflow_Availability"]):
             row["Normalized_QoS_Score"] = 0.0
         else:
             row["Normalized_QoS_Score"] = round(
@@ -574,8 +574,8 @@ def _summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                 "Rank_By_QoS_Adjusted_Score": score_ranks.get(mode),
                 "Functional_Coverage": row.get("Functional_Coverage"),
                 "Normalized_QoS_Score": row.get("Normalized_QoS_Score"),
-                "Total_Response_Time": row.get("Total_Response_Time"),
-                "Bottleneck_Throughput": row.get("Bottleneck_Throughput"),
+                "Total_Response_Time_s": row.get("Total_Response_Time_s"),
+                "Bottleneck_Throughput_kbps": row.get("Bottleneck_Throughput_kbps"),
                 "Average_Workflow_Availability": row.get("Average_Workflow_Availability"),
                 "Composition_Completeness": row.get("Composition_Completeness"),
                 "Composition_Completeness_Gate": row.get("Composition_Completeness_Gate"),
@@ -738,8 +738,8 @@ def _append_rows(ws, columns: List[str], rows: List[Dict[str, Any]], numeric_col
 
 def _highlight_main_sheet(ws, rows: List[Dict[str, Any]]) -> None:
     best_specs = [
-        ("Total_Response_Time", False),
-        ("Bottleneck_Throughput", True),
+        ("Total_Response_Time_s", False),
+        ("Bottleneck_Throughput_kbps", True),
         ("Average_Workflow_Availability", True),
         ("Functional_Coverage", True),
         ("Normalized_QoS_Score", True),
@@ -773,8 +773,8 @@ def _write_excel(path: Path, rows: List[Dict[str, Any]], summary: List[Dict[str,
         "Composition_Completeness",
         "Composition_Completeness_Gate",
         "Functional_Coverage",
-        "Total_Response_Time",
-        "Bottleneck_Throughput",
+        "Total_Response_Time_s",
+        "Bottleneck_Throughput_kbps",
         "Average_Workflow_Availability",
         "Normalized_Response_Time_Score",
         "Normalized_Throughput_Score",
@@ -793,7 +793,7 @@ def _write_excel(path: Path, rows: List[Dict[str, Any]], summary: List[Dict[str,
     _append_rows(ws, BEST_MODE_SUMMARY_COLUMNS, _best_mode_summary_rows(score_summary), numeric)
 
     ws = wb.create_sheet("Planned_Workflow")
-    _append_rows(ws, WORKFLOW_COLUMNS, workflow, {"rt_ms", "tp_rps", "availability"})
+    _append_rows(ws, WORKFLOW_COLUMNS, workflow, {"rt_s", "tp_kbps", "availability"})
 
     ws = wb.create_sheet("Metric_Definitions")
     _append_rows(ws, ["Metric", "Category", "Definition", "Direction"], DEFINITION_ROWS)

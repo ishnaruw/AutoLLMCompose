@@ -32,11 +32,14 @@ GROQ_MODEL_REQUEST_TOKEN_LIMITS = {
     "qwen/qwen3-32b": 6000,
 }
 DEFAULT_FIREWORKS_MODELS = [
-    "accounts/fireworks/models/deepseek-v3p1",
     "accounts/fireworks/models/gpt-oss-120b",
+    "accounts/fireworks/models/deepseek-v3p2",
     "accounts/fireworks/models/llama-v3p1-8b-instruct",
+    "accounts/fireworks/models/deepseek-v3p1",
 ]
 _FIREWORKS_MODEL_ALIASES = {
+    "deepseek-v3.2": "accounts/fireworks/models/deepseek-v3p2",
+    "deepseek-v3p2": "accounts/fireworks/models/deepseek-v3p2",
     "deepseek-v3p1": "accounts/fireworks/models/deepseek-v3p1",
     "gpt-oss-120b": "accounts/fireworks/models/gpt-oss-120b",
     "llama-v3p1-8b-instruct": "accounts/fireworks/models/llama-v3p1-8b-instruct",

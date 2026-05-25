@@ -165,8 +165,8 @@ def _selection_order(row):
 
 _NO_QOS_SERVICE_KEYS = {
     "qos",
-    "rt_ms",
-    "tp_rps",
+    "rt_s",
+    "tp_kbps",
     "availability",
     "qos_score",
     "qos_rank",
@@ -190,8 +190,8 @@ _PLANNER_SERVICE_KEYS = (
 
 _PLANNER_QOS_KEYS = (
     "qos",
-    "rt_ms",
-    "tp_rps",
+    "rt_s",
+    "tp_kbps",
     "availability",
     "qos_score",
     "qos_rank",

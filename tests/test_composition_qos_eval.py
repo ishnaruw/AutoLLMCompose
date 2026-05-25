@@ -27,8 +27,8 @@ class CompositionQosEvalTests(unittest.TestCase):
                 ],
             )
             selected_rows = {
-                "api_a": {"api_id": "api_a", "service": {"qos": {"rt_ms": 10, "tp_rps": 50, "availability": 0.9}}},
-                "api_b": {"api_id": "api_b", "service": {"qos": {"rt_ms": 20, "tp_rps": 40, "availability": 0.8}}},
+                "api_a": {"api_id": "api_a", "service": {"qos": {"rt_s": 10, "tp_kbps": 50, "availability": 0.9}}},
+                "api_b": {"api_id": "api_b", "service": {"qos": {"rt_s": 20, "tp_kbps": 40, "availability": 0.8}}},
             }
             self._write_json(query_dir / "no_qos" / "3_selected_s1.json", [selected_rows["api_a"]])
             self._write_json(query_dir / "no_qos" / "3_selected_s2.json", [selected_rows["api_b"]])
@@ -99,8 +99,8 @@ class CompositionQosEvalTests(unittest.TestCase):
                         "Sub Task": "1",
                         "Selected_API": "api_a",
                         "Functional Match (0/1)": 1,
-                        "QoS_RT": 10,
-                        "QoS_TP": 50,
+                        "QoS_RT_s": 10,
+                        "QoS_TP_kbps": 50,
                         "QoS Availability": 0.9,
                     },
                     {
@@ -108,8 +108,8 @@ class CompositionQosEvalTests(unittest.TestCase):
                         "Sub Task": "2",
                         "Selected_API": "api_b",
                         "Functional Match (0/1)": 1,
-                        "QoS_RT": 20,
-                        "QoS_TP": 40,
+                        "QoS_RT_s": 20,
+                        "QoS_TP_kbps": 40,
                         "QoS Availability": 0.8,
                     },
                     {
@@ -117,8 +117,8 @@ class CompositionQosEvalTests(unittest.TestCase):
                         "Sub Task": "1",
                         "Selected_API": "api_a",
                         "Functional Match (0/1)": 1,
-                        "QoS_RT": 40,
-                        "QoS_TP": 10,
+                        "QoS_RT_s": 40,
+                        "QoS_TP_kbps": 10,
                         "QoS Availability": 0.5,
                     },
                 ],
@@ -157,7 +157,7 @@ class CompositionQosEvalTests(unittest.TestCase):
             query_dir = Path(tmp)
             eval_dir = query_dir / "evaluation"
             self._write_json(query_dir / "0_decomposer.json", [{"id": 1, "description": "Call API"}])
-            selected = {"api_id": "api_a", "service": {"qos": {"rt_ms": 10, "tp_rps": 50, "availability": 0.9}}}
+            selected = {"api_id": "api_a", "service": {"qos": {"rt_s": 10, "tp_kbps": 50, "availability": 0.9}}}
             for mode in ["no_qos", "qos_hybrid"]:
                 self._write_json(query_dir / mode / "3_selected_s1.json", [selected])
                 self._write_json(
@@ -192,8 +192,8 @@ class CompositionQosEvalTests(unittest.TestCase):
                         "Sub Task": "1",
                         "Selected_API": "api_a",
                         "Functional Match (0/1)": 1,
-                        "QoS_RT": 10,
-                        "QoS_TP": 50,
+                        "QoS_RT_s": 10,
+                        "QoS_TP_kbps": 50,
                         "QoS Availability": 0.9,
                     }
                     for mode in ["no_qos", "qos_hybrid"]

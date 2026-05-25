@@ -274,9 +274,9 @@ class PlannerRepairTests(unittest.TestCase):
         prompts = []
         service = {
             "api_id": "api_a",
-            "qos": {"rt_ms": 1},
-            "rt_ms": 1,
-            "tp_rps": 2,
+            "qos": {"rt_s": 1},
+            "rt_s": 1,
+            "tp_kbps": 2,
             "availability": 0.9,
             "qos_score": 0.8,
             "qos_rank": 1,
@@ -316,7 +316,7 @@ class PlannerRepairTests(unittest.TestCase):
             prompt_path=str(no_qos_path),
         )
 
-        for field in ['"qos"', '"rt_ms"', '"tp_rps"', '"availability"', '"qos_score"', '"qos_rank"', '"topsis_score"', '"topsis_rank"', '"qos_llm_score"', '"qos_llm_rank"']:
+        for field in ['"qos"', '"rt_s"', '"tp_kbps"', '"availability"', '"qos_score"', '"qos_rank"', '"topsis_score"', '"topsis_rank"', '"qos_llm_score"', '"qos_llm_rank"']:
             self.assertNotIn(field, prompts[0])
         self.assertIn("qos", service)
 
@@ -349,7 +349,7 @@ class PlannerRepairTests(unittest.TestCase):
                 "status": "matched",
                 "toolbench_relative_path": "Weather/api_a.json",
             },
-            "qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10},
+            "qos": {"availability": 0.99, "rt_s": 100, "tp_kbps": 10},
         }
         response = {
             "primary_plan": {
@@ -364,7 +364,7 @@ class PlannerRepairTests(unittest.TestCase):
                         "input_from_previous_step": None,
                         "output_to_next_step": "result",
                         "why": "Matches",
-                        "qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10},
+                        "qos": {"availability": 0.99, "rt_s": 100, "tp_kbps": 10},
                     }
                 ],
                 "subtask_coverage": [],
@@ -387,7 +387,7 @@ class PlannerRepairTests(unittest.TestCase):
         self.assertIn('"url": "https://example.test/api"', prompts[0])
         self.assertIn('"required_parameters": [{"name": "lat", "type": "NUMBER"}]', prompts[0])
         self.assertIn('"optional_parameters": [{"name": "units", "type": "STRING"}]', prompts[0])
-        self.assertIn('"qos": {"availability": 0.99, "rt_ms": 100, "tp_rps": 10}', prompts[0])
+        self.assertIn('"qos": {"availability": 0.99, "rt_s": 100, "tp_kbps": 10}', prompts[0])
 
         for field in [
             '"_file"',
