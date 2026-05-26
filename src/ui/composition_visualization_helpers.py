@@ -920,11 +920,11 @@ def get_recommended_mode(
     filtered["_validity"] = filtered[validity_col].apply(_as_match_label) if validity_col else None
     filtered["_complete"] = filtered.apply(lambda row: _composition_completeness_gate(row), axis=1)
     filtered["_score"] = pd.to_numeric(filtered.get("QoS_Adjusted_Composition_Score"), errors="coerce")
+    complete_rows = filtered[filtered["_complete"] == 1.0].copy()
     valid_rows = filtered[filtered["_validity"] == 1].copy()
-    complete_valid_rows = filtered[(filtered["_validity"] == 1) & (filtered["_complete"] == 1.0)].copy()
-    has_complete_valid = not complete_valid_rows.empty
+    has_complete = not complete_rows.empty
     has_valid = not valid_rows.empty
-    candidates = complete_valid_rows if has_complete_valid else valid_rows if has_valid else filtered.copy()
+    candidates = complete_rows if has_complete else filtered.copy()
 
     scored = candidates[candidates["_score"].notna()].copy()
     if scored.empty:
@@ -935,7 +935,7 @@ def get_recommended_mode(
             "reason": "Recommendation unavailable.",
             "warning": "All QoS-adjusted composition scores are missing for this query.",
             "valid_candidate_count": int(len(valid_rows)),
-            "complete_candidate_count": int(len(complete_valid_rows)),
+            "complete_candidate_count": int(len(complete_rows)),
         }
 
     tie_specs = [
@@ -960,7 +960,7 @@ def get_recommended_mode(
         key=lambda mode: MODE_ORDER.index(mode) if mode in MODE_ORDER else len(MODE_ORDER),
     )
     best = scored.sort_values(sort_cols, ascending=ascending, na_position="last", kind="mergesort").iloc[0]
-    status = "recommended" if has_complete_valid else "diagnostic"
+    status = "recommended" if has_complete else "diagnostic"
     is_tie = len(best_modes) > 1
     result: dict[str, Any] = {
         "status": status,
@@ -970,25 +970,25 @@ def get_recommended_mode(
         "is_tie": is_tie,
         "row": {key: value for key, value in best.to_dict().items() if not str(key).startswith("_")},
         "reason": (
-            "Tied highest QoS-adjusted composition score among valid complete modes"
-            if has_complete_valid and is_tie
-            else "Highest QoS-adjusted composition score among valid complete modes"
-            if has_complete_valid
-            else "No valid complete workflow is available; showing tied highest-scoring diagnostic modes"
+            "Tied highest QoS-adjusted composition score among composition-complete modes"
+            if has_complete and is_tie
+            else "Highest QoS-adjusted composition score among composition-complete modes"
+            if has_complete
+            else "No complete workflow is available; showing tied highest-scoring diagnostic modes"
             if is_tie
-            else "No valid complete workflow is available; showing the highest-scoring diagnostic mode"
+            else "No complete workflow is available; showing the highest-scoring diagnostic mode"
         ),
         "valid_candidate_count": int(len(valid_rows)),
-        "complete_candidate_count": int(len(complete_valid_rows)),
+        "complete_candidate_count": int(len(complete_rows)),
     }
 
-    if has_complete_valid:
+    if has_complete:
         recommended_fc = _as_float(best.get("Functional_Coverage"))
-        complete_valid_rows = complete_valid_rows.copy()
-        complete_valid_rows["_fc"] = pd.to_numeric(complete_valid_rows.get("Functional_Coverage"), errors="coerce")
+        complete_rows = complete_rows.copy()
+        complete_rows["_fc"] = pd.to_numeric(complete_rows.get("Functional_Coverage"), errors="coerce")
         higher_fc = pd.DataFrame()
         if recommended_fc is not None:
-            higher_fc = complete_valid_rows[complete_valid_rows["_fc"].notna()]
+            higher_fc = complete_rows[complete_rows["_fc"].notna()]
             higher_fc = higher_fc[higher_fc["_fc"] > recommended_fc]
         if not higher_fc.empty:
             best_fc = higher_fc.sort_values(["_fc", "_score", "_mode_order"], ascending=[False, False, True], na_position="last").iloc[0]
@@ -2384,8 +2384,6 @@ def best_composition_modes(eval_rows_by_mode: dict[str, dict[str, Any]], modes: 
     candidates: list[tuple[str, float]] = []
     for mode in modes:
         eval_row = eval_rows_by_mode.get(mode) or {}
-        if _composition_validity(eval_row) != 1:
-            continue
         if _composition_completeness_gate(eval_row) != 1.0:
             continue
         score = _as_float(_first_value(eval_row, "QoS_Adjusted_Composition_Score"))
@@ -2446,11 +2444,11 @@ def _mode_comparison_status(
     elif mode in recommended_modes:
         key = "recommended"
         overall = "Recommended"
-        reason = "This mode has the best QoS-adjusted composition score among valid complete modes."
+        reason = "This mode has the best QoS-adjusted composition score among composition-complete modes."
     elif functional == 1 and qos_risk == "High":
         key = "qos_risk"
         overall = "Valid Alternative with QoS Risk"
-        reason = "The mode is valid and complete, but this API has high QoS risk."
+        reason = "The mode is composition-complete, but this API has high QoS risk."
     elif functional is None:
         key = "missing"
         overall = "Missing Data"
@@ -2458,7 +2456,7 @@ def _mode_comparison_status(
     else:
         key = "valid_alternative"
         overall = "Valid Alternative"
-        reason = "The mode is valid and complete but is not the best final composition score for this query."
+        reason = "The mode is composition-complete but is not the best final composition score for this query."
 
     return {
         "fill": COMPOSITION_STATUS_COLORS[key],

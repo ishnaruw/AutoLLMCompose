@@ -41,6 +41,10 @@ _ALWAYS_INTERNAL_PATTERNS = (
     r"\bdaily\b.*\bschedule\b",
     r"\bcron\b.*\bworkflow\b",
     r"\brecurring\b.*\bworkflow\b",
+    r"\b(?:check|compare)\b.*\b(?:fetched|current|retrieved)\b.*\bprices?\b.*\b(?:stored|baseline|previous|previously recorded|historical|recorded)\b",
+    r"\b(?:check|compare)\b.*\b(?:stored|baseline|previous|previously recorded|historical|recorded)\b.*\b(?:fetched|current|retrieved)\b.*\bprices?\b",
+    r"\b(?:detect|identify)\b.*\bprice drops?\b.*\b(?:stored|baseline|previous|previously recorded|recorded|threshold)\b",
+    r"\b(?:stored|baseline|previous|previously recorded|recorded|threshold)\b.*\b(?:detect|identify)\b.*\bprice drops?\b",
 )
 
 _EXPLICIT_API_BACKED_TERMS = (

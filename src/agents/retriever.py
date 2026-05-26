@@ -1,10 +1,31 @@
 # src/agents/retriever.py
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
 
-from src.rag.retriever import FaissServiceRetriever
+if TYPE_CHECKING:
+    from src.rag.retriever import FaissServiceRetriever
+
+
+def _normalize_retrieval_query(subtask_goal: str) -> str:
+    """Apply narrow deterministic query boosts for known retrieval failure modes."""
+    query = re.sub(r"\s+", " ", str(subtask_goal or "").strip())
+    if not query:
+        return query
+
+    text = query.lower()
+    has_email = bool(re.search(r"\be-?mail\b", text))
+    has_send_action = bool(re.search(r"\b(?:send|deliver|mail|notify|email)\b", text))
+    has_other_channel = bool(
+        re.search(r"\b(?:sms|text message|push|whatsapp|slack|phone|voice)\b", text)
+    )
+
+    if has_email and has_send_action and not has_other_channel:
+        return f"send email email delivery api email notification api {query}"
+
+    return query
 
 
 @dataclass
@@ -12,20 +33,22 @@ class RagRetrieverAgent:
     """
     Deterministic RAG retrieval agent adapter.
 
-    This intentionally does not use an LLM to rewrite, filter, or expand the
-    query. It preserves the existing FAISS retrieval behavior while giving the
-    retrieval stage an agent-shaped interface for the AutoGen pipeline.
+    This intentionally does not use an LLM to rewrite or filter the query. It
+    applies only narrow deterministic normalization before FAISS retrieval while
+    giving the retrieval stage an agent-shaped interface for the AutoGen pipeline.
     """
     index_dir: str
     name: str = "rag_retriever"
     description: str = "Deterministic FAISS-backed API retrieval agent"
-    rag: FaissServiceRetriever = field(init=False)
+    rag: "FaissServiceRetriever" = field(init=False)
 
     def __post_init__(self) -> None:
+        from src.rag.retriever import FaissServiceRetriever
+
         self.rag = FaissServiceRetriever(index_dir=str(self.index_dir))
 
     def retrieve(self, subtask_goal: str, *, top_k: int = 60) -> List[Dict[str, Any]]:
-        retrieved = self.rag.query(subtask_goal, top_k=top_k)
+        retrieved = self.rag.query(_normalize_retrieval_query(subtask_goal), top_k=top_k)
 
         out: List[Dict[str, Any]] = []
         for c in retrieved:

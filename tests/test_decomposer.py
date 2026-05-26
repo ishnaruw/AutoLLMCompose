@@ -102,6 +102,29 @@ class DecomposerPostprocessTests(unittest.TestCase):
         self.assertIn("Scan the URL for malware", subtasks[0]["description"])
         self.assertIn("downstream blocking service", subtasks[0]["description"])
 
+    def test_folds_price_baseline_comparison_even_when_it_mentions_api(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Search for the target product on each eCommerce platform using product search APIs"},
+                    {"id": 2, "description": "Fetch current pricing details for the located product listings via price retrieval APIs"},
+                    {
+                        "id": 3,
+                        "description": "Check the fetched prices against stored baseline values to detect any price drops using a price-monitoring/check API",
+                    },
+                    {"id": 4, "description": "Send an alert through a notification API when a price drop is detected"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(raw, "fallback")
+
+        self.assertEqual(len(subtasks), 3)
+        self.assertEqual([s["id"] for s in subtasks], [1, 2, 3])
+        self.assertIn("Fetch current pricing details", subtasks[1]["description"])
+        self.assertIn("Check the fetched prices against stored baseline values", subtasks[1]["description"])
+        self.assertIn("Send an alert", subtasks[2]["description"])
+
 
 if __name__ == "__main__":
     unittest.main()

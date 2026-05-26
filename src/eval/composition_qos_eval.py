@@ -82,13 +82,13 @@ DEFINITION_ROWS = [
     {
         "Metric": "Composition_Completeness",
         "Category": "Planning quality",
-        "Definition": "Fraction of decomposed subtasks covered by valid planned steps.",
+        "Definition": "Binary metric set to 1 only when every decomposed subtask is covered by a valid planned step, otherwise 0.",
         "Direction": "Higher is better",
     },
     {
         "Metric": "Composition_Completeness_Gate",
         "Category": "Planning quality",
-        "Definition": "Hard gate set to 1 only when the workflow covers all subtasks, otherwise 0.",
+        "Definition": "Backward-compatible alias of binary Composition_Completeness.",
         "Direction": "Higher is better",
     },
     {
@@ -118,13 +118,13 @@ DEFINITION_ROWS = [
     {
         "Metric": "Normalized_QoS_Score",
         "Category": "QoS quality",
-        "Definition": "Average of normalized response time, throughput, and availability scores.",
+        "Definition": "Average of relative-to-best normalized response time, throughput, and availability scores computed over composition-complete workflows with valid QoS metrics.",
         "Direction": "Higher is better",
     },
     {
         "Metric": "QoS_Adjusted_Composition_Score",
         "Category": "Overall comparison",
-        "Definition": "Completeness-gated weighted score using 70% functional coverage and 30% normalized QoS score.",
+        "Definition": "Binary-completeness-gated weighted score: Composition_Completeness * (0.7 * Functional_Coverage + 0.3 * Normalized_QoS_Score). Composition_Validity is reported only as a diagnostic.",
         "Direction": "Higher is better",
     },
 ]
@@ -420,9 +420,14 @@ def _evaluate_mode(
             seen_reasons.append(reason)
 
     valid = 1 if not seen_reasons else 0
-    completeness = (len(covered_valid_subtasks) / total_subtasks) if total_subtasks else 0.0
-    completeness_gate = 1.0 if completeness >= COMPLETENESS_GATE_THRESHOLD else 0.0
-    qos_available = valid == 1 and planned_api_count > 0 and not has_missing_qos and len(rt_values) == planned_api_count
+    # Binary completeness: a composition is complete only when every decomposed subtask
+    # has a structurally valid planned step. Partial coverage is intentionally scored as 0.
+    completeness = 1.0 if total_subtasks > 0 and len(covered_valid_subtasks) == total_subtasks else 0.0
+    completeness_gate = completeness
+    # QoS is measurable from the selected planned APIs even if Composition_Validity reports
+    # a diagnostic issue such as ordering or formatting. Composition_Validity is not used
+    # in the final score calculation.
+    qos_available = planned_api_count > 0 and not has_missing_qos and len(rt_values) == planned_api_count
     row = {
         "Query_ID": query_id,
         "Mode": mode,
@@ -437,68 +442,109 @@ def _evaluate_mode(
         "Total_Response_Time_s": round(sum(rt_values), 6) if qos_available else None,
         "Bottleneck_Throughput_kbps": round(min(tp_values), 6) if qos_available else None,
         "Average_Workflow_Availability": round(_average(av_values), 6) if qos_available else None,
-        "Normalized_Response_Time_Score": 0.0 if valid == 0 or has_missing_qos else None,
-        "Normalized_Throughput_Score": 0.0 if valid == 0 or has_missing_qos else None,
-        "Normalized_Availability_Score": 0.0 if valid == 0 or has_missing_qos else None,
-        "Normalized_QoS_Score": 0.0 if valid == 0 or has_missing_qos else None,
+        "Normalized_Response_Time_Score": 0.0 if has_missing_qos else None,
+        "Normalized_Throughput_Score": 0.0 if has_missing_qos else None,
+        "Normalized_Availability_Score": 0.0 if has_missing_qos else None,
+        "Normalized_QoS_Score": 0.0 if has_missing_qos else None,
         "QoS_Adjusted_Composition_Score": None,
         "Planner_Output_File": _rel(planner_path, query_dir),
     }
     return row, workflow_rows
 
 
+def _clamp_01(value: float) -> float:
+    return max(0.0, min(1.0, value))
+
+
+def _has_valid_qos_metrics(row: Dict[str, Any]) -> bool:
+    return all(
+        _as_float(row.get(key)) is not None
+        for key in [
+            "Total_Response_Time_s",
+            "Bottleneck_Throughput_kbps",
+            "Average_Workflow_Availability",
+        ]
+    )
+
+
+def _is_composition_complete_for_qos(row: Dict[str, Any]) -> bool:
+    """Return True when a workflow can define relative-to-best QoS references."""
+    return float(row.get("Composition_Completeness") or 0.0) >= 1.0 and _has_valid_qos_metrics(row)
+
+
 def _normalize(rows: List[Dict[str, Any]]) -> None:
-    metric_specs = [
-        ("Total_Response_Time_s", "Normalized_Response_Time_Score", False),
-        ("Bottleneck_Throughput_kbps", "Normalized_Throughput_Score", True),
-        ("Average_Workflow_Availability", "Normalized_Availability_Score", True),
-    ]
-    for raw_key, norm_key, higher_better in metric_specs:
-        values = [_as_float(row.get(raw_key)) for row in rows if _as_float(row.get(raw_key)) is not None]
-        if not values:
-            for row in rows:
-                if row.get(norm_key) is None:
-                    row[norm_key] = 0.0
-            continue
-        min_value = min(values)
-        max_value = max(values)
-        for row in rows:
-            raw = _as_float(row.get(raw_key))
-            if raw is None:
-                row[norm_key] = 0.0
-            elif max_value == min_value:
-                row[norm_key] = 1.0
-            elif higher_better:
-                row[norm_key] = round((raw - min_value) / (max_value - min_value), 6)
-            else:
-                row[norm_key] = round((max_value - raw) / (max_value - min_value), 6)
+    # Relative-to-best normalization is used because each query compares only a small
+    # number of workflow alternatives. This preserves proportional QoS differences
+    # and avoids exaggerating tiny metric gaps, especially for availability.
+    # QoS references are computed only from composition-complete workflows so an
+    # incomplete workflow cannot look artificially fast by skipping subtasks.
+    viable_rows = [row for row in rows if _is_composition_complete_for_qos(row)]
+
+    best_response_time = min(
+        (_as_float(row.get("Total_Response_Time_s")) for row in viable_rows),
+        default=None,
+    )
+    best_throughput = max(
+        (_as_float(row.get("Bottleneck_Throughput_kbps")) for row in viable_rows),
+        default=None,
+    )
+    best_availability = max(
+        (_as_float(row.get("Average_Workflow_Availability")) for row in viable_rows),
+        default=None,
+    )
 
     for row in rows:
-        if row.get("Composition_Validity") == 0 or any(row.get(k) is None for k in ["Total_Response_Time_s", "Bottleneck_Throughput_kbps", "Average_Workflow_Availability"]):
+        complete = float(row.get("Composition_Completeness") or 0.0) >= 1.0
+        has_qos = _has_valid_qos_metrics(row)
+
+        if not has_qos or not complete:
+            row["Normalized_Response_Time_Score"] = 0.0
+            row["Normalized_Throughput_Score"] = 0.0
+            row["Normalized_Availability_Score"] = 0.0
             row["Normalized_QoS_Score"] = 0.0
-        else:
-            row["Normalized_QoS_Score"] = round(
-                (
-                    float(row["Normalized_Response_Time_Score"])
-                    + float(row["Normalized_Throughput_Score"])
-                    + float(row["Normalized_Availability_Score"])
-                )
-                / 3.0,
-                6,
-            )
-        validity = float(row.get("Composition_Validity") or 0.0)
-        completeness_gate = float(row.get("Composition_Completeness_Gate") or 0.0)
-        # The final score uses completeness as a hard gate because incomplete workflows do not fully
-        # satisfy the user request. Among complete workflows, functional coverage is weighted higher
-        # than QoS because functional suitability is required before QoS optimization is meaningful.
-        if validity <= 0.0 or completeness_gate <= 0.0:
             row["QoS_Adjusted_Composition_Score"] = 0.0
+            continue
+
+        total_response_time = _as_float(row.get("Total_Response_Time_s"))
+        bottleneck_throughput = _as_float(row.get("Bottleneck_Throughput_kbps"))
+        average_availability = _as_float(row.get("Average_Workflow_Availability"))
+
+        if best_response_time is not None and best_response_time > 0 and total_response_time and total_response_time > 0:
+            row["Normalized_Response_Time_Score"] = round(_clamp_01(best_response_time / total_response_time), 6)
         else:
-            row["QoS_Adjusted_Composition_Score"] = round(
-                0.7 * float(row.get("Functional_Coverage") or 0.0)
-                + 0.3 * float(row.get("Normalized_QoS_Score") or 0.0),
-                6,
+            row["Normalized_Response_Time_Score"] = 0.0
+
+        if best_throughput is not None and best_throughput > 0 and bottleneck_throughput is not None:
+            row["Normalized_Throughput_Score"] = round(_clamp_01(bottleneck_throughput / best_throughput), 6)
+        else:
+            row["Normalized_Throughput_Score"] = 0.0
+
+        if best_availability is not None and best_availability > 0 and average_availability is not None:
+            row["Normalized_Availability_Score"] = round(_clamp_01(average_availability / best_availability), 6)
+        else:
+            row["Normalized_Availability_Score"] = 0.0
+
+        row["Normalized_QoS_Score"] = round(
+            (
+                float(row["Normalized_Response_Time_Score"])
+                + float(row["Normalized_Throughput_Score"])
+                + float(row["Normalized_Availability_Score"])
             )
+            / 3.0,
+            6,
+        )
+
+        # Final score follows the selected evaluation definition:
+        # Composition_Completeness is binary and gates incomplete workflows; Composition_Validity
+        # remains diagnostic and is not used in the score calculation.
+        row["QoS_Adjusted_Composition_Score"] = round(
+            float(row.get("Composition_Completeness") or 0.0)
+            * (
+                0.7 * float(row.get("Functional_Coverage") or 0.0)
+                + 0.3 * float(row.get("Normalized_QoS_Score") or 0.0)
+            ),
+            6,
+        )
 
 
 def _rank(rows: List[Dict[str, Any]], key: str, *, reverse: bool) -> Dict[str, int | None]:
@@ -551,9 +597,7 @@ def _summary_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         complete = float(row.get("Composition_Completeness_Gate") or 0.0) >= 1.0
         functional = float(row.get("Functional_Coverage") or 0.0)
         normalized_qos = float(row.get("Normalized_QoS_Score") or 0.0)
-        if row.get("Composition_Validity") == 0:
-            interpretation = "Invalid composition plan"
-        elif not complete:
+        if not complete:
             interpretation = "Incomplete workflow, final score gated to 0"
         elif mode in best_score_modes or score_ranks.get(mode) == best_score:
             interpretation = "Tied best overall composition score" if score_tied else "Best overall composition score"
@@ -635,8 +679,9 @@ def _score_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "complete_mode_count": sum(1 for row in rows if float(row.get("Composition_Completeness_Gate") or 0.0) >= 1.0),
         "evaluated_modes": MODE_ORDER,
         "scoring_formula": (
-            "QoS_Adjusted_Composition_Score = 0 if invalid or incomplete; otherwise "
-            "0.7 * Functional_Coverage + 0.3 * Normalized_QoS_Score"
+            "QoS_Adjusted_Composition_Score = Composition_Completeness * "
+            "(0.7 * Functional_Coverage + 0.3 * Normalized_QoS_Score). "
+            "Composition_Completeness is binary; Composition_Validity is diagnostic only."
         ),
     }
     for slug, metric, higher_better, _ in BEST_METRIC_SPECS:
