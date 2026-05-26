@@ -42,6 +42,25 @@ class DecomposerPostprocessTests(unittest.TestCase):
         self.assertEqual([s["id"] for s in subtasks], [1, 2, 3])
         self.assertEqual(subtasks[1]["description"], "Summarize articles using a text-summarization API")
 
+    def test_folds_daily_workflow_scheduling_into_previous_api_step(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Fetch top news articles using a news aggregation API"},
+                    {"id": 2, "description": "Summarize the fetched articles using a text-summarization API"},
+                    {"id": 3, "description": "Send the summarized digest via an SMS messaging API"},
+                    {"id": 4, "description": "Schedule the fetch-summarize-send workflow to run daily using a scheduling API"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(raw, "fallback")
+
+        self.assertEqual(len(subtasks), 3)
+        self.assertEqual([s["id"] for s in subtasks], [1, 2, 3])
+        self.assertIn("Send the summarized digest", subtasks[2]["description"])
+        self.assertIn("Schedule the fetch-summarize-send workflow", subtasks[2]["description"])
+
     def test_preserves_weather_display_as_api_backed_information_need(self) -> None:
         raw = json.dumps({"subtasks": [{"id": 1, "description": "Display current weather info"}]})
 

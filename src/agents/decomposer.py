@@ -35,6 +35,12 @@ _ALWAYS_INTERNAL_PATTERNS = (
     r"\bdownstream blocking service\b",
     r"\baggregated scan results\b",
     r"\breturn(?:ing)? (?:the )?scan results\b",
+    r"\bschedule\b.*\bworkflow\b",
+    r"\bworkflow\b.*\bschedule\b",
+    r"\brun\b.*\bdaily\b",
+    r"\bdaily\b.*\bschedule\b",
+    r"\bcron\b.*\bworkflow\b",
+    r"\brecurring\b.*\bworkflow\b",
 )
 
 _EXPLICIT_API_BACKED_TERMS = (

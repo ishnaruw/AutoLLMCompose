@@ -31,9 +31,9 @@ Candidate APIs:
 
 Rules:
 - Use only the provided candidates.
-- Candidate APIs are already selected and ordered. Lower "selection_order" means higher priority within the selected set.
-- Choose exactly one API per subtask unless the subtask explicitly requires multiple APIs. Do not use multiple APIs for the same subtask when one API is sufficient. Extra APIs reduce workflow quality. Preserve subtask order and use only provided APIs.
-- Candidates are already functionally filtered and QoS-ranked. Prefer the highest-ranked candidate for each subtask unless there is a clear compatibility issue.
+- The selected APIs are fixed by the selection stage. Do not replace, re-rank, or substitute them. Your task is only to compose them into a coherent workflow.
+- There is exactly one selected API per subtask. Use that API for its subtask and preserve subtask order.
+- Candidates are already functionally filtered and QoS-ranked by the selection stage.
 - Keep workflows sequential.
 - Return exactly one primary plan.
 - Return a machine-readable execution workflow in addition to the human-readable primary plan.
@@ -58,10 +58,7 @@ Rules:
 - Put "plan_id", "summary", "steps", and "subtask_coverage" inside "primary_plan"; do not put "steps" at the top level.
 - Put "type" and "steps" inside "execution_workflow".
 - Functional correctness and subtask order come first.
-- Use QoS only when multiple APIs are similarly suitable.
-- When multiple candidate APIs are functionally comparable for a subtask, choose the combination that gives the best end-to-end workflow QoS, not just the best single-step QoS.
-- Prefer balanced workflows over plans with one excellent QoS step and one weak bottleneck step.
-- Do not blindly follow selection_order if another functionally comparable choice creates a clearly better overall workflow.
+- Use the selected APIs as fixed workflow steps; workflow-level QoS selection has already happened before planning.
 - For every selected API step, copy the selected candidate service.qos object into that step's "qos" field when available.
 - If service.qos is missing for a selected API, use "qos": null and explain the missing QoS in "why".
 

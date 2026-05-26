@@ -15,8 +15,8 @@ Candidate APIs:
 
 Rules:
 - Use only the provided candidates.
-- Candidate APIs are already selected and ordered. Lower "selection_order" means higher priority within the selected set.
-- Choose exactly one API per subtask unless the subtask explicitly requires multiple APIs. Do not use multiple APIs for the same subtask when one API is sufficient. Extra APIs reduce workflow quality. Preserve subtask order and use only provided APIs.
+- The selected APIs are fixed by the selection stage. Do not replace, re-rank, or substitute them. Your task is only to compose them into a coherent workflow.
+- There is exactly one selected API per subtask. Use that API for its subtask and preserve subtask order.
 - Keep workflows sequential.
 - Return exactly one primary plan.
 - Return a machine-readable execution workflow in addition to the human-readable primary plan.

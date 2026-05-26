@@ -8,6 +8,7 @@ import argparse
 import json
 import time
 from datetime import datetime
+from itertools import product
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -79,6 +80,13 @@ PROVIDER_POLICY = {
 
 
 class PlannerPrecheckFailure(RuntimeError):
+    def __init__(self, message: str, payload: Dict[str, Any], selection_trace: Dict[str, Dict[str, Any]]) -> None:
+        self.payload = payload
+        self.selection_trace = selection_trace
+        super().__init__(message)
+
+
+class PlannerSelectionValidationFailure(RuntimeError):
     def __init__(self, message: str, payload: Dict[str, Any], selection_trace: Dict[str, Dict[str, Any]]) -> None:
         self.payload = payload
         self.selection_trace = selection_trace
@@ -605,7 +613,7 @@ def _functional_match_value(entry: Dict[str, Any]) -> int:
     return int(
         entry.get(
             "Functional Match (0/1)",
-            entry.get("Functional Match Label", entry.get("functional_match", entry.get("relevant", 0))),
+            entry.get("Functional Match Label", entry.get("functional_match_label", entry.get("functional_match", entry.get("relevant", 0)))),
         )
         or 0
     )
@@ -945,73 +953,487 @@ def _summarize_retry_outcomes(run_dir: Path) -> Dict[str, Any]:
     return summary
 
 
-def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]], ranked_full: Dict[str, List[Dict[str, Any]]], planner_top_n: Dict[str, int], llm_call, user_goal: str, out_dir: Path, planner_prompt_path: str) -> Dict[str, Any]:
-    mode_dir = out_dir / mode_name
-    selected_all = []
+def _float_or_none(value: Any) -> float | None:
+    try:
+        if value is None or value == "":
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _qos_metrics_for_workflow(row: Dict[str, Any]) -> Tuple[float | None, float | None, float | None]:
+    service = row.get("service")
+    service = service if isinstance(service, dict) else {}
+    qos = service.get("qos")
+    qos = qos if isinstance(qos, dict) else {}
+
+    rt_ms = _float_or_none(row.get("rt_ms"))
+    if rt_ms is None:
+        rt_ms = _float_or_none(qos.get("rt_ms"))
+    if rt_ms is None:
+        rt_s = _float_or_none(row.get("rt_s"))
+        if rt_s is None:
+            rt_s = _float_or_none(qos.get("rt_s"))
+        if rt_s is not None:
+            rt_ms = rt_s * 1000.0
+
+    tp_rps = _float_or_none(row.get("tp_rps"))
+    if tp_rps is None:
+        tp_rps = _float_or_none(qos.get("tp_rps"))
+    if tp_rps is None:
+        tp_rps = _float_or_none(row.get("tp_kbps"))
+    if tp_rps is None:
+        tp_rps = _float_or_none(qos.get("tp_kbps"))
+
+    availability = _float_or_none(row.get("availability"))
+    if availability is None:
+        availability = _float_or_none(qos.get("availability"))
+    return rt_ms, tp_rps, availability
+
+
+def _normalize_workflow_metric(value: float | None, values: List[float | None], *, higher_better: bool) -> float:
+    finite_values = [v for v in values if v is not None]
+    if value is None or not finite_values:
+        return 0.0
+    low = min(finite_values)
+    high = max(finite_values)
+    if high == low:
+        return 1.0
+    if higher_better:
+        return (value - low) / (high - low)
+    return (high - value) / (high - low)
+
+
+def _valid_ranked_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    valid = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("failure_flag") or row.get("invalid_output_row"):
+            continue
+        api_id = str(row.get("api_id") or "").strip()
+        if api_id:
+            valid.append(row)
+    return valid
+
+
+def _functional_refiner_metadata(
+    row: Dict[str, Any],
+    subtask_id: str,
+    api_id: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+) -> Dict[str, Any]:
+    match_entry = functional_match_map.get((subtask_id, api_id), {})
+    label_source = match_entry if match_entry else row
+    reason = (
+        match_entry.get("functional_refiner_reason")
+        or match_entry.get("Comments")
+        or match_entry.get("comment")
+        or row.get("functional_refiner_reason")
+        or row.get("Comments")
+        or row.get("comment")
+    )
+    return {
+        "functional_match_label": _functional_match_value(label_source),
+        "functional_refiner_reason": reason,
+    }
+
+
+def _row_topsis_rank(row: Dict[str, Any]) -> int:
+    try:
+        return int(row.get("topsis_rank") or 10**9)
+    except Exception:
+        return 10**9
+
+
+def _row_mode_rank(row: Dict[str, Any]) -> int:
+    try:
+        return int(row.get("mode_rank") or row.get("llm_reported_rank") or 10**9)
+    except Exception:
+        return 10**9
+
+
+def _selection_provenance(row: Dict[str, Any], *, mode_name: str, selected_by: str, planner_override_attempted: bool) -> Dict[str, Any]:
+    return {
+        "mode": mode_name,
+        "subtask_id": str(row.get("subtask_id", "")),
+        "api_id": str(row.get("api_id", "")),
+        "selection_order": row.get("selection_order"),
+        "functional_match_label": row.get("functional_match_label"),
+        "functional_refiner_reason": row.get("functional_refiner_reason"),
+        "topsis_rank": row.get("topsis_rank"),
+        "topsis_score": row.get("topsis_score"),
+        "selected_by": selected_by,
+        "planner_override_attempted": planner_override_attempted,
+    }
+
+
+def _prepare_selected_row(
+    row: Dict[str, Any],
+    *,
+    subtask_id: str,
+    selection_order: int,
+    mode_name: str,
+    selected_by: str,
+    selector_reason: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+    extra: Dict[str, Any] | None = None,
+) -> Dict[str, Any]:
+    api_id = str(row.get("api_id") or "").strip()
+    selected = dict(row)
+    selected["api_id"] = api_id
+    selected["selected_rank"] = selection_order
+    selected["selection_order"] = selection_order
+    selected.pop("score", None)
+    selected["subtask_id"] = subtask_id
+    selected["selector_reason"] = selector_reason
+    selected["selected_by"] = selected_by
+    selected["planner_override_attempted"] = False
+    selected.update(_functional_refiner_metadata(selected, subtask_id, api_id, functional_match_map))
+    if extra:
+        selected.update(extra)
+    selected["selection_provenance"] = _selection_provenance(
+        selected,
+        mode_name=mode_name,
+        selected_by=selected_by,
+        planner_override_attempted=False,
+    )
+    return selected
+
+
+def _select_top_ranked_workflow(
+    *,
+    mode_name: str,
+    subtasks: List[Dict[str, Any]],
+    ranked_full: Dict[str, List[Dict[str, Any]]],
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], List[str], Dict[str, str]]:
+    selected_all: List[Dict[str, Any]] = []
     selection_trace: Dict[str, Dict[str, Any]] = {}
     missing_due_to_ranking_failure: List[str] = []
     subtask_failure_reasons: Dict[str, str] = {}
+
     for sub in subtasks:
         sub_id = str(sub.get("id", "unknown"))
         ranked_rows = ranked_full.get(sub_id, [])
-        dynamic_top_n = int(planner_top_n.get(sub_id, 0) or 0)
-        fallback_used = dynamic_top_n <= 0
-        selected_limit = dynamic_top_n if dynamic_top_n > 0 else CONFIG.selector_top_n
-        requested_limit = selected_limit
-        selected_limit = min(selected_limit, len(ranked_rows))
-        selected_rows = ranked_rows[:selected_limit]
-        top_n_source = "retrieval_functional_match_k" if dynamic_top_n > 0 else "selector_top_n_fallback"
-        selected = []
-        for idx, r in enumerate(selected_rows, start=1):
-            if r.get("failure_flag") or r.get("invalid_output_row"):
-                continue
-            api_id = str(r.get("api_id") or "").strip()
-            if not api_id:
-                continue
-            row = dict(r)
-            row["selected_rank"] = idx
-            row["selection_order"] = idx
-            row.pop("score", None)
-            row["subtask_id"] = sub_id
-            row["selector_reason"] = "Deterministic selection from mode rank using the shared retrieval-level functional-match K."
-            row["planner_top_n"] = selected_limit
-            row["planner_requested_top_n"] = requested_limit
-            row["planner_top_n_source"] = top_n_source
-            row["fallback_used"] = fallback_used
-            selected.append(row)
-        selected_all.extend(selected)
+        valid_rows = _valid_ranked_rows(ranked_rows)
+        selected: List[Dict[str, Any]] = []
+        if valid_rows:
+            selected = [
+                _prepare_selected_row(
+                    valid_rows[0],
+                    subtask_id=sub_id,
+                    selection_order=1,
+                    mode_name=mode_name,
+                    selected_by="ranking_mode",
+                    selector_reason=(
+                        "Fixed primary API selected by ranking mode. "
+                        "The planner may compose this API but may not replace or re-rank it."
+                    ),
+                    functional_match_map=functional_match_map,
+                    extra={
+                        "planner_top_n": 1,
+                        "planner_requested_top_n": 1,
+                        "planner_top_n_source": "fixed_primary_api",
+                        "fallback_used": False,
+                    },
+                )
+            ]
+
         invalid_ranked_reasons = [
             str(r.get("failure_reason") or r.get("ranking_anomaly_reason") or "ranking_failure")
             for r in ranked_rows
             if isinstance(r, dict) and (r.get("failure_flag") or r.get("invalid_output_row"))
         ]
-        if not selected and invalid_ranked_reasons:
+        if not selected:
             missing_due_to_ranking_failure.append(sub_id)
-            subtask_failure_reasons[sub_id] = invalid_ranked_reasons[0]
-        _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
-        _write_json(
-            mode_dir / f"3_selected_trace_s{sub_id}.json",
-            {
-                "planner_top_n": selected_limit,
-                "planner_requested_top_n": requested_limit,
-                "planner_top_n_source": top_n_source,
-                "retrieval_functional_match_k": dynamic_top_n,
-                "fallback_used": fallback_used,
-                "available_ranked": len(ranked_rows),
-                "selected_count": len(selected),
-                "invalid_ranked_rows": len(invalid_ranked_reasons),
-            },
-        )
+            subtask_failure_reasons[sub_id] = invalid_ranked_reasons[0] if invalid_ranked_reasons else "no_valid_ranked_candidates"
+        selected_all.extend(selected)
         selection_trace[sub_id] = {
-            "planner_top_k": selected_limit,
-            "planner_requested_top_k": requested_limit,
-            "planner_top_k_source": top_n_source,
-            "retrieval_functional_match_k": dynamic_top_n,
-            "fallback_used": fallback_used,
+            "planner_top_k": len(selected),
+            "planner_requested_top_k": 1,
+            "planner_top_k_source": "fixed_primary_api",
+            "retrieval_functional_match_k": None,
+            "fallback_used": False,
             "available_ranked": len(ranked_rows),
             "selected_count": len(selected),
             "invalid_ranked_rows": len(invalid_ranked_reasons),
         }
+
+    return selected_all, selection_trace, missing_due_to_ranking_failure, subtask_failure_reasons
+
+
+def _select_workflow_hybrid(
+    *,
+    subtasks: List[Dict[str, Any]],
+    ranked_full: Dict[str, List[Dict[str, Any]]],
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+    run_label: str,
+) -> Tuple[List[Dict[str, Any]], Dict[str, Dict[str, Any]], List[str], Dict[str, str]]:
+    candidate_cap = max(1, int(getattr(CONFIG, "selector_top_n", 5) or 5))
+    pools: List[List[Dict[str, Any]]] = []
+    subtask_ids: List[str] = []
+    selection_trace: Dict[str, Dict[str, Any]] = {}
+    missing_due_to_ranking_failure: List[str] = []
+    subtask_failure_reasons: Dict[str, str] = {}
+
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        ranked_rows = ranked_full.get(sub_id, [])
+        valid_rows = _valid_ranked_rows(ranked_rows)
+        functional_rows = [
+            row
+            for row in valid_rows
+            if _functional_refiner_metadata(row, sub_id, str(row.get("api_id") or ""), functional_match_map)["functional_match_label"] == 1
+        ]
+        fallback_used = not functional_rows
+        if functional_rows:
+            pool = sorted(functional_rows, key=lambda row: (_row_topsis_rank(row), str(row.get("api_id") or "")))[:candidate_cap]
+            source = "functional_match_then_topsis_cap"
+        else:
+            pool = sorted(valid_rows, key=lambda row: (_row_mode_rank(row), str(row.get("api_id") or "")))[:candidate_cap]
+            source = "hybrid_no_functional_match_fallback"
+            log_line(
+                f"[{run_label}] subtask={sub_id} mode=qos_hybrid hybrid_no_functional_match_fallback "
+                f"using selector_top_n={candidate_cap}"
+            )
+
+        invalid_ranked_reasons = [
+            str(r.get("failure_reason") or r.get("ranking_anomaly_reason") or "ranking_failure")
+            for r in ranked_rows
+            if isinstance(r, dict) and (r.get("failure_flag") or r.get("invalid_output_row"))
+        ]
+        if not pool:
+            missing_due_to_ranking_failure.append(sub_id)
+            subtask_failure_reasons[sub_id] = invalid_ranked_reasons[0] if invalid_ranked_reasons else "no_valid_ranked_candidates"
+
+        pools.append(pool)
+        subtask_ids.append(sub_id)
+        selection_trace[sub_id] = {
+            "planner_top_k": 0,
+            "planner_requested_top_k": 1,
+            "planner_top_k_source": "workflow_hybrid_selector",
+            "candidate_cap_per_subtask": candidate_cap,
+            "workflow_candidate_pool_source": source,
+            "hybrid_no_functional_match_fallback": fallback_used,
+            "available_ranked": len(ranked_rows),
+            "functional_candidate_count": len(functional_rows),
+            "workflow_candidate_pool_count": len(pool),
+            "selected_count": 0,
+            "invalid_ranked_rows": len(invalid_ranked_reasons),
+        }
+
+    if any(not pool for pool in pools):
+        return [], selection_trace, missing_due_to_ranking_failure, subtask_failure_reasons
+
+    combination_records: List[Dict[str, Any]] = []
+    for combo in product(*pools):
+        rt_values: List[float] = []
+        tp_values: List[float] = []
+        av_values: List[float] = []
+        for row in combo:
+            rt_ms, tp_rps, availability = _qos_metrics_for_workflow(row)
+            if rt_ms is not None:
+                rt_values.append(rt_ms)
+            if tp_rps is not None:
+                tp_values.append(tp_rps)
+            if availability is not None:
+                av_values.append(availability)
+
+        total_response_time = sum(rt_values) if len(rt_values) == len(combo) else None
+        bottleneck_throughput = min(tp_values) if len(tp_values) == len(combo) else None
+        average_availability = sum(av_values) / len(av_values) if len(av_values) == len(combo) else None
+        topsis_scores = [_float_or_none(row.get("topsis_score")) for row in combo]
+        present_topsis_scores = [score for score in topsis_scores if score is not None]
+        topsis_ranks = [_row_topsis_rank(row) for row in combo]
+        api_ids = tuple(str(row.get("api_id") or "") for row in combo)
+        combination_records.append(
+            {
+                "combo": combo,
+                "api_ids": api_ids,
+                "total_response_time": total_response_time,
+                "bottleneck_throughput": bottleneck_throughput,
+                "average_availability": average_availability,
+                "average_topsis_score": sum(present_topsis_scores) / len(present_topsis_scores) if present_topsis_scores else 0.0,
+                "average_topsis_rank_quality": sum(1.0 / rank for rank in topsis_ranks if rank > 0) / len(topsis_ranks),
+            }
+        )
+
+    rt_totals = [record["total_response_time"] for record in combination_records]
+    throughput_values = [record["bottleneck_throughput"] for record in combination_records]
+    availability_values = [record["average_availability"] for record in combination_records]
+
+    for record in combination_records:
+        normalized_rt = _normalize_workflow_metric(record["total_response_time"], rt_totals, higher_better=False)
+        normalized_tp = _normalize_workflow_metric(record["bottleneck_throughput"], throughput_values, higher_better=True)
+        normalized_av = _normalize_workflow_metric(record["average_availability"], availability_values, higher_better=True)
+        record["workflow_qos_score"] = (normalized_rt + normalized_tp + normalized_av) / 3.0
+        record["normalized_response_time"] = normalized_rt
+        record["normalized_throughput"] = normalized_tp
+        record["normalized_availability"] = normalized_av
+
+    winner = sorted(
+        combination_records,
+        key=lambda record: (
+            -float(record["workflow_qos_score"]),
+            -float(record["average_topsis_score"]),
+            -float(record["average_topsis_rank_quality"]),
+            float(record["total_response_time"]) if record["total_response_time"] is not None else float("inf"),
+            record["api_ids"],
+        ),
+    )[0]
+
+    selected_all: List[Dict[str, Any]] = []
+    for sub_id, row in zip(subtask_ids, winner["combo"]):
+        selected = _prepare_selected_row(
+            row,
+            subtask_id=sub_id,
+            selection_order=1,
+            mode_name="qos_hybrid",
+            selected_by="workflow_hybrid_selector",
+            selector_reason=(
+                "Workflow-level hybrid selector chose this fixed API from functionally matched candidates "
+                "using normalized response time, bottleneck throughput, and availability."
+            ),
+            functional_match_map=functional_match_map,
+            extra={
+                "planner_top_n": 1,
+                "planner_requested_top_n": 1,
+                "planner_top_n_source": "workflow_hybrid_selector",
+                "workflow_qos_score": round(float(winner["workflow_qos_score"]), 6),
+                "workflow_total_response_time_ms": winner["total_response_time"],
+                "workflow_bottleneck_throughput": winner["bottleneck_throughput"],
+                "workflow_average_availability": winner["average_availability"],
+            },
+        )
+        selected_all.append(selected)
+        selection_trace[sub_id]["planner_top_k"] = 1
+        selection_trace[sub_id]["selected_count"] = 1
+        selection_trace[sub_id]["selected_api_id"] = selected["api_id"]
+        selection_trace[sub_id]["workflow_qos_score"] = round(float(winner["workflow_qos_score"]), 6)
+
+    return selected_all, selection_trace, missing_due_to_ranking_failure, subtask_failure_reasons
+
+
+def _planner_api_ids(plan: Dict[str, Any]) -> List[str]:
+    api_ids: List[str] = []
+    containers = [
+        ((plan.get("primary_plan") or {}).get("steps") if isinstance(plan.get("primary_plan"), dict) else []),
+        ((plan.get("execution_workflow") or {}).get("steps") if isinstance(plan.get("execution_workflow"), dict) else []),
+        plan.get("selected_api_ids") if isinstance(plan.get("selected_api_ids"), list) else [],
+    ]
+    for container in containers:
+        for item in container if isinstance(container, list) else []:
+            api_id = item.get("api_id") if isinstance(item, dict) else item
+            if isinstance(api_id, str) and api_id.strip() and api_id.strip() not in api_ids:
+                api_ids.append(api_id.strip())
+    return api_ids
+
+
+def _unapproved_planner_api_ids(plan: Dict[str, Any], allowed_api_ids: set[str]) -> List[str]:
+    return [api_id for api_id in _planner_api_ids(plan) if api_id not in allowed_api_ids]
+
+
+def _planner_retry_goal(user_goal: str, unapproved_api_ids: List[str], allowed_api_ids: set[str]) -> str:
+    return (
+        f"{user_goal}\n\n"
+        "Planner validation retry: your previous workflow used API IDs that were not fixed by the selection stage: "
+        f"{sorted(unapproved_api_ids)}. Use only these selected API IDs: {sorted(allowed_api_ids)}. "
+        "Do not replace, re-rank, or substitute selected APIs."
+    )
+
+
+def _annotate_planner_provenance(
+    planner: Dict[str, Any],
+    selected_all: List[Dict[str, Any]],
+    *,
+    mode_name: str,
+    planner_override_attempted: bool,
+) -> Dict[str, Any]:
+    provenance_by_pair: Dict[tuple[str, str], Dict[str, Any]] = {}
+    provenance_by_api: Dict[str, Dict[str, Any]] = {}
+    for row in selected_all:
+        row = dict(row)
+        row["planner_override_attempted"] = planner_override_attempted
+        provenance = _selection_provenance(
+            row,
+            mode_name=mode_name,
+            selected_by=str(row.get("selected_by") or "ranking_mode"),
+            planner_override_attempted=planner_override_attempted,
+        )
+        provenance_by_pair[(str(row.get("subtask_id", "")), str(row.get("api_id", "")))] = provenance
+        provenance_by_api[str(row.get("api_id", ""))] = provenance
+
+    planned_provenance: List[Dict[str, Any]] = []
+    seen_pairs: set[tuple[str, str]] = set()
+    for steps in [
+        (planner.get("primary_plan") or {}).get("steps") if isinstance(planner.get("primary_plan"), dict) else [],
+        (planner.get("execution_workflow") or {}).get("steps") if isinstance(planner.get("execution_workflow"), dict) else [],
+    ]:
+        for step in steps if isinstance(steps, list) else []:
+            if not isinstance(step, dict):
+                continue
+            sid = str(step.get("subtask_id", ""))
+            api_id = str(step.get("api_id", ""))
+            provenance = provenance_by_pair.get((sid, api_id)) or provenance_by_api.get(api_id)
+            if not provenance:
+                continue
+            step.update(provenance)
+            pair = (sid, api_id)
+            if pair not in seen_pairs:
+                planned_provenance.append(provenance)
+                seen_pairs.add(pair)
+
+    planner["planner_provenance"] = planned_provenance
+    planner["planner_override_attempted"] = planner_override_attempted
+    return planner
+
+
+def _write_selected_outputs(mode_dir: Path, selected_all: List[Dict[str, Any]], selection_trace: Dict[str, Dict[str, Any]], subtasks: List[Dict[str, Any]]) -> None:
+    selected_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
+    for row in selected_all:
+        selected_by_subtask.setdefault(str(row.get("subtask_id", "unknown")), []).append(row)
+
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        selected = selected_by_subtask.get(sub_id, [])
+        _write_json(mode_dir / f"3_selected_s{sub_id}.json", selected)
+        _write_json(mode_dir / f"3_selected_trace_s{sub_id}.json", selection_trace.get(sub_id, {}))
+
+
+def _deterministic_select_and_plan(
+    mode_name: str,
+    subtasks: List[Dict[str, Any]],
+    ranked_full: Dict[str, List[Dict[str, Any]]],
+    planner_top_n: Dict[str, int],
+    llm_call,
+    user_goal: str,
+    out_dir: Path,
+    planner_prompt_path: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]] | None = None,
+) -> Dict[str, Any]:
+    mode_dir = out_dir / mode_name
+    functional_match_map = functional_match_map or {}
+    _ = planner_top_n
+
+    # This preserves stage separation. It is not a hybrid rescue rule:
+    # ranking/selection chooses APIs, planner composes only those APIs, and
+    # the evaluator scores the finished workflow.
+    if mode_name == "qos_hybrid":
+        selected_all, selection_trace, missing_due_to_ranking_failure, subtask_failure_reasons = _select_workflow_hybrid(
+            subtasks=subtasks,
+            ranked_full=ranked_full,
+            functional_match_map=functional_match_map,
+            run_label=out_dir.name,
+        )
+    else:
+        selected_all, selection_trace, missing_due_to_ranking_failure, subtask_failure_reasons = _select_top_ranked_workflow(
+            mode_name=mode_name,
+            subtasks=subtasks,
+            ranked_full=ranked_full,
+            functional_match_map=functional_match_map,
+        )
+
+    _write_selected_outputs(mode_dir, selected_all, selection_trace, subtasks)
     if missing_due_to_ranking_failure:
         missing_text = ", ".join(missing_due_to_ranking_failure)
         message = (
@@ -1029,8 +1451,73 @@ def _deterministic_select_and_plan(mode_name: str, subtasks: List[Dict[str, Any]
         _write_json(mode_dir / "planner_failure.json", failure_payload)
         (mode_dir / "planner_error.txt").write_text(message, encoding="utf-8")
         raise PlannerPrecheckFailure(message, failure_payload, selection_trace)
+
     planner_role = f"planner_{mode_name}"
-    planner = planner_call(llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p), user_goal=user_goal, ranked_top=selected_all, subtasks=subtasks, prompt_path=planner_prompt_path)
+    allowed_api_ids = {str(row.get("api_id") or "").strip() for row in selected_all if str(row.get("api_id") or "").strip()}
+    planner = planner_call(
+        llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p),
+        user_goal=user_goal,
+        ranked_top=selected_all,
+        subtasks=subtasks,
+        prompt_path=planner_prompt_path,
+    )
+    planner_override_attempted = False
+    unapproved_api_ids = _unapproved_planner_api_ids(planner, allowed_api_ids)
+    if unapproved_api_ids:
+        planner_override_attempted = True
+        log_error_event(
+            {
+                "event_type": "planner_selected_unapproved_api",
+                "query_dir": str(out_dir),
+                "mode": mode_name,
+                "unapproved_api_ids": unapproved_api_ids,
+                "allowed_api_ids": sorted(allowed_api_ids),
+            }
+        )
+        log_line(
+            f"[{out_dir.name}] mode={mode_name} planner_selected_unapproved_api "
+            f"unapproved={unapproved_api_ids}; retrying once"
+        )
+        planner = planner_call(
+            llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p),
+            user_goal=_planner_retry_goal(user_goal, unapproved_api_ids, allowed_api_ids),
+            ranked_top=selected_all,
+            subtasks=subtasks,
+            prompt_path=planner_prompt_path,
+        )
+        retry_unapproved_api_ids = _unapproved_planner_api_ids(planner, allowed_api_ids)
+        if retry_unapproved_api_ids:
+            message = (
+                f"Planner for mode {mode_name} used unapproved API IDs after retry: "
+                f"{', '.join(retry_unapproved_api_ids)}"
+            )
+            failure_payload = {
+                "failure_stage": "planner_validation",
+                "failure_reason": "planner_selected_unapproved_api",
+                "mode": mode_name,
+                "unapproved_api_ids": retry_unapproved_api_ids,
+                "allowed_api_ids": sorted(allowed_api_ids),
+                "planner_called": True,
+                "planner_retry_count": 1,
+            }
+            _write_json(mode_dir / "planner_failure.json", failure_payload)
+            _write_json(
+                mode_dir / "debug" / "planner_unapproved_api_attempts.json",
+                {
+                    "first_unapproved_api_ids": unapproved_api_ids,
+                    "retry_unapproved_api_ids": retry_unapproved_api_ids,
+                    "allowed_api_ids": sorted(allowed_api_ids),
+                },
+            )
+            (mode_dir / "planner_error.txt").write_text(message, encoding="utf-8")
+            raise PlannerSelectionValidationFailure(message, failure_payload, selection_trace)
+
+    planner = _annotate_planner_provenance(
+        planner,
+        selected_all,
+        mode_name=mode_name,
+        planner_override_attempted=planner_override_attempted,
+    )
     _write_json(mode_dir / "4_planner.json", planner)
     return {"selected": selected_all, "planner": planner, "selection_trace": selection_trace}
 
@@ -1046,7 +1533,7 @@ def _planner_selection_k_summary(query_id: str | None, subtasks: List[Dict[str, 
     return {
         "query_id": query_id,
         "selection_stage": "planner_input_selection",
-        "selection_rule": "For each subtask, K equals the number of unique APIs in the shared retrieved candidate pool labeled Functional Match=1. If K=0, CONFIG.selector_top_n is used as fallback. Each mode then passes its own top-K ranked APIs to the planner.",
+        "selection_rule": "For every mode, selection fixes exactly one primary API per subtask before planning. qos_hybrid uses workflow-level functional-first QoS selection; other modes use their top ranked valid API. The planner composes the fixed APIs and may not replace or re-rank them.",
         "fallback_selector_top_n": CONFIG.selector_top_n,
         "by_mode": by_mode,
         "by_subtask": by_subtask,
@@ -1484,11 +1971,21 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
             for mode in MODE_ORDER:
                 try:
                     planner_prompt = "prompts/planner_no_qos.md" if mode == "no_qos" else "prompts/planner_qos.md"
-                    result = _deterministic_select_and_plan(mode, subtasks, ranked_full_by_mode[mode], planner_top_n, llm_call, user_goal, out_dir, planner_prompt)
+                    result = _deterministic_select_and_plan(
+                        mode,
+                        subtasks,
+                        ranked_full_by_mode[mode],
+                        planner_top_n,
+                        llm_call,
+                        user_goal,
+                        out_dir,
+                        planner_prompt,
+                        functional_match_map=functional_match_map,
+                    )
                     summary_selected[f"{mode}_selected"] = len(result["selected"])
                     planner_selection_k_by_mode_subtask[mode] = result.get("selection_trace", {})
                 except Exception as exc:
-                    if isinstance(exc, PlannerPrecheckFailure):
+                    if isinstance(exc, (PlannerPrecheckFailure, PlannerSelectionValidationFailure)):
                         failure = {**exc.payload, "error": str(exc)}
                         planner_selection_k_by_mode_subtask[mode] = exc.selection_trace
                     else:
