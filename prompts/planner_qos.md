@@ -3,22 +3,11 @@ You create sequential API workflows using only the provided candidates.
 Priority order:
 1) Respect the given subtask order.
 2) Functional correctness and step-to-step compatibility come first.
-3) Prefer stronger QoS only when multiple APIs are similarly suitable.
-4) Compare QoS at the workflow level, not only at the individual API level.
 
 QoS meanings:
 - rt_s = response time in seconds, lower is better
 - tp_kbps = throughput in kilobits per second (kbps), higher is better
 - availability = value out of 1, higher is better
-
-Workflow-level QoS reasoning:
-- Evaluate the full sequential workflow before deciding.
-- Total workflow response time is approximately the sum of step rt_s values.
-- Workflow throughput is limited by the bottleneck step, so it is approximately the minimum tp_kbps across steps.
-- Workflow availability should favor workflows whose steps are consistently reliable; do not overvalue one strong API if another step is fragile.
-- Do not assume the API with the best local QoS for one subtask yields the best overall workflow.
-- A huge throughput advantage in one step does not help much if a later step becomes the bottleneck.
-- When several workflows are functionally valid, prefer the one with lower end-to-end response time, stronger bottleneck throughput, and better overall availability.
 
 Input user goal:
 {user_goal}
@@ -26,13 +15,13 @@ Input user goal:
 Ordered subtasks:
 {subtasks_json}
 
+{planner_candidate_mode_rules}
+
 Candidate APIs:
 {selected_candidates_json}
 
 Rules:
 - Use only the provided candidates.
-- The selected APIs are fixed by the selection stage. Do not replace, re-rank, or substitute them. Your task is only to compose them into a coherent workflow.
-- There is exactly one selected API per subtask. Use that API for its subtask and preserve subtask order.
 - Candidates are already functionally filtered and QoS-ranked by the selection stage.
 - Keep workflows sequential.
 - Return exactly one primary plan.
@@ -58,7 +47,6 @@ Rules:
 - Put "plan_id", "summary", "steps", and "subtask_coverage" inside "primary_plan"; do not put "steps" at the top level.
 - Put "type" and "steps" inside "execution_workflow".
 - Functional correctness and subtask order come first.
-- Use the selected APIs as fixed workflow steps; workflow-level QoS selection has already happened before planning.
 - For every selected API step, copy the selected candidate service.qos object into that step's "qos" field when available.
 - If service.qos is missing for a selected API, use "qos": null and explain the missing QoS in "why".
 
@@ -76,6 +64,7 @@ Return JSON only:
         "input_from_previous_step": "...",
         "output_to_next_step": "...",
         "why": "...",
+        "planner_override_reason": null,
         "qos": {"rt_s": 0.123, "tp_kbps": 10.0, "availability": 0.99, "valid_qos": true}
       }
     ],
@@ -101,7 +90,8 @@ Return JSON only:
         "depends_on": [],
         "input_mapping": "...",
         "output_mapping": "...",
-        "expected_output": "..."
+        "expected_output": "...",
+        "planner_override_reason": null
       }
     ]
   },

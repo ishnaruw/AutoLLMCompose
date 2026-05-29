@@ -118,7 +118,11 @@ DEFINITION_ROWS = [
     {
         "Metric": "Normalized_QoS_Score",
         "Category": "QoS quality",
-        "Definition": "Average of relative-to-best normalized response time, throughput, and availability scores computed over composition-complete workflows with valid QoS metrics.",
+        "Definition": (
+            "Average of relative-to-best normalized response time, throughput, and availability scores "
+            "using QoS references from composition-complete workflows with maximum functional coverage, "
+            "falling back to all valid QoS rows if needed."
+        ),
         "Direction": "Higher is better",
     },
     {
@@ -476,33 +480,51 @@ def _normalize(rows: List[Dict[str, Any]]) -> None:
     # Relative-to-best normalization is used because each query compares only a small
     # number of workflow alternatives. This preserves proportional QoS differences
     # and avoids exaggerating tiny metric gaps, especially for availability.
-    # QoS references are computed only from composition-complete workflows so an
-    # incomplete workflow cannot look artificially fast by skipping subtasks.
-    viable_rows = [row for row in rows if _is_composition_complete_for_qos(row)]
+    # QoS references are selected from the most functionally complete workflows so
+    # that functionally weak QoS-only workflows do not distort the QoS scale.
+    complete_qos_rows = [row for row in rows if _is_composition_complete_for_qos(row)]
+    if complete_qos_rows:
+        max_functional_coverage = max(
+            float(row.get("Functional_Coverage") or 0.0)
+            for row in complete_qos_rows
+        )
+        reference_rows = [
+            row
+            for row in complete_qos_rows
+            if float(row.get("Functional_Coverage") or 0.0) == max_functional_coverage
+        ]
+    else:
+        reference_rows = [row for row in rows if _has_valid_qos_metrics(row)]
 
     best_response_time = min(
-        (_as_float(row.get("Total_Response_Time_s")) for row in viable_rows),
+        (_as_float(row.get("Total_Response_Time_s")) for row in reference_rows),
         default=None,
     )
     best_throughput = max(
-        (_as_float(row.get("Bottleneck_Throughput_kbps")) for row in viable_rows),
+        (_as_float(row.get("Bottleneck_Throughput_kbps")) for row in reference_rows),
         default=None,
     )
     best_availability = max(
-        (_as_float(row.get("Average_Workflow_Availability")) for row in viable_rows),
+        (_as_float(row.get("Average_Workflow_Availability")) for row in reference_rows),
         default=None,
     )
 
     for row in rows:
-        complete = float(row.get("Composition_Completeness") or 0.0) >= 1.0
         has_qos = _has_valid_qos_metrics(row)
 
-        if not has_qos or not complete:
+        if not has_qos:
             row["Normalized_Response_Time_Score"] = 0.0
             row["Normalized_Throughput_Score"] = 0.0
             row["Normalized_Availability_Score"] = 0.0
             row["Normalized_QoS_Score"] = 0.0
-            row["QoS_Adjusted_Composition_Score"] = 0.0
+            row["QoS_Adjusted_Composition_Score"] = round(
+                float(row.get("Composition_Completeness") or 0.0)
+                * (
+                    0.7 * float(row.get("Functional_Coverage") or 0.0)
+                    + 0.3 * float(row.get("Normalized_QoS_Score") or 0.0)
+                ),
+                6,
+            )
             continue
 
         total_response_time = _as_float(row.get("Total_Response_Time_s"))

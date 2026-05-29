@@ -1062,6 +1062,16 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
     if availability_col in filtered:
         st.caption(viz.WORKFLOW_AVAILABILITY_HELP)
 
+    qos_hybrid_best = viz.build_qos_hybrid_best_table(filtered)
+    if not qos_hybrid_best.empty:
+        st.markdown("**QoS Hybrid Best Mode Summary**")
+        render_sticky_table(
+            qos_hybrid_best,
+            sticky_columns=["query_id"],
+            height=260,
+            key="qos_hybrid_best_summary",
+        )
+
     chart_tab, raw_tab, workflow_tab = st.tabs(["Score & QoS Charts", "Ranks & Validity", "Planned Workflow"])
     with chart_tab:
         score_overview = filtered.copy()
@@ -1908,12 +1918,11 @@ def _render_sensitivity_analysis(eval_df: pd.DataFrame, *, query_id: str, run_di
         return
 
     st.markdown("**Visualization-only score weights**")
-    cols = st.columns(4)
+    cols = st.columns(3)
     raw_weights = {
         "QoS weight": cols[0].slider("QoS weight", 0.0, 1.0, 0.4, 0.05, key="sensitivity_qos"),
         "Functional Coverage weight": cols[1].slider("Functional coverage weight", 0.0, 1.0, 0.3, 0.05, key="sensitivity_functional"),
         "Composition Completeness weight": cols[2].slider("Completeness weight", 0.0, 1.0, 0.2, 0.05, key="sensitivity_completeness"),
-        "Composition Validity weight": cols[3].slider("Validity weight", 0.0, 1.0, 0.1, 0.05, key="sensitivity_validity"),
     }
     total = sum(raw_weights.values()) or 1.0
     st.caption("Weights are normalized internally so the sensitivity score always sums to 1.")
@@ -2117,7 +2126,7 @@ def _mode_cell_style(value: Any) -> str:
         "qos_pure_llm": "#D9EAF7",
         "qos_topsis": "#E2F0D9",
         "qos_hybrid": "#FFF2CC",
-        "No valid mode": "#F4CCCC",
+        "No composition-complete mode": "#F4CCCC",
     }
     if "," in text:
         return "background-color: #F8FAFC; color: #111827;"
@@ -2169,7 +2178,7 @@ def _render_recommendation_summary(recommendation: dict[str, Any]) -> None:
     mode_label = ", ".join(modes) if recommendation.get("is_tie") and modes else recommendation.get("mode") or viz.NA
     if recommendation.get("is_tie") and mode_label != viz.NA:
         mode_label = f"{mode_label} (tie)"
-    reason = recommendation.get("reason") or "Highest QoS-adjusted composition score among valid modes"
+    reason = recommendation.get("reason") or "Highest QoS-adjusted composition score among composition-complete modes"
     mode_field = "Diagnostic Mode" if recommendation.get("status") == "diagnostic" else "Recommended Mode"
     workflow_availability = viz.workflow_availability_value(row)
     fields = [
@@ -2671,7 +2680,7 @@ def render_composition_visualizations() -> None:
             st.warning(recommendation.get("warning") or "Recommendation unavailable.")
             _render_recommendation_summary(recommendation)
         elif status == "diagnostic":
-            st.warning("All workflows are invalid. Showing the highest-scoring invalid mode only as a diagnostic, not as a recommended path.")
+            st.warning("No composition-complete workflow is available. Showing diagnostics only, not a recommended path.")
             _render_recommendation_summary(recommendation)
         else:
             _render_recommendation_summary(recommendation)

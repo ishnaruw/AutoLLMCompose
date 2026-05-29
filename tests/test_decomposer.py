@@ -86,7 +86,7 @@ class DecomposerPostprocessTests(unittest.TestCase):
         self.assertEqual(subtasks[0]["description"], "Check each provided domain using a domain threat intelligence API")
         self.assertEqual(subtasks[1]["id"], 2)
 
-    def test_folds_downstream_blocking_handoff_into_scan_step(self) -> None:
+    def test_drops_downstream_blocking_handoff_before_retrieval(self) -> None:
         raw = json.dumps(
             {
                 "subtasks": [
@@ -100,7 +100,83 @@ class DecomposerPostprocessTests(unittest.TestCase):
 
         self.assertEqual(len(subtasks), 1)
         self.assertIn("Scan the URL for malware", subtasks[0]["description"])
-        self.assertIn("downstream blocking service", subtasks[0]["description"])
+        self.assertNotIn("downstream blocking service", subtasks[0]["description"])
+
+    def test_drops_blocking_decision_policy_update_even_when_it_mentions_api(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Validate the domain using a domain validation API"},
+                    {"id": 2, "description": "Scan the URL for malware or phishing risk using a threat-intelligence API"},
+                    {"id": 3, "description": "Check the URL for adult-content risk using a content-classification API"},
+                    {
+                        "id": 4,
+                        "description": "Record the blocking decision through a security-policy update API",
+                    },
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(
+            raw,
+            "Build a service that checks a web link by validating its domain, scanning the URL for malware or phishing risk, and checking adult-content risk for a local blocking decision.",
+        )
+
+        self.assertEqual(len(subtasks), 3)
+        self.assertEqual([s["id"] for s in subtasks], [1, 2, 3])
+        self.assertEqual(
+            [s["description"] for s in subtasks],
+            [
+                "Validate the domain using a domain validation API",
+                "Scan the URL for malware or phishing risk using a threat-intelligence API",
+                "Check the URL for adult-content risk using a content-classification API",
+            ],
+        )
+
+    def test_q12_style_decomposition_keeps_only_api_backed_checks(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Validate the provided domain using a domain validation API"},
+                    {"id": 2, "description": "Scan the full URL for malware and phishing risk using a URL scanning API"},
+                    {"id": 3, "description": "Check the URL content for adult-content risk using a content-classification API"},
+                    {"id": 4, "description": "Log decision to a security endpoint"},
+                    {"id": 5, "description": "Update policy after the final decision"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(
+            raw,
+            "Build a service that checks a web link by validating its domain, scanning the URL for malware or phishing risk, and checking adult-content risk for a local blocking decision.",
+        )
+
+        self.assertEqual(
+            [s["description"] for s in subtasks],
+            [
+                "Validate the provided domain using a domain validation API",
+                "Scan the full URL for malware and phishing risk using a URL scanning API",
+                "Check the URL content for adult-content risk using a content-classification API",
+            ],
+        )
+
+    def test_preserves_explicit_external_policy_update_request(self) -> None:
+        raw = json.dumps(
+            {
+                "subtasks": [
+                    {"id": 1, "description": "Scan the URL for malware using a URL scanning API"},
+                    {"id": 2, "description": "Update the security policy using an external policy-management API"},
+                ]
+            }
+        )
+
+        subtasks = _parse_subtasks(
+            raw,
+            "Scan the URL and then call the external policy-management API to update the security policy.",
+        )
+
+        self.assertEqual([s["id"] for s in subtasks], [1, 2])
+        self.assertEqual(subtasks[1]["description"], "Update the security policy using an external policy-management API")
 
     def test_folds_price_baseline_comparison_even_when_it_mentions_api(self) -> None:
         raw = json.dumps(

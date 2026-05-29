@@ -11,6 +11,7 @@ from src.ui.composition_visualization_helpers import (
     build_dataflow_cards_html,
     build_bottleneck_replacement_simulations,
     build_mode_comparison_figure,
+    build_qos_hybrid_best_table,
     build_replacement_simulation_dot,
     build_winner_heatmap,
     api_health_status,
@@ -91,8 +92,8 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
     def test_missing_scores_are_unavailable(self) -> None:
         df = pd.DataFrame(
             [
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1},
-                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1, "Composition_Completeness": 1.0},
+                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "Composition_Completeness": 1.0},
             ]
         )
 
@@ -102,17 +103,31 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
         self.assertEqual(recommendation["mode"], "N/A")
         self.assertIn("scores are missing", recommendation["warning"])
 
-    def test_invalid_only_rows_are_diagnostic(self) -> None:
+    def test_incomplete_only_rows_are_unavailable(self) -> None:
         df = pd.DataFrame(
             [
-                {"Query_ID": "q1", "Mode": "no_qos", "Composition_Validity": 0, "QoS_Adjusted_Composition_Score": 0.2},
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 0, "QoS_Adjusted_Composition_Score": 0.4},
+                {"Query_ID": "q1", "Mode": "no_qos", "Composition_Validity": 1, "Composition_Completeness": 0.0, "QoS_Adjusted_Composition_Score": 0.2},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1, "Composition_Completeness": 0.0, "QoS_Adjusted_Composition_Score": 0.4},
             ]
         )
 
         recommendation = get_recommended_mode(df, "q1")
 
-        self.assertEqual(recommendation["status"], "diagnostic")
+        self.assertEqual(recommendation["status"], "unavailable")
+        self.assertEqual(recommendation["mode"], "N/A")
+        self.assertIn("No composition-complete mode", recommendation["warning"])
+
+    def test_invalid_but_complete_row_can_be_recommended(self) -> None:
+        df = pd.DataFrame(
+            [
+                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "Composition_Completeness": 1.0, "QoS_Adjusted_Composition_Score": 0.6},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 0, "Composition_Completeness": 1.0, "QoS_Adjusted_Composition_Score": 0.8},
+            ]
+        )
+
+        recommendation = get_recommended_mode(df, "q1")
+
+        self.assertEqual(recommendation["status"], "recommended")
         self.assertEqual(recommendation["mode"], "qos_hybrid")
 
     def test_mode_comparison_colors_best_complete_functional_path_green(self) -> None:
@@ -384,12 +399,12 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
 
             self.assertEqual(modes, ["qos_topsis"])
 
-    def test_winner_heatmap_prefers_valid_workflows_and_marks_invalid_only(self) -> None:
+    def test_winner_heatmap_prefers_complete_workflows_and_marks_incomplete_only(self) -> None:
         rows = pd.DataFrame(
             [
-                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.7, "Total_Response_Time_s": 2.0},
-                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "QoS_Adjusted_Composition_Score": 0.9, "Total_Response_Time_s": 3.0},
-                {"Query_ID": "q2", "Mode": "qos_hybrid", "Composition_Validity": 0, "QoS_Adjusted_Composition_Score": 1.0, "Total_Response_Time_s": 0.1},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "Composition_Validity": 0, "Composition_Completeness": 1.0, "QoS_Adjusted_Composition_Score": 0.7, "Total_Response_Time_s": 2.0},
+                {"Query_ID": "q1", "Mode": "qos_topsis", "Composition_Validity": 1, "Composition_Completeness": 1.0, "QoS_Adjusted_Composition_Score": 0.9, "Total_Response_Time_s": 3.0},
+                {"Query_ID": "q2", "Mode": "qos_hybrid", "Composition_Validity": 1, "Composition_Completeness": 0.0, "QoS_Adjusted_Composition_Score": 1.0, "Total_Response_Time_s": 0.1},
             ]
         )
 
@@ -398,7 +413,30 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
 
         self.assertEqual(winners.loc["q1", "Best QoS-adjusted score"], "qos_topsis")
         self.assertEqual(winners.loc["q1", "Lowest Total Response Time (s)"], "qos_hybrid")
-        self.assertEqual(winners.loc["q2", "Best QoS-adjusted score"], "No valid mode")
+        self.assertEqual(winners.loc["q2", "Best QoS-adjusted score"], "No composition-complete mode")
+
+    def test_qos_hybrid_best_table_uses_final_composition_score(self) -> None:
+        rows = pd.DataFrame(
+            [
+                {"Query_ID": "q10", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": None},
+                {"Query_ID": "q10", "Mode": "no_qos", "QoS_Adjusted_Composition_Score": 0.4},
+                {"Query_ID": "q2", "Mode": "qos_topsis", "QoS_Adjusted_Composition_Score": 0.8},
+                {"Query_ID": "q2", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": 0.8},
+                {"Query_ID": "q1", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": 0.9},
+                {"Query_ID": "q1", "Mode": "qos_pure_llm", "QoS_Adjusted_Composition_Score": 0.7},
+            ]
+        )
+
+        result = build_qos_hybrid_best_table(rows)
+        by_query = result.set_index("query_id")
+
+        self.assertEqual(result["query_id"].tolist(), ["q1", "q2", "q10"])
+        self.assertEqual(by_query.loc["q1", "is_QoS_Hybrid_best"], "Yes")
+        self.assertEqual(by_query.loc["q1", "Best mode"], "qos_hybrid")
+        self.assertEqual(by_query.loc["q2", "is_QoS_Hybrid_best"], "Tie")
+        self.assertEqual(by_query.loc["q2", "Best mode"], "Tie between qos_topsis and qos_hybrid")
+        self.assertEqual(by_query.loc["q10", "is_QoS_Hybrid_best"], "No")
+        self.assertEqual(by_query.loc["q10", "Best mode"], "no_qos")
 
     def test_sensitivity_scores_are_visualization_only(self) -> None:
         rows = pd.DataFrame(
@@ -414,7 +452,6 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
                 "QoS weight": 1.0,
                 "Functional Coverage weight": 0.0,
                 "Composition Completeness weight": 0.0,
-                "Composition Validity weight": 0.0,
             },
         )
 

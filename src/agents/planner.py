@@ -163,6 +163,109 @@ def _selection_order(row):
     return _candidate_rank(row)
 
 
+def _candidate_qos_values(row):
+    qos_values = row.get("qos_values")
+    if isinstance(qos_values, dict):
+        return qos_values
+
+    service = row.get("service")
+    service = service if isinstance(service, dict) else {}
+    qos = service.get("qos")
+    qos = qos if isinstance(qos, dict) else {}
+    return {
+        "rt_s": row.get("rt_s", qos.get("rt_s")),
+        "tp_kbps": row.get("tp_kbps", qos.get("tp_kbps")),
+        "availability": row.get("availability", qos.get("availability")),
+    }
+
+
+def _compact_candidate_for_ablation(row, *, strip_qos: bool):
+    compact = {
+        "api_id": row.get("api_id"),
+        "subtask_id": row.get("subtask_id"),
+        "selection_order": _selection_order(row),
+        "mode_rank": row.get("mode_rank"),
+        "rank_source": row.get("rank_source"),
+        "functional_match_label": row.get("functional_match_label"),
+        "functional_refiner_reason": row.get("functional_refiner_reason"),
+        "qos_values": None if strip_qos else _candidate_qos_values(row),
+        "short_rank_reason": row.get("short_rank_reason") or row.get("reason"),
+        "service": _service_for_planner(row, strip_qos=strip_qos),
+    }
+    for key in (
+        "selected_by_view",
+        "pareto_status",
+        "balanced_relative_qos_score",
+        "topsis_rank",
+        "topsis_score",
+        "hybrid_pool_strategy",
+    ):
+        if row.get(key) is not None:
+            compact[key] = row.get(key)
+    return compact
+
+
+_PLANNER_MODE_RULES_PLACEHOLDER = "{planner_candidate_mode_rules}"
+
+
+def _planner_candidate_mode_rules(planner_candidate_mode: str, planner_top_n_cap: int, *, strip_qos: bool) -> str:
+    mode = str(planner_candidate_mode or "fixed_one").strip()
+    if mode == "top_n_ablation":
+        qos_choice = (
+            "- Prefer selection_order = 1 unless another candidate clearly improves functional fit, "
+            "step compatibility, or workflow-level QoS.\n"
+            "- Compare workflow-level QoS using total response time = sum(rt_s), "
+            "bottleneck throughput = min(tp_kbps), and average availability = mean(availability).\n"
+            "- Do not choose a locally strong API if it weakens the full workflow.\n"
+        )
+        if strip_qos:
+            qos_choice = (
+                "- Prefer selection_order = 1 unless another candidate clearly improves functional fit "
+                "or step compatibility.\n"
+                "- QoS fields are omitted in this prompt; do not infer hidden QoS values.\n"
+            )
+        return (
+            "Planner candidate mode: top_n_ablation.\n"
+            f"- The planner received up to {planner_top_n_cap} ranked alternatives per subtask.\n"
+            "- Provided APIs are ranked alternatives for each subtask.\n"
+            "- Choose exactly one API per subtask from that subtask's provided candidates.\n"
+            f"{qos_choice}"
+            "- Compact candidate evidence fields may include functional_refiner_reason, qos_values, "
+            "short_rank_reason, rank_source, mode_rank, and selection_order.\n"
+            "- qos_hybrid metadata meanings when present: selected_by_view identifies the ranking view "
+            "that surfaced the candidate; pareto_status shows whether it is Pareto-preferred or part of "
+            "the expanded pool; balanced_relative_qos_score is the balanced QoS comparison score; "
+            "topsis_rank and topsis_score provide TOPSIS ordering and closeness; hybrid_pool_strategy "
+            "describes how the hybrid candidate pool was formed.\n"
+            "- If you choose a candidate whose selection_order is greater than 1, include "
+            "planner_override_reason on the primary_plan step and execution_workflow step for that subtask. "
+            "Base the reason on functional fit, step compatibility, workflow-level QoS, or the candidate "
+            "evidence fields.\n"
+            "- selected_api_ids must contain only the chosen API IDs, one per subtask.\n"
+        )
+
+    return (
+        "Planner candidate mode: fixed_one.\n"
+        "- The selected APIs are fixed by the selection stage.\n"
+        "- There is exactly one selected API per subtask.\n"
+        "- Use that API for its subtask and preserve subtask order.\n"
+        "- Do not replace, re-rank, or substitute APIs.\n"
+        "- The planner only composes the fixed APIs into a coherent workflow.\n"
+    )
+
+
+def _insert_planner_candidate_mode_rules(template: str, rules: str) -> str:
+    if _PLANNER_MODE_RULES_PLACEHOLDER in template:
+        return template.replace(_PLANNER_MODE_RULES_PLACEHOLDER, rules.rstrip())
+
+    for marker in ("\nCandidate APIs:", "\nCandidates:", "\nRules:"):
+        index = template.find(marker)
+        if index >= 0:
+            return f"{template[:index]}\n{rules.rstrip()}\n{template[index:]}"
+
+    return f"{rules.rstrip()}\n\n{template}"
+
+
 _NO_QOS_SERVICE_KEYS = {
     "qos",
     "rt_s",
@@ -370,7 +473,15 @@ def _over_composition_retry_prompt(prompt, over_composed):
     )
 
 
-def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_path: str = "prompts/planner_qos.md"):
+def planner_call(
+    llm_call,
+    user_goal: str,
+    ranked_top,
+    subtasks=None,
+    prompt_path: str = "prompts/planner_qos.md",
+    planner_candidate_mode: str = "fixed_one",
+    planner_top_n_cap: int = 1,
+):
     """
     Compose one final orchestration plan from selected candidates.
 
@@ -464,18 +575,28 @@ def planner_call(llm_call, user_goal: str, ranked_top, subtasks=None, prompt_pat
     compact = []
     strip_qos = str(prompt_path).endswith("planner_no_qos.md")
     for r in ranked_top:
-        compact.append({
-            "api_id": r.get("api_id"),
-            "subtask_id": r.get("subtask_id"),
-            "selection_order": _selection_order(r),
-            "service": _service_for_planner(r, strip_qos=strip_qos),
-        })
+        if planner_candidate_mode == "top_n_ablation":
+            compact.append(_compact_candidate_for_ablation(r, strip_qos=strip_qos))
+        else:
+            compact.append({
+                "api_id": r.get("api_id"),
+                "subtask_id": r.get("subtask_id"),
+                "selection_order": _selection_order(r),
+                "service": _service_for_planner(r, strip_qos=strip_qos),
+            })
 
     subtasks_json = json.dumps(subtasks or [], ensure_ascii=False)
     selected_candidates_json = json.dumps(compact, ensure_ascii=False)
 
     with open(prompt_path, "r", encoding="utf-8") as f:
         tmpl = f.read()
+
+    mode_rules = _planner_candidate_mode_rules(
+        planner_candidate_mode,
+        planner_top_n_cap,
+        strip_qos=strip_qos,
+    )
+    tmpl = _insert_planner_candidate_mode_rules(tmpl, mode_rules)
 
     prompt = (
         tmpl

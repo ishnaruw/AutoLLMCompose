@@ -35,6 +35,31 @@ def _execution_workflow(api_id: str = "api_a") -> dict:
     }
 
 
+def _planner_response(api_id: str = "api_a") -> dict:
+    return {
+        "primary_plan": {
+            "plan_id": 1,
+            "summary": "Use API",
+            "steps": [
+                {
+                    "step": 1,
+                    "api_id": api_id,
+                    "subtask_id": 1,
+                    "action": "Call API",
+                    "input_from_previous_step": None,
+                    "output_to_next_step": "result",
+                    "why": "Matches",
+                    "qos": None,
+                }
+            ],
+            "subtask_coverage": [],
+        },
+        "execution_workflow": _execution_workflow(api_id=api_id),
+        "selected_api_ids": [api_id],
+        "overall_rationale": "Best fit",
+    }
+
+
 class PlannerRepairTests(unittest.TestCase):
     def _prompt_file(self) -> Path:
         tmp = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False)
@@ -181,6 +206,82 @@ class PlannerRepairTests(unittest.TestCase):
         self.assertIn('"selection_order": 3', prompts[0])
         self.assertNotIn('"rank"', prompts[0])
         self.assertNotIn('"selected_rank"', prompts[0])
+
+    def test_fixed_one_prompt_uses_only_fixed_selection_rules(self) -> None:
+        prompts = []
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(_planner_response()),
+            user_goal="test",
+            ranked_top=[{"api_id": "api_a", "subtask_id": 1, "selection_order": 1}],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path="prompts/planner_qos.md",
+            planner_candidate_mode="fixed_one",
+        )
+
+        prompt = prompts[0]
+        self.assertIn("Planner candidate mode: fixed_one.", prompt)
+        self.assertIn("The selected APIs are fixed by the selection stage.", prompt)
+        self.assertIn("Do not replace, re-rank, or substitute APIs.", prompt)
+        self.assertIn("Use that API for its subtask", prompt)
+        self.assertNotIn("Provided APIs are ranked alternatives", prompt)
+        self.assertLess(prompt.index("Planner candidate mode: fixed_one."), prompt.index("Candidate APIs:"))
+
+    def test_top_n_ablation_prompt_uses_choice_rules_and_schema_override_reason(self) -> None:
+        prompts = []
+
+        planner_call(
+            llm_call=lambda prompt: prompts.append(prompt) or json.dumps(_planner_response()),
+            user_goal="test",
+            ranked_top=[
+                {
+                    "api_id": "api_a",
+                    "subtask_id": 1,
+                    "selection_order": 2,
+                    "mode_rank": 2,
+                    "rank_source": "qos_hybrid_pareto_expanded_pool",
+                    "functional_refiner_reason": "Better endpoint fit",
+                    "short_rank_reason": "Lower workflow latency",
+                    "selected_by_view": "balanced",
+                    "pareto_status": "pareto",
+                    "balanced_relative_qos_score": 0.8,
+                    "topsis_rank": 2,
+                    "topsis_score": 0.7,
+                    "hybrid_pool_strategy": "expanded",
+                    "service": {"api_id": "api_a", "qos": {"rt_s": 1, "tp_kbps": 2, "availability": 0.99}},
+                }
+            ],
+            subtasks=[{"id": 1, "description": "Call API"}],
+            prompt_path="prompts/planner_qos.md",
+            planner_candidate_mode="top_n_ablation",
+            planner_top_n_cap=3,
+        )
+
+        prompt = prompts[0]
+        self.assertIn("Planner candidate mode: top_n_ablation.", prompt)
+        self.assertIn("Provided APIs are ranked alternatives", prompt)
+        self.assertIn("Choose exactly one API per subtask", prompt)
+        self.assertIn("Prefer selection_order = 1", prompt)
+        self.assertIn("total response time = sum(rt_s)", prompt)
+        self.assertIn("bottleneck throughput = min(tp_kbps)", prompt)
+        self.assertIn("average availability = mean(availability)", prompt)
+        self.assertIn("functional_refiner_reason", prompt)
+        self.assertIn("qos_values", prompt)
+        self.assertIn("short_rank_reason", prompt)
+        self.assertIn("rank_source", prompt)
+        self.assertIn("mode_rank", prompt)
+        self.assertIn("selection_order", prompt)
+        self.assertIn("selected_by_view", prompt)
+        self.assertIn("pareto_status", prompt)
+        self.assertIn("balanced_relative_qos_score", prompt)
+        self.assertIn("topsis_rank", prompt)
+        self.assertIn("topsis_score", prompt)
+        self.assertIn("hybrid_pool_strategy", prompt)
+        self.assertIn('"planner_override_reason": null', prompt)
+        self.assertNotIn("selected APIs are fixed", prompt)
+        self.assertNotIn("do not replace, re-rank, or substitute", prompt)
+        self.assertNotIn("use that API for its subtask", prompt)
+        self.assertLess(prompt.index("Planner candidate mode: top_n_ablation."), prompt.index("Candidate APIs:"))
 
     def test_planner_prompt_omits_rag_score(self) -> None:
         prompt_path = self._prompt_file()

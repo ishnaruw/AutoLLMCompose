@@ -154,6 +154,7 @@ class PlannerStepItem(_SchemaModel):
     input_from_previous_step: str | None
     output_to_next_step: str | None
     why: str
+    planner_override_reason: str | None = None
     score: Any | None = None
     qos: Any | None = None
 
@@ -177,6 +178,7 @@ class PlannerExecutionStepItem(_SchemaModel):
     input_mapping: str
     output_mapping: str
     expected_output: str
+    planner_override_reason: str | None = None
 
 
 class PlannerExecutionWorkflow(_SchemaModel):

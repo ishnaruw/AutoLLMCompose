@@ -52,7 +52,7 @@ HEALTH_BORDER_COLORS = {
 
 COMPOSITION_STATUS_COLORS = {
     "recommended": HEALTH_COLORS["green"],
-    "valid_alternative": "#FFF2CC",
+    "complete_alternative": "#FFF2CC",
     "qos_risk": HEALTH_COLORS["orange"],
     "risk": HEALTH_COLORS["red"],
     "missing": HEALTH_COLORS["gray"],
@@ -60,13 +60,13 @@ COMPOSITION_STATUS_COLORS = {
 
 COMPOSITION_STATUS_BORDERS = {
     "recommended": HEALTH_BORDER_COLORS["green"],
-    "valid_alternative": "#B7791F",
+    "complete_alternative": "#B7791F",
     "qos_risk": HEALTH_BORDER_COLORS["orange"],
     "risk": HEALTH_BORDER_COLORS["red"],
     "missing": HEALTH_BORDER_COLORS["gray"],
 }
-COMPLETENESS_GATE_THRESHOLD = 0.999
-BEST_MODE_TOLERANCE = 1e-9
+COMPLETENESS_GATE_THRESHOLD = 1.0
+BEST_MODE_TOLERANCE = 1e-6
 
 
 def _is_missing(value: Any) -> bool:
@@ -316,11 +316,11 @@ def _composition_validity(eval_row: dict[str, Any] | pd.Series | None) -> int | 
 def _composition_completeness_gate(eval_row: dict[str, Any] | pd.Series | None) -> float | None:
     gate = _as_float(_first_value(eval_row, "Composition_Completeness_Gate"))
     if gate is not None:
-        return 1.0 if gate >= 1.0 else 0.0
+        return 1.0 if gate == 1.0 else 0.0
     completeness = _as_float(_first_value(eval_row, "Composition_Completeness"))
     if completeness is None:
         return None
-    return 1.0 if completeness >= COMPLETENESS_GATE_THRESHOLD else 0.0
+    return 1.0 if completeness == COMPLETENESS_GATE_THRESHOLD else 0.0
 
 
 def format_api_health(score: Any) -> str:
@@ -916,26 +916,32 @@ def get_recommended_mode(
 
     filtered = filtered.copy()
     filtered["_mode_order"] = filtered["Mode"].astype(str).map({mode: idx for idx, mode in enumerate(MODE_ORDER)}).fillna(len(MODE_ORDER))
-    validity_col = "Composition_Validity" if "Composition_Validity" in filtered else "Valid" if "Valid" in filtered else None
-    filtered["_validity"] = filtered[validity_col].apply(_as_match_label) if validity_col else None
     filtered["_complete"] = filtered.apply(lambda row: _composition_completeness_gate(row), axis=1)
     filtered["_score"] = pd.to_numeric(filtered.get("QoS_Adjusted_Composition_Score"), errors="coerce")
     complete_rows = filtered[filtered["_complete"] == 1.0].copy()
-    valid_rows = filtered[filtered["_validity"] == 1].copy()
-    has_complete = not complete_rows.empty
-    has_valid = not valid_rows.empty
-    candidates = complete_rows if has_complete else filtered.copy()
+    if complete_rows.empty:
+        return {
+            "status": "unavailable",
+            "mode": NA,
+            "modes": [],
+            "row": {},
+            "reason": "Recommendation unavailable because no composition-complete modes are available for this query.",
+            "warning": "No composition-complete mode is available for recommendation.",
+            "complete_candidate_count": 0,
+            "composition_complete_candidate_count": 0,
+        }
 
-    scored = candidates[candidates["_score"].notna()].copy()
+    scored = complete_rows[complete_rows["_score"].notna()].copy()
     if scored.empty:
         return {
             "status": "unavailable",
             "mode": NA,
+            "modes": [],
             "row": {},
             "reason": "Recommendation unavailable.",
-            "warning": "All QoS-adjusted composition scores are missing for this query.",
-            "valid_candidate_count": int(len(valid_rows)),
+            "warning": "All QoS-adjusted composition scores are missing for composition-complete modes in this query.",
             "complete_candidate_count": int(len(complete_rows)),
+            "composition_complete_candidate_count": int(len(complete_rows)),
         }
 
     tie_specs = [
@@ -960,43 +966,37 @@ def get_recommended_mode(
         key=lambda mode: MODE_ORDER.index(mode) if mode in MODE_ORDER else len(MODE_ORDER),
     )
     best = scored.sort_values(sort_cols, ascending=ascending, na_position="last", kind="mergesort").iloc[0]
-    status = "recommended" if has_complete else "diagnostic"
     is_tie = len(best_modes) > 1
     result: dict[str, Any] = {
-        "status": status,
+        "status": "recommended",
         "mode": str(best.get("Mode") or NA),
         "modes": best_modes,
         "best_value": best_score,
         "is_tie": is_tie,
         "row": {key: value for key, value in best.to_dict().items() if not str(key).startswith("_")},
         "reason": (
-            "Tied highest QoS-adjusted composition score among composition-complete modes"
-            if has_complete and is_tie
-            else "Highest QoS-adjusted composition score among composition-complete modes"
-            if has_complete
-            else "No complete workflow is available; showing tied highest-scoring diagnostic modes"
+            "Co-best QoS-adjusted composition score among composition-complete modes"
             if is_tie
-            else "No complete workflow is available; showing the highest-scoring diagnostic mode"
+            else "Highest QoS-adjusted composition score among composition-complete modes"
         ),
-        "valid_candidate_count": int(len(valid_rows)),
         "complete_candidate_count": int(len(complete_rows)),
+        "composition_complete_candidate_count": int(len(complete_rows)),
     }
 
-    if has_complete:
-        recommended_fc = _as_float(best.get("Functional_Coverage"))
-        complete_rows = complete_rows.copy()
-        complete_rows["_fc"] = pd.to_numeric(complete_rows.get("Functional_Coverage"), errors="coerce")
-        higher_fc = pd.DataFrame()
-        if recommended_fc is not None:
-            higher_fc = complete_rows[complete_rows["_fc"].notna()]
-            higher_fc = higher_fc[higher_fc["_fc"] > recommended_fc]
-        if not higher_fc.empty:
-            best_fc = higher_fc.sort_values(["_fc", "_score", "_mode_order"], ascending=[False, False, True], na_position="last").iloc[0]
-            result["tradeoff_mode"] = str(best_fc.get("Mode") or NA)
-            result["tradeoff_message"] = (
-                f"{result['tradeoff_mode']} has higher functional coverage, but "
-                f"{result['mode']} has the stronger final QoS-adjusted score."
-            )
+    recommended_fc = _as_float(best.get("Functional_Coverage"))
+    complete_rows = complete_rows.copy()
+    complete_rows["_fc"] = pd.to_numeric(complete_rows.get("Functional_Coverage"), errors="coerce")
+    higher_fc = pd.DataFrame()
+    if recommended_fc is not None:
+        higher_fc = complete_rows[complete_rows["_fc"].notna()]
+        higher_fc = higher_fc[higher_fc["_fc"] > recommended_fc]
+    if not higher_fc.empty:
+        best_fc = higher_fc.sort_values(["_fc", "_score", "_mode_order"], ascending=[False, False, True], na_position="last").iloc[0]
+        result["tradeoff_mode"] = str(best_fc.get("Mode") or NA)
+        result["tradeoff_message"] = (
+            f"{result['tradeoff_mode']} has higher functional coverage, but "
+            f"{result['mode']} has the stronger final QoS-adjusted score."
+        )
     return result
 
 
@@ -1896,12 +1896,11 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
         run_name = group_key[1] if isinstance(group_key, tuple) and len(group_key) > 1 else None
         label = str(query_id) if run_name is None else f"{query_id} | {run_name}"
         out_row: dict[str, str] = {"Query": label}
-        validity = group["Composition_Validity"].apply(_as_match_label) if "Composition_Validity" in group else pd.Series([None] * len(group), index=group.index)
-        valid_group = group[validity == 1].copy()
-        candidates = valid_group if not valid_group.empty else group.iloc[0:0].copy()
+        completeness = group.apply(lambda row: _composition_completeness_gate(row), axis=1)
+        candidates = group[completeness == 1.0].copy()
         for label_name, metric, ascending in metric_specs:
             if candidates.empty:
-                winner_text = "No valid mode"
+                winner_text = "No composition-complete mode"
             elif metric not in candidates:
                 winner_text = NA
             else:
@@ -1918,7 +1917,7 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
                     )
                     winner_text = ", ".join(winners) if winners else NA
             out_row[label_name] = winner_text
-            for mode in [part.strip() for part in winner_text.split(",") if part.strip() and part.strip() not in {NA, "No valid mode"}]:
+            for mode in [part.strip() for part in winner_text.split(",") if part.strip() and part.strip() not in {NA, "No composition-complete mode"}]:
                 count_rows.append({"Metric": label_name, "Mode": mode, "Wins": 1})
         rows.append(out_row)
     winners = pd.DataFrame(rows)
@@ -1926,6 +1925,64 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
     if not counts.empty:
         counts = counts.groupby(["Metric", "Mode"], as_index=False)["Wins"].sum()
     return {"winners": winners, "counts": counts}
+
+
+def build_qos_hybrid_best_table(eval_df: pd.DataFrame) -> pd.DataFrame:
+    columns = ["query_id", "is_QoS_Hybrid_best", "Best mode"]
+    if eval_df.empty or not {"Query_ID", "Mode", "QoS_Adjusted_Composition_Score"}.issubset(eval_df.columns):
+        return pd.DataFrame(columns=columns)
+
+    rows: list[dict[str, Any]] = []
+    work = eval_df[["Query_ID", "Mode", "QoS_Adjusted_Composition_Score"]].copy()
+    work["query_id"] = work["Query_ID"].astype(str)
+    work["_score"] = pd.to_numeric(work["QoS_Adjusted_Composition_Score"], errors="coerce")
+    query_ids = sorted(
+        work["query_id"].dropna().unique().tolist(),
+        key=lambda value: (
+            0,
+            int(match.group(1)),
+        )
+        if (match := re.fullmatch(r"[qQ](\d+)", str(value).strip()))
+        else (1, str(value)),
+    )
+    mode_order = {mode: idx for idx, mode in enumerate(MODE_ORDER)}
+
+    for query_id in query_ids:
+        group = work[work["query_id"] == query_id]
+        scored = group[group["_score"].notna()]
+        if scored.empty:
+            best_modes: list[str] = []
+        else:
+            best_score = scored["_score"].max()
+            best_modes = sorted(
+                scored.loc[(scored["_score"] - best_score).abs() <= BEST_MODE_TOLERANCE, "Mode"]
+                .dropna()
+                .astype(str)
+                .unique()
+                .tolist(),
+                key=lambda mode: mode_order.get(mode, len(MODE_ORDER)),
+            )
+        rows.append(
+            {
+                "query_id": query_id,
+                "is_QoS_Hybrid_best": (
+                    "Yes"
+                    if best_modes == ["qos_hybrid"]
+                    else "Tie"
+                    if "qos_hybrid" in best_modes
+                    else "No"
+                ),
+                "Best mode": (
+                    f"Tie between {' and '.join(best_modes)}"
+                    if len(best_modes) > 1
+                    else best_modes[0]
+                    if best_modes
+                    else NA
+                ),
+            }
+        )
+
+    return pd.DataFrame(rows, columns=columns)
 
 
 def compute_sensitivity_scores(eval_rows: pd.DataFrame, weights: dict[str, float]) -> pd.DataFrame:
@@ -1936,7 +1993,6 @@ def compute_sensitivity_scores(eval_rows: pd.DataFrame, weights: dict[str, float
         "QoS weight": "Normalized_QoS_Score",
         "Functional Coverage weight": "Functional_Coverage",
         "Composition Completeness weight": "Composition_Completeness",
-        "Composition Validity weight": "Composition_Validity",
     }
     total_weight = sum(max(float(weights.get(label, 0.0)), 0.0) for label in specs) or 1.0
     score = pd.Series([0.0] * len(out), index=out.index, dtype=float)
@@ -2429,10 +2485,6 @@ def _mode_comparison_status(
         key = "missing"
         overall = "Missing Data"
         reason = "Composition evaluation row is missing for this mode."
-    elif validity == 0:
-        key = "risk"
-        overall = "Invalid"
-        reason = "Composition_Validity is 0 for this mode."
     elif complete == 0.0:
         key = "risk"
         overall = "Incomplete"
@@ -2447,16 +2499,18 @@ def _mode_comparison_status(
         reason = "This mode has the best QoS-adjusted composition score among composition-complete modes."
     elif functional == 1 and qos_risk == "High":
         key = "qos_risk"
-        overall = "Valid Alternative with QoS Risk"
+        overall = "Composition-Complete Alternative with QoS Risk"
         reason = "The mode is composition-complete, but this API has high QoS risk."
     elif functional is None:
         key = "missing"
         overall = "Missing Data"
         reason = "Functional Match is missing for this planned API."
     else:
-        key = "valid_alternative"
-        overall = "Valid Alternative"
+        key = "complete_alternative"
+        overall = "Composition-Complete Alternative"
         reason = "The mode is composition-complete but is not the best final composition score for this query."
+    if eval_row and validity == 0:
+        reason = f"{reason} Composition_Validity is 0 as a diagnostic warning only."
 
     return {
         "fill": COMPOSITION_STATUS_COLORS[key],
@@ -2873,14 +2927,19 @@ def comparison_highlights(summary: pd.DataFrame, differences: pd.DataFrame) -> l
         ("Functional_Coverage", "Highest functional coverage", True),
         ("Normalized_QoS_Score", "Highest normalized QoS score", True),
     ]
+    complete_summary = summary.copy()
+    if not complete_summary.empty:
+        complete_summary = complete_summary[
+            complete_summary.apply(lambda row: _composition_completeness_gate(row), axis=1) == 1.0
+        ].copy()
     for metric, label, higher_better in metric_specs:
-        if summary.empty or metric not in summary:
+        if complete_summary.empty or metric not in complete_summary:
             continue
-        values = pd.to_numeric(summary[metric], errors="coerce")
+        values = pd.to_numeric(complete_summary[metric], errors="coerce")
         if values.dropna().empty:
             continue
         target = values.max() if higher_better else values.min()
-        modes = summary.loc[(values - target).abs() <= BEST_MODE_TOLERANCE, "Mode"].astype(str).tolist()
+        modes = complete_summary.loc[(values - target).abs() <= BEST_MODE_TOLERANCE, "Mode"].astype(str).tolist()
         highlights.append(f"{label}: {', '.join(modes)} ({format_value(target)}).")
 
     risk_col = "Composition_Risk_API" if "Composition_Risk_API" in summary else "Bottleneck_API" if "Bottleneck_API" in summary else None

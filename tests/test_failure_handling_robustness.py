@@ -1,8 +1,10 @@
 import json
+from dataclasses import replace
 
 from src.agents.planner import _repair_planner_payload
 from src.agents.ranker import _exception_reason, _failure_metadata
 from src.core.retry import classify_retryable_error
+import src.driver.run_autogen_pipeline as pipeline
 from src.driver.run_autogen_pipeline import (
     PlannerPrecheckFailure,
     _deterministic_select_and_plan,
@@ -213,7 +215,8 @@ def _planner_payload(api_ids_by_subtask):
     }
 
 
-def test_selection_passes_exactly_one_api_per_subtask_to_planner(tmp_path):
+def test_selection_passes_exactly_one_api_per_subtask_to_planner(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "CONFIG", replace(pipeline.CONFIG, planner_candidate_mode="fixed_one"))
     prompts = []
 
     def fake_llm(_role, _system, prompt):
@@ -250,7 +253,8 @@ def test_selection_passes_exactly_one_api_per_subtask_to_planner(tmp_path):
     assert result["planner"]["planner_provenance"][0]["selected_by"] == "ranking_mode"
 
 
-def test_qos_hybrid_workflow_selection_blocks_rank_override(tmp_path):
+def test_qos_hybrid_workflow_selection_blocks_rank_override(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "CONFIG", replace(pipeline.CONFIG, planner_candidate_mode="fixed_one"))
     prompts = []
     responses = [
         _planner_payload([("1", "slow_rank1"), ("2", "stable_api")]),
@@ -310,3 +314,287 @@ def test_qos_hybrid_workflow_selection_blocks_rank_override(tmp_path):
     assert result["planner"]["planner_override_attempted"] is True
     assert {step["api_id"] for step in result["planner"]["primary_plan"]["steps"]} == {"fast_rank2", "stable_api"}
     assert all(item["selected_by"] == "workflow_hybrid_selector" for item in result["planner"]["planner_provenance"])
+
+
+def test_qos_hybrid_caps_workflow_combinations_deterministically(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "CONFIG",
+        replace(pipeline.CONFIG, planner_candidate_mode="fixed_one", selector_top_n=4, hybrid_max_workflow_combinations=8),
+    )
+
+    def make_pool(subtask_id):
+        rows = []
+        for idx, (rt_s, tp_kbps, availability) in enumerate(
+            [(1.0, 1.0, 0.70), (2.0, 2.0, 0.80), (3.0, 3.0, 0.90), (4.0, 4.0, 0.99)],
+            start=1,
+        ):
+            rows.append(
+                {
+                    "api_id": f"s{subtask_id}_api_{idx}",
+                    "mode_rank": idx,
+                    "functional_match_label": 1,
+                    "topsis_rank": idx,
+                    "topsis_score": 1.0 - (idx * 0.1),
+                    "service": {"qos": {"rt_s": rt_s, "tp_kbps": tp_kbps, "availability": availability}},
+                }
+            )
+        return rows
+
+    subtasks = [{"id": "1"}, {"id": "2"}, {"id": "3"}]
+    ranked_full = {str(idx): make_pool(idx) for idx in range(1, 4)}
+
+    first_selected, first_trace, first_missing, first_reasons = pipeline._select_workflow_hybrid(
+        subtasks=subtasks,
+        ranked_full=ranked_full,
+        functional_match_map={},
+        run_label="synthetic_cap_test",
+        planner_candidate_mode="fixed_one",
+        planner_top_n={},
+    )
+    second_selected, second_trace, second_missing, second_reasons = pipeline._select_workflow_hybrid(
+        subtasks=subtasks,
+        ranked_full=ranked_full,
+        functional_match_map={},
+        run_label="synthetic_cap_test",
+        planner_candidate_mode="fixed_one",
+        planner_top_n={},
+    )
+
+    assert first_missing == second_missing == []
+    assert first_reasons == second_reasons == {}
+    assert len(first_selected) == 3
+    assert [row["subtask_id"] for row in first_selected] == ["1", "2", "3"]
+    assert all(row["selected_by"] == "workflow_hybrid_selector" for row in first_selected)
+    assert [row["api_id"] for row in first_selected] == [row["api_id"] for row in second_selected]
+
+    trace = first_trace["1"]
+    assert trace["hybrid_total_combinations_before_cap"] == 64
+    assert trace["hybrid_total_combinations_after_cap"] == 8
+    assert trace["hybrid_max_workflow_combinations"] == 8
+    assert trace["hybrid_pool_trimmed"] is True
+    assert trace["hybrid_pool_sizes_before_cap"] == {"1": 4, "2": 4, "3": 4}
+    assert trace["hybrid_pool_sizes_after_cap"] == {"1": 2, "2": 2, "3": 2}
+    assert all(size >= 1 for size in trace["hybrid_pool_sizes_after_cap"].values())
+    assert first_trace == second_trace
+    assert first_selected[0]["selection_provenance"]["hybrid_total_combinations_after_cap"] == 8
+
+
+def test_qos_hybrid_workflow_topsis_selects_closest_ideal_and_preserves_api_topsis(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "CONFIG",
+        replace(
+            pipeline.CONFIG,
+            planner_candidate_mode="fixed_one",
+            selector_top_n=2,
+            hybrid_workflow_selector="workflow_topsis",
+        ),
+    )
+
+    ranked_full = {
+        "1": [
+            {
+                "api_id": "s1_fast_tp",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.91,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 100.0, "availability": 0.90}},
+            },
+            {
+                "api_id": "s1_available",
+                "mode_rank": 2,
+                "functional_match_label": 1,
+                "topsis_rank": 2,
+                "topsis_score": 0.82,
+                "service": {"qos": {"rt_s": 4.0, "tp_kbps": 40.0, "availability": 0.99}},
+            },
+        ],
+        "2": [
+            {
+                "api_id": "s2_fast_tp",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.93,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 100.0, "availability": 0.90}},
+            },
+            {
+                "api_id": "s2_available",
+                "mode_rank": 2,
+                "functional_match_label": 1,
+                "topsis_rank": 2,
+                "topsis_score": 0.84,
+                "service": {"qos": {"rt_s": 4.0, "tp_kbps": 40.0, "availability": 0.99}},
+            },
+        ],
+    }
+
+    selected, trace, missing, reasons = pipeline._select_workflow_hybrid(
+        subtasks=[{"id": "1"}, {"id": "2"}],
+        ranked_full=ranked_full,
+        functional_match_map={},
+        run_label="synthetic_workflow_topsis",
+        planner_candidate_mode="fixed_one",
+        planner_top_n={},
+    )
+
+    assert missing == []
+    assert reasons == {}
+    assert [row["api_id"] for row in selected] == ["s1_fast_tp", "s2_fast_tp"]
+    assert len(selected) == 2
+    assert all(row["selected_rank"] == 1 for row in selected)
+    assert all(item["planner_candidates_per_subtask"] == 1 for item in trace.values())
+    assert all(item["selected_count"] == 1 for item in trace.values())
+
+    first = selected[0]
+    assert first["topsis_rank"] == 1
+    assert first["topsis_score"] == 0.91
+    assert first["workflow_topsis_rank"] == 1
+    assert first["workflow_topsis_score"] > 0.9
+    assert first["workflow_total_response_time"] == 2.0
+    assert first["workflow_bottleneck_throughput"] == 100.0
+    assert first["workflow_average_availability"] == 0.9
+    assert first["hybrid_workflow_selector"] == "workflow_topsis"
+    assert first["workflow_selector_fallback_used"] is False
+    assert first["workflow_topsis_weights"] == {
+        "response_time": 1.0 / 3.0,
+        "throughput": 1.0 / 3.0,
+        "availability": 1.0 / 3.0,
+    }
+    assert first["selection_provenance"]["topsis_rank"] == 1
+    assert first["selection_provenance"]["workflow_topsis_rank"] == 1
+    assert first["selection_provenance"]["hybrid_workflow_selector"] == "workflow_topsis"
+
+    assert trace["1"]["hybrid_selector_objective"] == "workflow_topsis"
+    assert trace["1"]["workflow_topsis_rank"] == 1
+    assert trace["1"]["workflow_selector_fallback_used"] is False
+    assert trace["1"]["hybrid_total_combinations_after_cap"] == 4
+
+
+def test_qos_hybrid_relative_to_best_selector_can_be_configured(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "CONFIG",
+        replace(
+            pipeline.CONFIG,
+            planner_candidate_mode="fixed_one",
+            selector_top_n=2,
+            hybrid_workflow_selector="relative_to_best",
+        ),
+    )
+
+    ranked_full = {
+        "1": [
+            {
+                "api_id": "low_latency",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.9,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 80.0, "availability": 0.95}},
+            },
+            {
+                "api_id": "slow_available",
+                "mode_rank": 2,
+                "functional_match_label": 1,
+                "topsis_rank": 2,
+                "topsis_score": 0.8,
+                "service": {"qos": {"rt_s": 4.0, "tp_kbps": 70.0, "availability": 0.99}},
+            },
+        ],
+        "2": [
+            {
+                "api_id": "steady_partner",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.88,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 80.0, "availability": 0.95}},
+            }
+        ],
+    }
+
+    selected, trace, missing, reasons = pipeline._select_workflow_hybrid(
+        subtasks=[{"id": "1"}, {"id": "2"}],
+        ranked_full=ranked_full,
+        functional_match_map={},
+        run_label="synthetic_relative_to_best",
+        planner_candidate_mode="fixed_one",
+        planner_top_n={},
+    )
+
+    assert missing == []
+    assert reasons == {}
+    assert [row["api_id"] for row in selected] == ["low_latency", "steady_partner"]
+    assert selected[0]["hybrid_workflow_selector"] == "relative_to_best"
+    assert selected[0]["hybrid_selector_objective"] == "final_score_aligned_relative_to_best"
+    assert selected[0]["workflow_topsis_score"] is None
+    assert selected[0]["workflow_selector_fallback_used"] is False
+    assert trace["1"]["hybrid_workflow_selector"] == "relative_to_best"
+    assert trace["1"]["hybrid_selector_objective"] == "final_score_aligned_relative_to_best"
+    assert trace["1"]["workflow_topsis_score"] is None
+    assert trace["1"]["workflow_selector_fallback_used"] is False
+
+
+def test_qos_hybrid_workflow_topsis_falls_back_on_invalid_workflow_metrics(monkeypatch):
+    monkeypatch.setattr(
+        pipeline,
+        "CONFIG",
+        replace(
+            pipeline.CONFIG,
+            planner_candidate_mode="fixed_one",
+            selector_top_n=2,
+            hybrid_workflow_selector="workflow_topsis",
+        ),
+    )
+
+    ranked_full = {
+        "1": [
+            {
+                "api_id": "missing_availability",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.95,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 10.0}},
+            },
+            {
+                "api_id": "complete_qos",
+                "mode_rank": 2,
+                "functional_match_label": 1,
+                "topsis_rank": 2,
+                "topsis_score": 0.85,
+                "service": {"qos": {"rt_s": 2.0, "tp_kbps": 10.0, "availability": 0.99}},
+            },
+        ],
+        "2": [
+            {
+                "api_id": "partner",
+                "mode_rank": 1,
+                "functional_match_label": 1,
+                "topsis_rank": 1,
+                "topsis_score": 0.90,
+                "service": {"qos": {"rt_s": 1.0, "tp_kbps": 10.0, "availability": 0.99}},
+            }
+        ],
+    }
+
+    selected, trace, missing, reasons = pipeline._select_workflow_hybrid(
+        subtasks=[{"id": "1"}, {"id": "2"}],
+        ranked_full=ranked_full,
+        functional_match_map={},
+        run_label="synthetic_workflow_topsis_fallback",
+        planner_candidate_mode="fixed_one",
+        planner_top_n={},
+    )
+
+    assert missing == []
+    assert reasons == {}
+    assert [row["api_id"] for row in selected] == ["complete_qos", "partner"]
+    assert selected[0]["hybrid_workflow_selector"] == "workflow_topsis"
+    assert selected[0]["hybrid_selector_objective"] == "final_score_aligned_relative_to_best"
+    assert selected[0]["workflow_topsis_score"] is None
+    assert selected[0]["workflow_selector_fallback_used"] is True
+    assert trace["1"]["workflow_selector_fallback_used"] is True

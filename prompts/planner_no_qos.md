@@ -10,13 +10,13 @@ Input user goal:
 Ordered subtasks:
 {subtasks_json}
 
+{planner_candidate_mode_rules}
+
 Candidate APIs:
 {selected_candidates_json}
 
 Rules:
 - Use only the provided candidates.
-- The selected APIs are fixed by the selection stage. Do not replace, re-rank, or substitute them. Your task is only to compose them into a coherent workflow.
-- There is exactly one selected API per subtask. Use that API for its subtask and preserve subtask order.
 - Keep workflows sequential.
 - Return exactly one primary plan.
 - Return a machine-readable execution workflow in addition to the human-readable primary plan.
@@ -56,6 +56,7 @@ Return JSON only:
         "input_from_previous_step": "...",
         "output_to_next_step": "...",
         "why": "...",
+        "planner_override_reason": null,
         "qos": null
       }
     ],
@@ -81,7 +82,8 @@ Return JSON only:
         "depends_on": [],
         "input_mapping": "...",
         "output_mapping": "...",
-        "expected_output": "..."
+        "expected_output": "...",
+        "planner_override_reason": null
       }
     ]
   },

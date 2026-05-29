@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Any
+from typing import Any, Dict, Literal
 
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    run_tag: str | None = "RUNS_MAY_25_NEW"
+    run_tag: str | None = "RUNS_MAY_28_4"
 
     shared_index_dir: Path = Path("data/index/AutoLLMCompose_v3/shared_no_qos")
     catalog_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl")
@@ -21,6 +21,11 @@ class PipelineConfig:
     functional_refinement_enabled: bool = True
     selector_top_n: int = 5
     planner_enabled: bool = True
+    planner_candidate_mode: Literal["fixed_one", "top_n_ablation"] = "top_n_ablation"
+    planner_top_n_cap: int = 5
+    hybrid_max_workflow_combinations: int = 5000
+    # Allowed values: "workflow_topsis", "relative_to_best".
+    hybrid_workflow_selector: Literal["workflow_topsis", "relative_to_best"] = "relative_to_best"
     composition_qos_eval_enabled: bool = True
     planner_temperature: float = 0.0
     use_autogen_agents: bool = True
