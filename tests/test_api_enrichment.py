@@ -134,6 +134,50 @@ class ApiEnrichmentTests(unittest.TestCase):
         self.assertEqual(with_qos[0]["qos"]["availability"], 0.99)
         self.assertNotIn("qos", with_qos[1])
 
+    def test_normalizer_includes_full_qos_evidence_when_requested(self) -> None:
+        api = {
+            "api_id": "weather_fast",
+            "name": "Weather Fast",
+            "description": "Forecast endpoint for current weather conditions",
+            "qos_llm_rank": 1,
+            "qos_llm_score": 0.91,
+            "rt_s": 0.25,
+            "service": {
+                "qos_llm_rank": 9,
+                "tp_kbps": 99.0,
+                "qos": {
+                    "qos_llm_rank": 8,
+                    "qos_llm_score": 0.42,
+                    "rt_s": 1.5,
+                    "tp_kbps": 12.0,
+                    "availability": 0.98,
+                },
+            },
+        }
+
+        normalized = normalize_api_for_ranking(api, include_qos_rank=True)
+
+        self.assertEqual(normalized["qos_llm_rank"], 1)
+        self.assertEqual(normalized["qos_llm_score"], 0.91)
+        self.assertEqual(normalized["rt_s"], 0.25)
+        self.assertEqual(normalized["tp_kbps"], 12.0)
+        self.assertEqual(normalized["availability"], 0.98)
+
+    def test_normalizer_omits_qos_evidence_without_include_flag(self) -> None:
+        api = {
+            "api_id": "weather_fast",
+            "name": "Weather Fast",
+            "description": "Forecast endpoint for current weather conditions",
+            "qos_llm_rank": 1,
+            "qos_llm_score": 0.91,
+            "service": {"qos": {"rt_s": 0.25, "tp_kbps": 12.0, "availability": 0.98}},
+        }
+
+        normalized = normalize_api_for_ranking(api)
+
+        for key in ("qos_llm_rank", "qos_llm_score", "rt_s", "tp_kbps", "availability"):
+            self.assertNotIn(key, normalized)
+
 
 if __name__ == "__main__":
     unittest.main()

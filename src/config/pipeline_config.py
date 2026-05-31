@@ -7,7 +7,7 @@ from typing import Any, Dict, Literal
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    run_tag: str | None = "RUNS_MAY_30"
+    run_tag: str | None = "RUNS_MAY_31"
 
     shared_index_dir: Path = Path("data/index/AutoLLMCompose_v3/shared_no_qos")
     catalog_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl")

@@ -1928,7 +1928,8 @@ def build_winner_heatmap(eval_df: pd.DataFrame) -> dict[str, pd.DataFrame]:
 
 
 def build_qos_hybrid_best_table(eval_df: pd.DataFrame) -> pd.DataFrame:
-    columns = ["query_id", "is_QoS_Hybrid_best", "Best mode"]
+    pure_vs_no_qos_col = "Is Qos_pure_llm better than no_qos"
+    columns = ["query_id", "is_QoS_Hybrid_best", "Best mode", pure_vs_no_qos_col]
     if eval_df.empty or not {"Query_ID", "Mode", "QoS_Adjusted_Composition_Score"}.issubset(eval_df.columns):
         return pd.DataFrame(columns=columns)
 
@@ -1962,6 +1963,17 @@ def build_qos_hybrid_best_table(eval_df: pd.DataFrame) -> pd.DataFrame:
                 .tolist(),
                 key=lambda mode: mode_order.get(mode, len(MODE_ORDER)),
             )
+        mode_scores = scored.groupby("Mode")["_score"].max() if not scored.empty else pd.Series(dtype=float)
+        pure_score = mode_scores.get("qos_pure_llm")
+        no_qos_score = mode_scores.get("no_qos")
+        if pd.isna(pure_score) or pd.isna(no_qos_score):
+            pure_vs_no_qos = NA
+        elif abs(pure_score - no_qos_score) <= BEST_MODE_TOLERANCE:
+            pure_vs_no_qos = "Tie"
+        elif pure_score > no_qos_score:
+            pure_vs_no_qos = "Yes"
+        else:
+            pure_vs_no_qos = "No"
         rows.append(
             {
                 "query_id": query_id,
@@ -1979,6 +1991,7 @@ def build_qos_hybrid_best_table(eval_df: pd.DataFrame) -> pd.DataFrame:
                     if best_modes
                     else NA
                 ),
+                pure_vs_no_qos_col: pure_vs_no_qos,
             }
         )
 

@@ -420,23 +420,34 @@ class CompositionVisualizationRecommendationTests(unittest.TestCase):
             [
                 {"Query_ID": "q10", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": None},
                 {"Query_ID": "q10", "Mode": "no_qos", "QoS_Adjusted_Composition_Score": 0.4},
+                {"Query_ID": "q10", "Mode": "qos_pure_llm", "QoS_Adjusted_Composition_Score": 0.2},
                 {"Query_ID": "q2", "Mode": "qos_topsis", "QoS_Adjusted_Composition_Score": 0.8},
                 {"Query_ID": "q2", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": 0.8},
+                {"Query_ID": "q2", "Mode": "no_qos", "QoS_Adjusted_Composition_Score": 0.5},
+                {"Query_ID": "q2", "Mode": "qos_pure_llm", "QoS_Adjusted_Composition_Score": 0.5},
                 {"Query_ID": "q1", "Mode": "qos_hybrid", "QoS_Adjusted_Composition_Score": 0.9},
                 {"Query_ID": "q1", "Mode": "qos_pure_llm", "QoS_Adjusted_Composition_Score": 0.7},
+                {"Query_ID": "q1", "Mode": "no_qos", "QoS_Adjusted_Composition_Score": 0.6},
             ]
         )
 
         result = build_qos_hybrid_best_table(rows)
         by_query = result.set_index("query_id")
 
+        self.assertEqual(
+            result.columns.tolist(),
+            ["query_id", "is_QoS_Hybrid_best", "Best mode", "Is Qos_pure_llm better than no_qos"],
+        )
         self.assertEqual(result["query_id"].tolist(), ["q1", "q2", "q10"])
         self.assertEqual(by_query.loc["q1", "is_QoS_Hybrid_best"], "Yes")
         self.assertEqual(by_query.loc["q1", "Best mode"], "qos_hybrid")
+        self.assertEqual(by_query.loc["q1", "Is Qos_pure_llm better than no_qos"], "Yes")
         self.assertEqual(by_query.loc["q2", "is_QoS_Hybrid_best"], "Tie")
         self.assertEqual(by_query.loc["q2", "Best mode"], "Tie between qos_topsis and qos_hybrid")
+        self.assertEqual(by_query.loc["q2", "Is Qos_pure_llm better than no_qos"], "Tie")
         self.assertEqual(by_query.loc["q10", "is_QoS_Hybrid_best"], "No")
         self.assertEqual(by_query.loc["q10", "Best mode"], "no_qos")
+        self.assertEqual(by_query.loc["q10", "Is Qos_pure_llm better than no_qos"], "No")
 
     def test_sensitivity_scores_are_visualization_only(self) -> None:
         rows = pd.DataFrame(

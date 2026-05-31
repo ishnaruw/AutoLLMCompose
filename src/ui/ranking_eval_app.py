@@ -10,7 +10,7 @@ import warnings
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 import time
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -1070,6 +1070,7 @@ def _render_composition_evaluation(parent_dir: str, selected_modes: list[str], s
             sticky_columns=["query_id"],
             height=260,
             key="qos_hybrid_best_summary",
+            cell_style=_qos_summary_cell_style,
         )
 
     chart_tab, raw_tab, workflow_tab = st.tabs(["Score & QoS Charts", "Ranks & Validity", "Planned Workflow"])
@@ -1436,6 +1437,7 @@ def render_sticky_table(
     height: int = 420,
     key: str | None = None,
     note: bool = True,
+    cell_style: Callable[[str, str], str] | None = None,
 ) -> None:
     if df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -1484,7 +1486,9 @@ def render_sticky_table(
         cells = []
         for col in display.columns:
             value = _html_value(row.get(col))
-            cells.append(f'<td title="{escape(value)}"><div class="maof-sticky-cell-text">{escape(value)}</div></td>')
+            style = cell_style(col, value) if cell_style else ""
+            style_attr = f' style="{escape(style)}"' if style else ""
+            cells.append(f'<td title="{escape(value)}"{style_attr}><div class="maof-sticky-cell-text">{escape(value)}</div></td>')
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
 
     if note:
@@ -2134,6 +2138,18 @@ def _mode_cell_style(value: Any) -> str:
         if text == mode:
             return f"background-color: {color}; color: #111827;"
     return ""
+
+
+def _qos_summary_cell_style(column: str, value: str) -> str:
+    if column not in {"is_QoS_Hybrid_best", "Is Qos_pure_llm better than no_qos"}:
+        return ""
+    colors = {
+        "Yes": "#C6EFCE",
+        "No": "#F4CCCC",
+        "Tie": "#FFF2CC",
+    }
+    color = colors.get(str(value).strip())
+    return f"background-color: {color}; color: #111827;" if color else ""
 
 
 def _eval_rows_for_run_collection(eval_df: pd.DataFrame, run_dir: Path) -> pd.DataFrame:

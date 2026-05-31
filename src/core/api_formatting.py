@@ -181,14 +181,8 @@ def normalize_api_for_ranking(
     )
 
     if include_qos_rank:
-        qos_rank = _first_value(
-            api.get("qos_llm_rank"),
-            _as_dict(api.get("qos")).get("qos_llm_rank"),
-            service.get("qos_llm_rank"),
-            _as_dict(service.get("qos")).get("qos_llm_rank"),
-        )
-        if qos_rank is not None:
-            compact["qos_llm_rank"] = qos_rank
+        for key in ("qos_llm_rank", "qos_llm_score", "rt_s", "tp_kbps", "availability"):
+            compact[key] = _qos_evidence_value(api, service, key)
 
     return compact
 
@@ -274,6 +268,27 @@ def _first_value(*values: Any) -> Any:
             continue
         return value
     return ""
+
+
+def _first_present_value(*values: Any) -> Any:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return None
+
+
+def _qos_evidence_value(api: Dict[str, Any], service: Dict[str, Any], key: str) -> Any:
+    row_qos = _as_dict(api.get("qos"))
+    service_qos = _as_dict(service.get("qos"))
+    return _first_present_value(
+        api.get(key),
+        row_qos.get(key),
+        service_qos.get(key),
+        service.get(key),
+    )
 
 
 def _clean_text(value: Any) -> str:
