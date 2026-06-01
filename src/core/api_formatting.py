@@ -100,6 +100,7 @@ def normalize_api_for_ranking(
     api: Dict[str, Any],
     subtask_text: str | None = None,
     include_qos_rank: bool = False,
+    include_functional_match_label: bool = False,
 ) -> Dict[str, Any]:
     """Build compact deterministic API evidence for functional and ranking prompts."""
     if not isinstance(api, dict):
@@ -184,7 +185,28 @@ def normalize_api_for_ranking(
         for key in ("qos_llm_rank", "qos_llm_score", "rt_s", "tp_kbps", "availability"):
             compact[key] = _qos_evidence_value(api, service, key)
 
+    if include_functional_match_label:
+        label = _functional_match_label(api)
+        if label is not None:
+            compact["functional_match_label"] = label
+
     return compact
+
+
+def _functional_match_label(api: Dict[str, Any]) -> int | None:
+    for key in ("Functional Match Label", "Functional Match (0/1)", "functional_match_label", "functional_match", "relevant"):
+        value = api.get(key)
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if value in (0, 1):
+            return int(value)
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"1", "true", "yes", "relevant", "match"}:
+                return 1
+            if text in {"0", "false", "no", "irrelevant", "nonmatch", "non-match", "not_match"}:
+                return 0
+    return None
 
 
 def _log_formatting_anomalies(

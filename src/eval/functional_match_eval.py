@@ -978,6 +978,13 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
             sid = str(item.get("subtask_id") or "")
             purpose = subtask_map.get(sid, "")
             api_id = str(item.get("api_id", ""))
+            planner_k = int(planner_k_by_subtask.get(sid, 0) or 0)
+            planner_threshold = planner_k if planner_k > 0 else 5
+            mode_rank = item.get("mode_rank")
+            try:
+                selected_for_planner = int(mode_rank or 0) <= planner_threshold
+            except Exception:
+                selected_for_planner = False
             if _is_failure_row(item):
                 rel_info = cache.get(
                     f"{query_id}_{sid}_{api_id}",
@@ -1009,7 +1016,7 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                     "Functional Match (0/1)": functional_match,
                     "Used in Ranking": "No",
                     "Selected for Planner": "No",
-                    "Planner Selection K": planner_k_by_subtask.get(sid, 0),
+                    "Planner Selection K": planner_k,
                     "Failure Flag": 1,
                     "Failure Stage": item.get("failure_stage", ""),
                     "Failure Reason": item.get("failure_reason", ""),
@@ -1039,13 +1046,6 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 {"relevant": 0, "comment": "Missing from retrieval-stage functional match cache"},
             )
             functional_match = _functional_match_value(rel_info)
-            planner_k = int(planner_k_by_subtask.get(sid, 0) or 0)
-            planner_threshold = planner_k if planner_k > 0 else 5
-            mode_rank = item.get("mode_rank")
-            try:
-                selected_for_planner = int(mode_rank or 0) <= planner_threshold
-            except Exception:
-                selected_for_planner = False
             service = item.get("service") or {}
             catalog_entry = catalog.get(api_id, {})
             if isinstance(service.get("qos"), dict):
@@ -1106,7 +1106,7 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "query_id": query_id,
                 "excel": str(out_xlsx),
                 "rows_json": str(output_dir / f"query_{query_id}_candidate_api_rankings_rows.json"),
-                "source": "retrieval_functional_match_cache",
+                "source": "retrieval_stage_functional_refinement",
                 "cache": str(cache_path),
             },
             indent=2,

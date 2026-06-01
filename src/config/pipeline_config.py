@@ -7,7 +7,7 @@ from typing import Any, Dict, Literal
 
 @dataclass(frozen=True)
 class PipelineConfig:
-    run_tag: str | None = "RUNS_MAY_31"
+    run_tag: str | None = "RUNS_MAY_31_NEW_4"
 
     shared_index_dir: Path = Path("data/index/AutoLLMCompose_v3/shared_no_qos")
     catalog_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl")
@@ -15,6 +15,8 @@ class PipelineConfig:
     api_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_qos.jsonl")
 
     rag_top_k: int = 40
+    zero_functional_retrieval_retry_enabled: bool = True
+    zero_functional_retrieval_retry_top_k: int = 40
     ranker_max_candidates: int = 40
     ranker_pool_n: int = 40
     functional_match_chunk_size: int = 20

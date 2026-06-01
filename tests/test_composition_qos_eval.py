@@ -276,6 +276,66 @@ class CompositionQosEvalTests(unittest.TestCase):
             self.assertEqual(rows_by_mode["no_qos"]["Normalized_QoS_Score"], 0.0)
             self.assertEqual(rows_by_mode["no_qos"]["QoS_Adjusted_Composition_Score"], 0.7)
 
+    def test_composition_validity_does_not_gate_final_score(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            query_dir = Path(tmp)
+            eval_dir = query_dir / "evaluation"
+            self._write_json(query_dir / "0_decomposer.json", [{"id": 1, "description": "Call API"}])
+            self._write_json(
+                query_dir / "no_qos" / "3_selected_s1.json",
+                [{"api_id": "api_a", "service": {"qos": {"rt_s": 10, "tp_kbps": 50, "availability": 0.9}}}],
+            )
+            self._write_json(
+                query_dir / "no_qos" / "4_planner.json",
+                {
+                    "primary_plan": {
+                        "plan_id": 1,
+                        "summary": "Complete but diagnostically invalid plan",
+                        "steps": [
+                            {
+                                "step": 1,
+                                "api_id": "api_a",
+                                "subtask_id": 1,
+                                "action": "Call A",
+                                "input_from_previous_step": None,
+                                "output_to_next_step": "a result",
+                                "why": "Matches",
+                                "qos": None,
+                            }
+                        ],
+                        "subtask_coverage": [],
+                    },
+                    "selected_api_ids": ["api_a"],
+                    "overall_rationale": "Complete",
+                },
+            )
+            self._write_json(
+                query_dir / "no_qos" / "planner_failure.json",
+                {"failure_stage": "planner_validation", "failure_reason": "diagnostic_only_test"},
+            )
+            self._write_json(
+                eval_dir / "query_qvalidity_candidate_api_rankings_rows.json",
+                [
+                    {
+                        "Mode": "no_qos",
+                        "Sub Task": "1",
+                        "Selected_API": "api_a",
+                        "Functional Match (0/1)": 1,
+                        "QoS_RT_s": 10,
+                        "QoS_TP_kbps": 50,
+                        "QoS Availability": 0.9,
+                    }
+                ],
+            )
+
+            result = evaluate_composition_qos(query_dir=query_dir, query_id="qvalidity", output_dir=eval_dir)
+            row = {item["Mode"]: item for item in result["rows"]}["no_qos"]
+
+            self.assertEqual(row["Composition_Validity"], 0)
+            self.assertEqual(row["Composition_Completeness"], 1.0)
+            self.assertEqual(row["Functional_Coverage"], 1.0)
+            self.assertEqual(row["QoS_Adjusted_Composition_Score"], 1.0)
+
     def test_qos_references_use_max_functional_coverage_complete_workflows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             query_dir = Path(tmp)

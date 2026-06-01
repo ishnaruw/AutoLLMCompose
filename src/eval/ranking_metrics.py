@@ -565,13 +565,15 @@ def _selected_counts_by_mode(case_df: pd.DataFrame) -> Dict[str, int]:
 
 def _normalize_inclusion_policy(inclusion_policy: str | None) -> str:
     policy = str(inclusion_policy or DEFAULT_INCLUSION_POLICY).strip()
-    if policy == STRICT_ALL_MODES:
-        return STRICT_SELECTED_MODES
     if policy not in INCLUSION_POLICIES:
         raise ValueError(
             f"Unsupported inclusion policy {policy!r}. Expected one of: {', '.join(INCLUSION_POLICIES)}"
         )
     return policy
+
+
+def _is_strict_inclusion_policy(inclusion_policy: str) -> bool:
+    return inclusion_policy in {STRICT_SELECTED_MODES, STRICT_ALL_MODES}
 
 
 def _normalize_selected_modes(selected_modes: Sequence[str] | None) -> List[str]:
@@ -693,9 +695,9 @@ def build_ranking_cases(
             excluded_rows = case_df[case_df["exclude_from_ranking_eval"] == 1]
             details = _failure_details(excluded_rows)
             suffix = f": {', '.join(details)}" if details else ""
-            if inclusion_policy == STRICT_SELECTED_MODES:
+            if _is_strict_inclusion_policy(inclusion_policy):
                 warnings.append(
-                    f"Excluded {case_name} from ranking evaluation because selected mode output was invalid{suffix}."
+                    f"Excluded {case_name} from ranking evaluation under {inclusion_policy} because selected mode output was invalid{suffix}."
                 )
                 continue
             warnings.append(
@@ -709,8 +711,8 @@ def build_ranking_cases(
 
         modes = set(eval_df["mode"].dropna().astype(str))
         missing_modes = [mode for mode in selected if mode not in modes]
-        if missing_modes and inclusion_policy == STRICT_SELECTED_MODES:
-            warnings.append(f"Skipped {case_name}: missing selected modes {', '.join(missing_modes)}.")
+        if missing_modes and _is_strict_inclusion_policy(inclusion_policy):
+            warnings.append(f"Skipped {case_name} under {inclusion_policy}: missing selected modes {', '.join(missing_modes)}.")
             continue
         if missing_modes:
             warnings.append(
@@ -796,7 +798,7 @@ def build_ranking_cases(
                 ranked_lists=ranked_lists,
                 top_lists=top_lists,
                 valid_modes=present_modes,
-                selected_modes=selected,
+                selected_modes=present_modes if inclusion_policy == PAIRWISE_AVAILABLE else selected,
             )
         )
 

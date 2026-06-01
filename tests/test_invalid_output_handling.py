@@ -118,6 +118,52 @@ class InvalidOutputHandlingTests(unittest.TestCase):
         self.assertEqual(event["stage"], "llm_ranking")
         self.assertEqual(event["invalid_attempts"], 1)
 
+    def test_retryable_ranking_transport_error_is_retried(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_log = Path(tmpdir) / "run.log"
+            configure_run_log(run_log)
+            prompt = Path(tmpdir) / "ranker.md"
+            prompt.write_text("{user_query}\n{subtask_json}\n{candidates_json}", encoding="utf-8")
+            calls = 0
+            prompts: list[str] = []
+
+            def timeout_then_valid_llm(prompt_text: str) -> str:
+                nonlocal calls
+                calls += 1
+                prompts.append(prompt_text)
+                if calls == 1:
+                    raise TimeoutError("Request timed out.")
+                return json.dumps(
+                    {
+                        "ranked_apis": [
+                            {"api_id": "api_a", "rank": 1},
+                            {"api_id": "api_b", "rank": 2},
+                        ]
+                    }
+                )
+
+            try:
+                ranked = rank_subtask(
+                    timeout_then_valid_llm,
+                    user_query="find weather data",
+                    subtask={"id": "1", "description": "weather"},
+                    candidates=[{"api_id": "api_a"}, {"api_id": "api_b"}],
+                    prompt_path=str(prompt),
+                    max_validation_retries=1,
+                )
+            finally:
+                clear_run_log()
+
+            retry_event = json.loads((Path(tmpdir) / "retry_outcomes.log").read_text(encoding="utf-8").strip())
+            warning_event = json.loads((Path(tmpdir) / "warnings.log").read_text(encoding="utf-8").strip())
+
+        self.assertEqual(calls, 2)
+        self.assertIn("previous ranking attempt failed", prompts[1])
+        self.assertEqual([row["api_id"] for row in ranked], ["api_a", "api_b"])
+        self.assertEqual(retry_event["outcome"], "success")
+        self.assertEqual(retry_event["last_failure_reason"], "llm_transport_error")
+        self.assertEqual(warning_event["event_type"], "llm_ranking_retryable_call_failure")
+
     def test_incomplete_ranking_output_raises_invalid_metadata_after_retries(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             prompt = Path(tmpdir) / "ranker.md"

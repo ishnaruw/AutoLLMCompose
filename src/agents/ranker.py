@@ -25,7 +25,37 @@ def _truncate(s: Any, n: int) -> str:
     return s if len(s) <= n else (s[: n - 1] + "…")
 
 
-def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
+_RANKER_QOS_KEYS = {
+    "qos",
+    "rt_s",
+    "tp_kbps",
+    "availability",
+    "qos_score",
+    "qos_rank",
+    "topsis_score",
+    "topsis_rank",
+    "qos_llm_score",
+    "qos_llm_rank",
+}
+
+
+def _functional_match_label(c: Dict[str, Any]) -> int | None:
+    for key in ("Functional Match Label", "Functional Match (0/1)", "functional_match_label", "functional_match", "relevant"):
+        value = c.get(key)
+        if isinstance(value, bool):
+            return 1 if value else 0
+        if value in (0, 1):
+            return int(value)
+        if isinstance(value, str):
+            text = value.strip().lower()
+            if text in {"1", "true", "yes", "relevant", "match"}:
+                return 1
+            if text in {"0", "false", "no", "irrelevant", "nonmatch", "non-match", "not_match"}:
+                return 0
+    return None
+
+
+def _slim_candidate(c: Dict[str, Any], *, include_qos: bool = True, include_functional_match_label: bool = False) -> Dict[str, Any]:
     comp = c.get("compressed") or {}
     if not isinstance(comp, dict):
         comp = {}
@@ -71,16 +101,22 @@ def _slim_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
     if param_names:
         slim["param_names"] = param_names
 
-    for key in ["rt_s", "tp_kbps", "availability", "qos_score", "qos_rank", "topsis_score", "topsis_rank", "qos_llm_score", "qos_llm_rank"]:
-        val = c.get(key)
-        if val is None:
-            val = qos.get(key)
-        if val is None:
-            val = service.get(key)
-        if val is None:
-            val = service_qos.get(key)
-        if val is not None:
-            slim[key] = val
+    if include_qos:
+        for key in ["rt_s", "tp_kbps", "availability", "qos_score", "qos_rank", "topsis_score", "topsis_rank", "qos_llm_score", "qos_llm_rank"]:
+            val = c.get(key)
+            if val is None:
+                val = qos.get(key)
+            if val is None:
+                val = service.get(key)
+            if val is None:
+                val = service_qos.get(key)
+            if val is not None:
+                slim[key] = val
+
+    if include_functional_match_label:
+        label = _functional_match_label(c)
+        if label is not None:
+            slim["functional_match_label"] = label
 
     return slim
 
@@ -185,6 +221,10 @@ def _exception_reason(exc: Exception) -> str:
     if "json" in text:
         return "invalid_json"
     return "llm_call_error"
+
+
+def _is_retryable_ranking_call_reason(reason: str) -> bool:
+    return reason in {"llm_transport_error", "timeout"}
 
 
 def _parse_ranked_output(
@@ -646,6 +686,45 @@ def _ranker_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
         if expected_ranks
         else ""
     )
+    if reason in {"llm_transport_error", "timeout"}:
+        return (
+            prompt
+            + "\n\nIMPORTANT: The previous ranking attempt failed before returning valid JSON "
+            + f"({reason}). Retry the same ranking task from the provided candidate evidence. "
+            + f"Return JSON only with every one of the {expected} candidate_id values exactly once. "
+            + "Use candidate_id only. Do not output api_id."
+            + rank_rule
+        )
+    if reason == "functional_first_ranking_violation":
+        functional_ids = issue.get("functional_match_candidate_ids") or issue.get("functional_match_api_ids") or []
+        top_id = issue.get("top_ranked_candidate_id") or issue.get("top_ranked_api_id") or ""
+        return (
+            prompt
+            + "\n\nIMPORTANT: functional_first_ranking_retry. Your previous ranking put a functionally weak candidate "
+            + f"({top_id}) above available Functional Match Label = 1 candidates ({functional_ids}). "
+            + "Functional suitability must be satisfied before QoS optimization. "
+            + "If any candidate has functional_match_label = 1, the top-ranked candidate must also have functional_match_label = 1. "
+            + "Use QoS only to compare candidates after functional suitability is satisfied. "
+            + f"Return JSON only with every one of the {expected} candidate_id values exactly once. "
+            + "Use candidate_id only. Do not output api_id."
+            + rank_rule
+        )
+    if reason == "same_functional_tier_qos_tiebreak_violation":
+        better_ids = issue.get("better_qos_candidate_ids") or issue.get("better_qos_api_ids") or []
+        top_id = issue.get("top_ranked_candidate_id") or issue.get("top_ranked_api_id") or ""
+        return (
+            prompt
+            + "\n\nIMPORTANT: same_functional_tier_qos_retry. Your previous ranking put "
+            + f"{top_id} first even though no candidate had functional_match_label = 1 and "
+            + f"same-label candidate(s) {better_ids} had substantially better QoS rank. "
+            + "When every candidate is functionally weak or label 0, preserve endpoint-level functional judgment, "
+            + "discard clearly wrong-domain choices, and then let QoS materially decide among the remaining "
+            + "weak/supporting candidates. Do not promote an endpoint only because its name contains words such "
+            + "as analyze, AI, prediction, or news unless it actually satisfies the required action and domain. "
+            + f"Return JSON only with every one of the {expected} candidate_id values exactly once. "
+            + "Use candidate_id only. Do not output api_id."
+            + rank_rule
+        )
     if issue.get("expected_candidate_count"):
         return (
             prompt
@@ -661,6 +740,163 @@ def _ranker_retry_prompt(prompt: str, issue: Dict[str, Any]) -> str:
         + "Do not omit candidates, duplicate candidates, or invent api_id values."
         + rank_rule
     )
+
+
+def _functional_first_ranking_issue(
+    ranked: List[Dict[str, Any]],
+    candidates: List[Dict[str, Any]],
+) -> Dict[str, Any] | None:
+    if not ranked:
+        return None
+
+    label_by_api_id: Dict[str, int] = {}
+    label_by_candidate_id: Dict[str, int] = {}
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        label = _functional_match_label(candidate)
+        if label is None:
+            continue
+        api_id = str(candidate.get("api_id") or "").strip()
+        candidate_id = str(candidate.get("candidate_id") or "").strip()
+        if api_id:
+            label_by_api_id[api_id] = label
+        if candidate_id:
+            label_by_candidate_id[candidate_id] = label
+
+    functional_api_ids = sorted(api_id for api_id, label in label_by_api_id.items() if label == 1)
+    functional_candidate_ids = sorted(candidate_id for candidate_id, label in label_by_candidate_id.items() if label == 1)
+    if not functional_api_ids and not functional_candidate_ids:
+        return None
+
+    top = ranked[0]
+    top_api_id = str(top.get("api_id") or "").strip()
+    top_candidate_id = str(top.get("candidate_id") or "").strip()
+    top_label = label_by_candidate_id.get(top_candidate_id)
+    if top_label is None:
+        top_label = label_by_api_id.get(top_api_id, 0)
+    if top_label == 1:
+        return None
+
+    return {
+        "reason": "functional_first_ranking_violation",
+        "event_type": "functional_first_ranking_retry",
+        "expected_api_count": len(candidates),
+        "actual_api_count": len(ranked),
+        "expected_candidate_count": len(candidates),
+        "actual_candidate_count": len(ranked),
+        "top_ranked_api_id": top_api_id,
+        "top_ranked_candidate_id": top_candidate_id,
+        "top_ranked_functional_match_label": top_label,
+        "functional_match_api_ids": functional_api_ids,
+        "functional_match_candidate_ids": functional_candidate_ids,
+    }
+
+
+def _coerce_positive_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() and value > 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = float(text)
+        except ValueError:
+            return None
+        return int(parsed) if parsed.is_integer() and parsed > 0 else None
+    return None
+
+
+def _same_functional_tier_qos_issue(
+    ranked: List[Dict[str, Any]],
+    candidates: List[Dict[str, Any]],
+    *,
+    min_qos_rank_gap: int = 10,
+) -> Dict[str, Any] | None:
+    if not ranked:
+        return None
+
+    by_api_id: Dict[str, Dict[str, Any]] = {}
+    by_candidate_id: Dict[str, Dict[str, Any]] = {}
+    label_values: List[int] = []
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        label = _functional_match_label(candidate)
+        if label is None:
+            continue
+        label_values.append(label)
+        api_id = str(candidate.get("api_id") or "").strip()
+        candidate_id = str(candidate.get("candidate_id") or "").strip()
+        if api_id:
+            by_api_id[api_id] = candidate
+        if candidate_id:
+            by_candidate_id[candidate_id] = candidate
+
+    if not label_values or any(label == 1 for label in label_values):
+        return None
+
+    top = ranked[0]
+    top_api_id = str(top.get("api_id") or "").strip()
+    top_candidate_id = str(top.get("candidate_id") or "").strip()
+    top_candidate = by_candidate_id.get(top_candidate_id) or by_api_id.get(top_api_id)
+    if not top_candidate or _functional_match_label(top_candidate) != 0:
+        return None
+
+    top_qos_rank = _coerce_positive_int(top_candidate.get("qos_llm_rank"))
+    if top_qos_rank is None:
+        return None
+
+    qos_ranked_candidates = []
+    for candidate in candidates:
+        if _functional_match_label(candidate) != 0:
+            continue
+        qos_rank = _coerce_positive_int(candidate.get("qos_llm_rank"))
+        if qos_rank is None:
+            continue
+        qos_ranked_candidates.append((qos_rank, candidate))
+    if not qos_ranked_candidates:
+        return None
+
+    best_qos_rank = min(rank for rank, _candidate in qos_ranked_candidates)
+    if top_qos_rank - best_qos_rank < min_qos_rank_gap:
+        return None
+
+    better_candidates = [
+        candidate
+        for qos_rank, candidate in qos_ranked_candidates
+        if qos_rank <= best_qos_rank + 2
+    ]
+    better_api_ids = sorted(
+        str(candidate.get("api_id") or "").strip()
+        for candidate in better_candidates
+        if str(candidate.get("api_id") or "").strip()
+    )
+    better_candidate_ids = sorted(
+        str(candidate.get("candidate_id") or "").strip()
+        for candidate in better_candidates
+        if str(candidate.get("candidate_id") or "").strip()
+    )
+    return {
+        "reason": "same_functional_tier_qos_tiebreak_violation",
+        "event_type": "same_functional_tier_qos_retry",
+        "expected_api_count": len(candidates),
+        "actual_api_count": len(ranked),
+        "expected_candidate_count": len(candidates),
+        "actual_candidate_count": len(ranked),
+        "top_ranked_api_id": top_api_id,
+        "top_ranked_candidate_id": top_candidate_id,
+        "top_qos_llm_rank": top_qos_rank,
+        "best_available_qos_llm_rank": best_qos_rank,
+        "min_qos_rank_gap": min_qos_rank_gap,
+        "better_qos_api_ids": better_api_ids,
+        "better_qos_candidate_ids": better_candidate_ids,
+    }
 
 
 def _failure_metadata(issue: Dict[str, Any], *, after_retries: bool) -> Dict[str, Any]:
@@ -689,6 +925,8 @@ def rank_subtask(
     debug_raw_path: str | None = None,
     use_compact_api_evidence: bool = False,
     include_qos_rank: bool = False,
+    include_functional_match_label: bool = False,
+    enforce_functional_first: bool = False,
     max_validation_retries: int = 2,
 ) -> List[Dict[str, Any]]:
     with open(prompt_path, "r", encoding="utf-8") as f:
@@ -698,6 +936,8 @@ def rank_subtask(
 
     max_rank_candidates = CONFIG.ranker_max_candidates
     ranker_pool_n = CONFIG.ranker_pool_n
+    prompt_name = Path(prompt_path).name
+    strip_qos = prompt_name == "ranker_no_qos.md"
     retrieved_pool = sorted(
         (c for c in candidates if isinstance(c, dict)),
         key=_retrieved_rank_sort_key,
@@ -707,11 +947,23 @@ def rank_subtask(
     if use_compact_api_evidence:
         subtask_text = str(subtask.get("description") or subtask.get("summary") or subtask.get("task") or "")
         cand_slim = [
-            normalize_api_for_ranking(c, subtask_text=subtask_text, include_qos_rank=include_qos_rank)
+            normalize_api_for_ranking(
+                c,
+                subtask_text=subtask_text,
+                include_qos_rank=include_qos_rank and not strip_qos,
+                include_functional_match_label=include_functional_match_label,
+            )
             for c in cand_trimmed
         ]
     else:
-        cand_slim = [_slim_candidate(c) for c in cand_trimmed]
+        cand_slim = [
+            _slim_candidate(
+                c,
+                include_qos=not strip_qos,
+                include_functional_match_label=include_functional_match_label,
+            )
+            for c in cand_trimmed
+        ]
     cand_slim = sorted(cand_slim, key=_candidate_prompt_sort_key)
     cand_slim, candidate_id_to_api_id, _api_id_to_candidate_id = assign_candidate_ids(cand_slim)
     expected_ids = list(candidate_id_to_api_id.values())
@@ -727,6 +979,8 @@ def rank_subtask(
     prompt = _apply_ranker_output_contract(prompt, bool(CONFIG.include_llm_reasons))
 
     attempts = max(0, int(max_validation_retries or 0)) + 1
+    if enforce_functional_first:
+        attempts = max(attempts, 2)
     last_issue: Dict[str, Any] = {
         "reason": "parse_error",
         "expected_api_count": len(expected_ids),
@@ -736,6 +990,10 @@ def rank_subtask(
     }
     last_ranked: List[Dict[str, Any]] = []
     invalid_attempts = 0
+    functional_first_retry_used = False
+    qos_tiebreak_retry_used = False
+    stop_after_attempt = False
+    role_name = Path(prompt_path).stem
     for attempt in range(1, attempts + 1):
         prompt_for_attempt = prompt if attempt == 1 else _ranker_retry_prompt(prompt, last_issue)
         try:
@@ -744,14 +1002,101 @@ def rank_subtask(
             issue = {
                 "reason": _exception_reason(exc),
                 "expected_api_count": len(expected_ids),
+                "expected_candidate_count": len(candidate_id_to_api_id),
                 "actual_api_count": 0,
+                "actual_candidate_count": 0,
                 "error": str(exc),
             }
+            if _is_retryable_ranking_call_reason(str(issue.get("reason") or "")):
+                last_issue = issue
+                last_ranked = []
+                invalid_attempts += 1
+                log_line(
+                    f"[ranker] retryable LLM ranking call failure ({issue.get('reason')}) "
+                    f"attempt {attempt}/{attempts}; error={issue.get('error')}"
+                )
+                log_warning_event(
+                    {
+                        "event_type": "llm_ranking_retryable_call_failure",
+                        "stage": "llm_ranking",
+                        "role": role_name,
+                        "attempt": attempt,
+                        "max_attempts": attempts,
+                        **issue,
+                    }
+                )
+                if attempt < attempts:
+                    continue
+                break
             raise InvalidRankingOutput(_failure_metadata(issue, after_retries=False)) from exc
 
         _write_ranker_debug(debug_raw_path, resp_raw, attempt)
         ranked, issue = _parse_ranked_output(resp_raw, expected_ids, candidate_id_to_api_id)
         if issue is None:
+            if enforce_functional_first:
+                issue = _functional_first_ranking_issue(ranked, cand_slim)
+                if issue is not None:
+                    last_issue = issue
+                    last_ranked = ranked
+                    invalid_attempts += 1
+                    if not functional_first_retry_used:
+                        functional_first_retry_used = True
+                        log_line(
+                            "[ranker] functional_first_ranking_retry "
+                            f"attempt {attempt}/{attempts}; top={issue.get('top_ranked_candidate_id') or issue.get('top_ranked_api_id')} "
+                            f"functional_candidates={issue.get('functional_match_candidate_ids') or issue.get('functional_match_api_ids')}"
+                        )
+                        log_warning_event(
+                            {
+                                "event_type": "functional_first_ranking_retry",
+                                "stage": "llm_ranking",
+                                "role": role_name,
+                                **issue,
+                            }
+                        )
+                        continue
+                    stop_after_attempt = True
+
+                qos_issue = _same_functional_tier_qos_issue(ranked, cand_slim) if issue is None else None
+                if qos_issue is not None:
+                    if not qos_tiebreak_retry_used and attempt < attempts:
+                        last_issue = qos_issue
+                        last_ranked = ranked
+                        invalid_attempts += 1
+                        qos_tiebreak_retry_used = True
+                        log_line(
+                            "[ranker] same_functional_tier_qos_retry "
+                            f"attempt {attempt}/{attempts}; top={qos_issue.get('top_ranked_candidate_id') or qos_issue.get('top_ranked_api_id')} "
+                            f"top_qos_rank={qos_issue.get('top_qos_llm_rank')} best_qos_rank={qos_issue.get('best_available_qos_llm_rank')}"
+                        )
+                        log_warning_event(
+                            {
+                                "event_type": "same_functional_tier_qos_retry",
+                                "stage": "llm_ranking",
+                                "role": role_name,
+                                **qos_issue,
+                            }
+                        )
+                        continue
+                    log_warning_event(
+                        {
+                            "event_type": "same_functional_tier_qos_unresolved",
+                            "stage": "llm_ranking",
+                            "role": role_name,
+                            **qos_issue,
+                        }
+                    )
+
+            if issue is not None:
+                log_line(
+                    f"[ranker] invalid LLM ranking output ({issue.get('reason')}) "
+                    f"attempt {attempt}/{attempts}; expected={issue.get('expected_candidate_count', issue.get('expected_api_count'))} "
+                    f"actual={issue.get('actual_candidate_count', issue.get('actual_api_count'))}"
+                )
+                if stop_after_attempt:
+                    break
+                continue
+
             if invalid_attempts:
                 log_line(
                     f"[ranker] retry validation succeeded after {invalid_attempts} invalid attempt(s); "
@@ -760,7 +1105,7 @@ def rank_subtask(
                 log_retry_outcome_event(
                     {
                         "stage": "llm_ranking",
-                        "role": "ranker",
+                        "role": role_name,
                         "outcome": "success",
                         "invalid_attempts": invalid_attempts,
                         "final_attempt": attempt,
@@ -791,7 +1136,7 @@ def rank_subtask(
     log_retry_outcome_event(
         {
             "stage": "llm_ranking",
-            "role": "ranker",
+            "role": role_name,
             "outcome": "failed",
             "invalid_attempts": invalid_attempts,
             "final_attempt": attempts,

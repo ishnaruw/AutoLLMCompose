@@ -186,11 +186,11 @@ def _compact_candidate_for_ablation(row, *, strip_qos: bool):
         "selection_order": _selection_order(row),
         "mode_rank": row.get("mode_rank"),
         "rank_source": row.get("rank_source"),
-        "functional_match_label": row.get("functional_match_label"),
-        "functional_refiner_reason": row.get("functional_refiner_reason"),
-        "qos_values": None if strip_qos else _candidate_qos_values(row),
         "short_rank_reason": row.get("short_rank_reason") or row.get("reason"),
         "service": _service_for_planner(row, strip_qos=strip_qos),
+        "qos_values": None if strip_qos else _candidate_qos_values(row),
+        "functional_match_label": row.get("functional_match_label"),
+        "functional_refiner_reason": row.get("functional_refiner_reason"),
     }
     for key in (
         "selected_by_view",
@@ -211,6 +211,10 @@ _PLANNER_MODE_RULES_PLACEHOLDER = "{planner_candidate_mode_rules}"
 def _planner_candidate_mode_rules(planner_candidate_mode: str, planner_top_n_cap: int, *, strip_qos: bool) -> str:
     mode = str(planner_candidate_mode or "fixed_one").strip()
     if mode == "top_n_ablation":
+        evidence_fields = (
+            "- Compact candidate evidence fields may include short_rank_reason, rank_source, mode_rank, "
+            "selection_order, functional_match_label, and functional_refiner_reason.\n"
+        )
         qos_choice = (
             "- Prefer selection_order = 1 unless another candidate clearly improves functional fit, "
             "step compatibility, or workflow-level QoS.\n"
@@ -224,14 +228,18 @@ def _planner_candidate_mode_rules(planner_candidate_mode: str, planner_top_n_cap
                 "or step compatibility.\n"
                 "- QoS fields are omitted in this prompt; do not infer hidden QoS values.\n"
             )
+        else:
+            evidence_fields = (
+                "- Compact candidate evidence fields may include qos_values, short_rank_reason, rank_source, "
+                "mode_rank, selection_order, functional_match_label, and functional_refiner_reason.\n"
+            )
         return (
             "Planner candidate mode: top_n_ablation.\n"
             f"- The planner received up to {planner_top_n_cap} ranked alternatives per subtask.\n"
             "- Provided APIs are ranked alternatives for each subtask.\n"
             "- Choose exactly one API per subtask from that subtask's provided candidates.\n"
             f"{qos_choice}"
-            "- Compact candidate evidence fields may include functional_refiner_reason, qos_values, "
-            "short_rank_reason, rank_source, mode_rank, and selection_order.\n"
+            f"{evidence_fields}"
             "- qos_hybrid metadata meanings when present: selected_by_view identifies the ranking view "
             "that surfaced the candidate; pareto_status shows whether it is Pareto-preferred or part of "
             "the expanded pool; balanced_relative_qos_score is the balanced QoS comparison score; "

@@ -7,6 +7,7 @@ harden_scientific_runtime()
 import argparse
 import json
 import math
+import re
 import time
 from datetime import datetime
 from itertools import product
@@ -562,6 +563,140 @@ def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_
     return retrieved_by_subtask, _fetch_catalog_subset(pick_ids, with_qos=False), _fetch_catalog_subset(pick_ids, with_qos=True)
 
 
+def _zero_functional_retrieval_retry_query(user_goal: str, subtask: Dict[str, Any]) -> str:
+    description = str(subtask.get("description") or "").strip()
+    base = " ".join(part for part in [description, str(user_goal or "").strip()] if part)
+    text = base.lower()
+    expansion_terms = [
+        "direct endpoint required action domain dataset result output functional match",
+        "analysis prediction classification recommendation score signal indicator",
+    ]
+
+    has_stock_domain = bool(re.search(r"\b(?:stock|stocks|equity|equities|share|shares|market)\b", text))
+    has_signal_action = bool(
+        re.search(r"\b(?:trend|trends|signal|signals|buy|sell|predict|prediction|forecast|indicator|technical|ml|machine learning)\b", text)
+    )
+    if has_stock_domain and has_signal_action:
+        expansion_terms.append(
+            "stock market technical indicator screener candlestick pattern price target buy sell signal trend analysis"
+        )
+
+    has_delivery_action = bool(re.search(r"\b(?:send|deliver|email|mail|sms|message|notify|notification)\b", text))
+    if has_delivery_action:
+        expansion_terms.append("send message notification email sms delivery communication endpoint")
+
+    return " ".join([*expansion_terms, base]).strip()
+
+
+def _merge_retrieval_retry_candidates(
+    original: List[Dict[str, Any]],
+    retry: List[Dict[str, Any]],
+    *,
+    max_candidates: int,
+) -> List[Dict[str, Any]]:
+    merged: List[Dict[str, Any]] = []
+    seen: set[str] = set()
+
+    def add_rows(rows: List[Dict[str, Any]], source: str) -> None:
+        for row in rows:
+            api_id = str(row.get("api_id") or "").strip()
+            if not api_id or api_id in seen or len(merged) >= max_candidates:
+                continue
+            item = dict(row)
+            item["retrieval_retry_source"] = source
+            merged.append(item)
+            seen.add(api_id)
+
+    add_rows(retry, "zero_functional_match_retry")
+    add_rows(original, "initial_retrieval")
+    for idx, item in enumerate(merged, start=1):
+        item["retrieved_rank"] = idx
+    return merged
+
+
+def _subtask_functional_match_count(
+    retrieved: List[Dict[str, Any]],
+    subtask_id: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+) -> int:
+    count = 0
+    for item in retrieved:
+        api_id = str(item.get("api_id") or "").strip()
+        if api_id and _functional_match_value(functional_match_map.get((subtask_id, api_id), {})) == 1:
+            count += 1
+    return count
+
+
+def _retry_zero_functional_retrieval(
+    *,
+    user_goal: str,
+    subtasks: List[Dict[str, Any]],
+    out_dir: Path,
+    retrieved_by_subtask: Dict[str, List[Dict[str, Any]]],
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+    no_qos_services: Dict[str, Dict[str, Any]],
+    with_qos_services: Dict[str, Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    if not bool(getattr(CONFIG, "zero_functional_retrieval_retry_enabled", False)):
+        return []
+
+    retry_top_k = max(1, int(getattr(CONFIG, "zero_functional_retrieval_retry_top_k", CONFIG.rag_top_k) or CONFIG.rag_top_k))
+    max_candidates = max(1, int(getattr(CONFIG, "rag_top_k", retry_top_k) or retry_top_k))
+    retriever_agent: RagRetrieverAgent | None = None
+    traces: List[Dict[str, Any]] = []
+    new_api_ids: List[str] = []
+    known_api_ids = set(no_qos_services) | set(with_qos_services)
+
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        original = retrieved_by_subtask.get(sub_id, [])
+        if not original:
+            continue
+        if _subtask_functional_match_count(original, sub_id, functional_match_map) > 0:
+            continue
+
+        retry_query = _zero_functional_retrieval_retry_query(user_goal, sub)
+        if retriever_agent is None:
+            retriever_agent = RagRetrieverAgent(index_dir=str(CONFIG.shared_index_dir))
+        retry_rows = retriever_agent.retrieve(retry_query, top_k=retry_top_k)
+        merged = _merge_retrieval_retry_candidates(original, retry_rows, max_candidates=max_candidates)
+        original_ids = [str(item.get("api_id") or "") for item in original]
+        merged_ids = [str(item.get("api_id") or "") for item in merged]
+        if merged_ids == original_ids[: len(merged_ids)]:
+            continue
+
+        retrieved_by_subtask[sub_id] = merged
+        _write_json(out_dir / f"1_retriever_s{sub_id}.json", merged)
+        trace = {
+            "event_type": "zero_functional_retrieval_retry",
+            "subtask_id": sub_id,
+            "initial_candidate_count": len(original),
+            "retry_candidate_count": len(retry_rows),
+            "merged_candidate_count": len(merged),
+            "initial_functional_match_count": 0,
+            "retry_query": retry_query,
+            "initial_api_ids": original_ids,
+            "merged_api_ids": merged_ids,
+        }
+        _write_json(out_dir / "debug" / f"retrieval_zero_functional_retry_s{sub_id}.json", trace)
+        log_warning_event({"stage": "retrieval", **trace})
+        log_line(
+            f"[{out_dir.name}] subtask={sub_id} zero functional matches; "
+            f"reran retrieval and merged {len(merged)} candidates"
+        )
+        traces.append(trace)
+
+        for api_id in merged_ids:
+            if api_id and api_id not in known_api_ids and api_id not in new_api_ids:
+                new_api_ids.append(api_id)
+
+    if new_api_ids:
+        no_qos_services.update(_fetch_catalog_subset(new_api_ids, with_qos=False))
+        with_qos_services.update(_fetch_catalog_subset(new_api_ids, with_qos=True))
+
+    return traces
+
+
 def _candidate_rows(retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]], *, enrich: Dict[str, Dict[str, Any]] | None = None) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     for r in retrieved:
@@ -626,6 +761,20 @@ def _functional_match_value(entry: Dict[str, Any]) -> int:
         )
         or 0
     )
+
+
+def _functional_match_ranking_enrichment(
+    retrieved: List[Dict[str, Any]],
+    sub_id: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    enrich: Dict[str, Dict[str, Any]] = {}
+    for row in retrieved:
+        api_id = str(row.get("api_id") or "").strip()
+        if not api_id:
+            continue
+        enrich[api_id] = _functional_refiner_metadata(row, sub_id, api_id, functional_match_map)
+    return enrich
 
 
 def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, functional_match_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -867,6 +1016,7 @@ def _is_expected_invalid_evaluation_case(record: Dict[str, Any]) -> bool:
         "qos_score_formula_mismatch",
         "missing_label",
         "invalid_label_value",
+        "functional_first_ranking_violation",
     }
     return stage in {"llm_ranking", "qos_llm_scoring"} and reason in expected_reasons
 
@@ -1139,13 +1289,13 @@ def _selection_provenance(row: Dict[str, Any], *, mode_name: str, selected_by: s
         "subtask_id": str(row.get("subtask_id", "")),
         "api_id": str(row.get("api_id", "")),
         "selection_order": row.get("selection_order"),
-        "functional_match_label": row.get("functional_match_label"),
-        "functional_refiner_reason": row.get("functional_refiner_reason"),
         "topsis_rank": row.get("topsis_rank"),
         "topsis_score": row.get("topsis_score"),
         "selected_by": selected_by,
         "planner_override_attempted": planner_override_attempted,
     }
+    provenance["functional_match_label"] = row.get("functional_match_label")
+    provenance["functional_refiner_reason"] = row.get("functional_refiner_reason")
     if row.get("planner_candidate_mode") == "top_n_ablation":
         for key in ["mode_rank", "rank_source", "qos_values", "short_rank_reason"]:
             if row.get(key) is not None:
@@ -2037,14 +2187,21 @@ def _planner_steps(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def _planner_api_ids_by_subtask(plan: Dict[str, Any]) -> Dict[str, List[str]]:
     by_subtask: Dict[str, List[str]] = {}
-    for step in _planner_steps(plan):
-        subtask_id = str(step.get("subtask_id") or "").strip()
-        api_id = str(step.get("api_id") or "").strip()
-        if not subtask_id or not api_id:
-            continue
-        by_subtask.setdefault(subtask_id, [])
-        if api_id not in by_subtask[subtask_id]:
-            by_subtask[subtask_id].append(api_id)
+    step_groups = [
+        (plan.get("primary_plan") or {}).get("steps") if isinstance(plan.get("primary_plan"), dict) else [],
+        (plan.get("execution_workflow") or {}).get("steps") if isinstance(plan.get("execution_workflow"), dict) else [],
+    ]
+    for steps in step_groups:
+        for step in steps if isinstance(steps, list) else []:
+            if not isinstance(step, dict):
+                continue
+            subtask_id = str(step.get("subtask_id") or "").strip()
+            api_id = str(step.get("api_id") or "").strip()
+            if not subtask_id or not api_id:
+                continue
+            by_subtask.setdefault(subtask_id, [])
+            if api_id not in by_subtask[subtask_id]:
+                by_subtask[subtask_id].append(api_id)
     return by_subtask
 
 
@@ -2131,6 +2288,16 @@ def _planner_one_api_retry_goal(user_goal: str, issues: List[Dict[str, Any]]) ->
         "Do not omit subtasks and do not use multiple APIs for the same subtask. "
         "If you choose a candidate whose selection_order is greater than 1, include planner_override_reason "
         "on both the primary_plan step and execution_workflow step using the candidate metadata.\n"
+        f"Issues to fix: {json.dumps(issues, ensure_ascii=False)}"
+    )
+
+
+def _planner_fixed_one_retry_goal(user_goal: str, issues: List[Dict[str, Any]]) -> str:
+    return (
+        f"{user_goal}\n\n"
+        "Planner validation retry: fixed_one mode received exactly one selected API per subtask. "
+        "Use the selected API assigned to each subtask exactly as provided. "
+        "Do not replace, re-rank, swap, or substitute APIs across subtasks.\n"
         f"Issues to fix: {json.dumps(issues, ensure_ascii=False)}"
     )
 
@@ -2493,6 +2660,55 @@ def _deterministic_select_and_plan(
             (mode_dir / "planner_error.txt").write_text(message, encoding="utf-8")
             raise PlannerSelectionValidationFailure(message, failure_payload, selection_trace)
 
+    fixed_one_issues = (
+        _planner_one_api_per_subtask_issues(planner, subtasks, selected_all)
+        if planner_candidate_mode == "fixed_one"
+        else []
+    )
+    if fixed_one_issues:
+        planner_override_attempted = True
+        log_warning_event(
+            {
+                "event_type": "planner_fixed_selection_retry",
+                "query_dir": str(out_dir),
+                "mode": mode_name,
+                "issues": fixed_one_issues,
+                "planner_candidate_mode": planner_candidate_mode,
+            }
+        )
+        log_line(
+            f"[{out_dir.name}] mode={mode_name} planner did not preserve fixed selected APIs; retrying once"
+        )
+        planner = planner_call(
+            llm_call=lambda p: llm_call(planner_role, PLANNER_SYS, p),
+            user_goal=_planner_fixed_one_retry_goal(user_goal, fixed_one_issues),
+            ranked_top=selected_all,
+            subtasks=subtasks,
+            prompt_path=planner_prompt_path,
+            planner_candidate_mode=planner_candidate_mode,
+            planner_top_n_cap=_planner_top_n_cap(),
+        )
+        retry_unapproved_api_ids = _unapproved_planner_api_ids(planner, allowed_api_ids)
+        retry_fixed_one_issues = _planner_one_api_per_subtask_issues(planner, subtasks, selected_all)
+        if retry_unapproved_api_ids or retry_fixed_one_issues:
+            message = (
+                f"Planner for mode {mode_name} failed fixed_one selection validation after retry."
+            )
+            failure_payload = {
+                "failure_stage": "planner_validation",
+                "failure_reason": "planner_fixed_selection_validation_failed",
+                "mode": mode_name,
+                "unapproved_api_ids": retry_unapproved_api_ids,
+                "fixed_one_issues": retry_fixed_one_issues,
+                "allowed_api_ids": sorted(allowed_api_ids),
+                "planner_called": True,
+                "planner_retry_count": 1,
+                "planner_candidate_mode": planner_candidate_mode,
+            }
+            _write_json(mode_dir / "planner_failure.json", failure_payload)
+            (mode_dir / "planner_error.txt").write_text(message, encoding="utf-8")
+            raise PlannerSelectionValidationFailure(message, failure_payload, selection_trace)
+
     planner = _annotate_planner_provenance(
         planner,
         selected_all,
@@ -2739,12 +2955,35 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     model=model,
                 )
                 functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
+                zero_functional_retry_traces = _retry_zero_functional_retrieval(
+                    user_goal=user_goal,
+                    subtasks=subtasks,
+                    out_dir=out_dir,
+                    retrieved_by_subtask=retrieved_by_subtask,
+                    functional_match_map=functional_match_map,
+                    no_qos_services=no_qos_services,
+                    with_qos_services=with_qos_services,
+                )
+                if zero_functional_retry_traces:
+                    retrieval_functional_match_rows_path = functional_refiner_agent.refine_candidates(
+                        query_dir=out_dir,
+                        query_id=query_id,
+                        output_dir=eval_dir,
+                        cache_path=eval_cache,
+                        provider=provider or "azure",
+                        model=model,
+                    )
+                    functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
+                zero_functional_retry_status = "completed" if zero_functional_retry_traces else "not_needed"
                 meta_tracker.update(
                     functional_refinement_status="completed",
                     functional_refinement_rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
                     functional_refinement_summary_json=_to_run_relative(functional_refinement_summary_path, out_dir)
                     if functional_refinement_summary_path.exists()
                     else None,
+                    zero_functional_retrieval_retry_count=len(zero_functional_retry_traces),
+                    zero_functional_retrieval_retry_status=zero_functional_retry_status,
+                    zero_functional_retrieval_retries=zero_functional_retry_traces,
                 )
                 meta_tracker.finish_stage(
                     "functional_refinement",
@@ -2755,6 +2994,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     functional_refiner_agent="FunctionalRefinerAgent",
                     functional_refiner_agent_mode="llm_binary_functional_labeling",
                     functional_refinement_status="completed",
+                    zero_functional_retrieval_retry_count=len(zero_functional_retry_traces),
+                    zero_functional_retrieval_retry_status=zero_functional_retry_status,
                 )
                 log_line(f"[{run_label}] finished Functional Refiner Agent")
             except Exception as e:
@@ -2860,7 +3101,14 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         subtask_id=sub_id,
                     )
                 else:
-                    pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_qos_meta)
+                    pure_enrichment: Dict[str, Dict[str, Any]] = {}
+                    functional_enrichment = _functional_match_ranking_enrichment(retrieved, sub_id, functional_match_map)
+                    for api_id in set(pure_qos_meta) | set(functional_enrichment):
+                        pure_enrichment[api_id] = {
+                            **pure_qos_meta.get(api_id, {}),
+                            **functional_enrichment.get(api_id, {}),
+                        }
+                    pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_enrichment)
                     try:
                         pure_ranked, pure_rank_duration = _timed_invocation(
                             meta_tracker,
@@ -2874,6 +3122,8 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                                 debug_raw_path=None,
                                 use_compact_api_evidence=True,
                                 include_qos_rank=True,
+                                include_functional_match_label=True,
+                                enforce_functional_first=True,
                                 max_validation_retries=CONFIG.llm_validation_max_retries,
                             ),
                         )

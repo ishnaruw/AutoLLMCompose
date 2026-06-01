@@ -1437,7 +1437,7 @@ def render_sticky_table(
     height: int = 420,
     key: str | None = None,
     note: bool = True,
-    cell_style: Callable[[str, str], str] | None = None,
+    cell_style: Callable[[str, str, pd.Series], str] | None = None,
 ) -> None:
     if df.empty:
         st.dataframe(df, use_container_width=True, hide_index=True)
@@ -1486,7 +1486,7 @@ def render_sticky_table(
         cells = []
         for col in display.columns:
             value = _html_value(row.get(col))
-            style = cell_style(col, value) if cell_style else ""
+            style = cell_style(col, value, row) if cell_style else ""
             style_attr = f' style="{escape(style)}"' if style else ""
             cells.append(f'<td title="{escape(value)}"{style_attr}><div class="maof-sticky-cell-text">{escape(value)}</div></td>')
         body_rows.append(f"<tr>{''.join(cells)}</tr>")
@@ -2140,14 +2140,27 @@ def _mode_cell_style(value: Any) -> str:
     return ""
 
 
-def _qos_summary_cell_style(column: str, value: str) -> str:
-    if column not in {"is_QoS_Hybrid_best", "Is Qos_pure_llm better than no_qos"}:
-        return ""
+def _qos_summary_cell_style(column: str, value: str, row: pd.Series) -> str:
+    pure_vs_no_qos_col = "Is Qos_pure_llm better than no_qos"
     colors = {
         "Yes": "#C6EFCE",
         "No": "#F4CCCC",
         "Tie": "#FFF2CC",
     }
+    if column == "query_id":
+        hybrid_status = str(row.get("is_QoS_Hybrid_best", "")).strip()
+        pure_status = str(row.get(pure_vs_no_qos_col, "")).strip()
+        if hybrid_status == "Yes" and pure_status == "Yes":
+            color = colors["Yes"]
+        elif pure_status == "Tie" or "No" in {hybrid_status, pure_status}:
+            color = colors["No"]
+        elif hybrid_status == "Tie" and pure_status == "Yes":
+            color = colors["Tie"]
+        else:
+            color = ""
+        return f"background-color: {color}; color: #111827;" if color else ""
+    if column not in {"is_QoS_Hybrid_best", pure_vs_no_qos_col}:
+        return ""
     color = colors.get(str(value).strip())
     return f"background-color: {color}; color: #111827;" if color else ""
 

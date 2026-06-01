@@ -13,10 +13,11 @@ Instructions:
 7) Avoid unnecessary qualifiers such as "product search API", "notification API", "platform API", "security-policy API", or similar API-type labels unless they are essential to the user request.
 8) For delivery subtasks, preserve explicit delivery channels named by the user, such as email, SMS, WhatsApp, or push notification. Lead with the delivery action and include enough payload/purpose context to avoid unrelated domain-specific notification APIs.
 9) Treat comparison, filtering, threshold checking, ranking, deciding, validation of already-retrieved values, and alert-condition evaluation as local workflow logic unless the user explicitly asks for an external API to perform that decision.
-10) Local workflow logic must not cancel an external API action. If a subtask contains both an external action and local logic, keep the external API action and fold the local logic into that same subtask.
-11) Never remove a subtask that includes a real external action such as fetch, search, retrieve, scan, check, classify, calculate, send, book, create, or update merely because it also mentions local comparison, thresholds, baselines, validation, ranking, decisions, or alert-condition logic.
-12) For alerting tasks, separate retrieving the external data needed to detect the condition from sending the alert, message, or report if the condition is satisfied.
-13) Do not create separate API subtasks for internal/local decisions, aggregation, scoring, logging, formatting, final recommendations, recommendations, or policy decisions unless the user explicitly asks for an external API call for that action.
+10) If the user goal contains multiple distinct external API actions, create separate subtasks for each action. Do not combine one external action into another subtask using phrases like "include", "along with", "and also", or "as part of this step". Do not merge flight search/booking with hotel search, product price retrieval with alert/message sending, weather retrieval with SMS/email sending, or restaurant search with reservation/booking.
+11) Local workflow logic must not cancel an external API action. If a subtask contains local comparison, filtering, threshold checking, ranking, baseline comparison, or alert-condition evaluation, preserve the external fetch/search/check/retrieve action as its own API-executable subtask.
+12) Never remove a subtask that includes a real external action such as fetch, search, retrieve, scan, check, classify, calculate, send, book, create, or update merely because it also mentions local comparison, thresholds, baselines, validation, ranking, decisions, or alert-condition logic.
+13) Alerting workflows usually require at least two external actions: retrieve/check the external data needed to evaluate the condition, then send the alert/message/report through email, SMS, notification, or communication API. Do not output only the notification step if the user also needs external data to determine whether the alert should be sent.
+14) Do not create separate API subtasks for internal/local decisions, aggregation, scoring, logging, formatting, final recommendations, recommendations, or policy decisions unless the user explicitly asks for an external API call for that action.
 
 Return strict JSON in this format:
 
@@ -42,18 +43,56 @@ Rules:
 - Fold local workflow logic into the nearest API-backed subtask description.
 - If a goal includes internal logic between API calls, mention it briefly inside the related API-backed subtask instead of making it its own subtask.
 - If a goal needs to compare fetched values against stored baselines, thresholds, or previous local records, treat that comparison as local workflow logic and fold it into the related fetch/check/retrieve subtask.
-- If a goal needs alerting, create one subtask to retrieve the external data needed for detection and one delivery subtask to send the alert/message/report when the local condition is met.
+- Preserve distinct external API actions as separate subtasks. Do not write one subtask like "Book selected flight; include local workflow step: search hotels"; split it into flight search/booking and hotel search/recommendation subtasks.
+- If a goal needs alerting, create one subtask to retrieve/check the external data needed for detection and one delivery subtask to send the alert/message/report when the local condition is met.
+- If a goal says to track product prices and alert on a drop, include an external price retrieval/search/check subtask before the alert-sending subtask.
+- If a goal says to check weather and send an alert if rain is likely, include a weather retrieval subtask and a notification or message delivery subtask.
+- If a goal says to search restaurants or venues and make a reservation, include a discovery/search subtask and a separate reservation/booking subtask.
 - Before removing or merging any subtask, check whether it contains a real external API action. If it does, keep the external action and remove only the standalone internal decision logic.
 - If a subtask is internal-only and has no clear external API action, merge it into the nearest previous API-backed subtask or remove it before retrieval.
 - Preserve explicitly requested delivery channels and user-facing output targets when they affect API selection.
 - Prefer API-facing verbs over UI/internal verbs.
 
+Explicit split examples:
+
+1. Flight plus hotel:
+Bad:
+- "Book selected flight; include local workflow step: search hotels"
+Good:
+- "Search or book flight using an external flight API"
+- "Search or recommend hotels using an external hotel API"
+
+2. Product price plus alert:
+Good:
+- "Fetch/search/check current product pricing using an external API"
+- "Send notification or alert when the local price-drop condition is met"
+
+3. Weather plus SMS:
+Good:
+- "Retrieve current or forecast weather using an external weather API"
+- "Send SMS/message alert when the local rain condition is met"
+
+4. Restaurant plus reservation:
+Good:
+- "Search restaurants or venues using an external discovery API"
+- "Create reservation or booking using an external booking API"
+
 Good:
 - "Fetch required external data"
 - "Retrieve required external records"
 - "Update required external records"
+- "Search or book flight using an external flight API"
+- "Search or recommend hotels using an external hotel API"
+- "Fetch/search/check current product pricing using an external API"
 - "Fetch current or historical pricing data; compare locally against stored baselines to detect drops"
 - "Fetch current product pricing data"
+- "Send notification or alert when the local price-drop condition is met"
+- "Send a notification when the local price-drop condition is met"
+- "Retrieve current or forecast weather using an external weather API"
+- "Send SMS/message alert when the local rain condition is met"
+- "Search restaurants or venues using an external discovery API"
+- "Create reservation or booking using an external booking API"
+- "Retrieve current or forecast weather data"
 - "Check provided items for risk"
 - "Classify provided content"
 - "Send an email with selected results"
@@ -64,6 +103,8 @@ Good:
 Bad:
 - "Fetch the list of domains to monitor via a configuration API"
 - "Search product platforms using product search APIs"
+- "Book selected flight; include local workflow step: search hotels"
+- "Send a notification if the price drops" when the goal also requires external current price retrieval
 - "Compare pricing plans"
 - "Check fetched prices against stored baseline values using a price-monitoring/check API"
 - "Evaluate whether the alert threshold is met using a notification API"
