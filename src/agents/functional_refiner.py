@@ -12,8 +12,9 @@ from src.eval.functional_match_eval import evaluate_retrieval_functional_match
 class FunctionalRefinerAgent:
     """
     The Functional Refiner Agent assigns binary functional suitability labels
-    to retrieved API candidates. It does not rank or select APIs; it provides a
-    reusable functional signal for ranking, selection, planning, and evaluation.
+    to retrieved API candidates. It does not rank or select APIs; the main
+    pipeline consumes these labels as functional gates for QoS-aware ranking
+    and selection, and also writes them into post-hoc evaluation artifacts.
     """
 
     name: str = "functional_refiner_agent"

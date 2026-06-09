@@ -178,6 +178,20 @@ class ApiEnrichmentTests(unittest.TestCase):
         for key in ("qos_llm_rank", "qos_llm_score", "rt_s", "tp_kbps", "availability"):
             self.assertNotIn(key, normalized)
 
+    def test_normalizer_includes_functional_label_reason_when_requested(self) -> None:
+        api = {
+            "api_id": "weather_news",
+            "name": "Get weather report",
+            "description": "Returns climate news",
+            "functional_match_label": 0,
+            "functional_refiner_reason": "climate news, not location-specific weather",
+        }
+
+        normalized = normalize_api_for_ranking(api, include_functional_match_label=True)
+
+        self.assertEqual(normalized["functional_match_label"], 0)
+        self.assertEqual(normalized["functional_match_reason"], "climate news, not location-specific weather")
+
 
 if __name__ == "__main__":
     unittest.main()

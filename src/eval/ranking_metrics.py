@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
@@ -1059,6 +1060,173 @@ def matrices_to_pairwise_table(
     if counts is not None:
         columns.append("included_cases")
     return pd.DataFrame(rows, columns=columns)
+
+
+def _normalize_report_filter_values(values: Sequence[Any] | None) -> List[str]:
+    if values is None:
+        return []
+    return _ordered_unique(str(value).strip() for value in values if str(value).strip())
+
+
+def _normalize_report_metrics(selected_metrics: Sequence[str] | None, matrices: Mapping[str, pd.DataFrame]) -> List[str]:
+    if selected_metrics is None:
+        requested = set(METRIC_NAMES)
+    else:
+        requested = {str(metric).strip() for metric in selected_metrics if str(metric).strip()}
+    return [metric for metric in METRIC_NAMES if metric in requested and metric in matrices]
+
+
+def _filter_rows_for_report(
+    df: pd.DataFrame,
+    selected_queries: Sequence[str],
+    selected_subtasks: Sequence[str],
+    selected_modes: Sequence[str],
+) -> pd.DataFrame:
+    out = df.copy()
+    if out.empty:
+        return out
+
+    filters = [
+        ("query_id", set(selected_queries)),
+        ("subtask_id", set(selected_subtasks)),
+        ("mode", set(selected_modes)),
+    ]
+    for column, allowed in filters:
+        if not allowed or column not in out.columns:
+            continue
+        out = out[out[column].map(_display_id).isin(allowed)].copy()
+    return out.reset_index(drop=True)
+
+
+def _filter_warnings_for_report(
+    warnings: Sequence[str],
+    selected_queries: Sequence[str],
+    selected_subtasks: Sequence[str],
+) -> List[str]:
+    query_filter = {query.lower() for query in selected_queries}
+    subtask_filter = {str(subtask).lower() for subtask in selected_subtasks}
+    filtered: List[str] = []
+    for warning in warnings:
+        text = str(warning)
+        lower = text.lower()
+        warning_queries = {match.group(0).lower() for match in re.finditer(r"\bq[0-9a-zA-Z]+\b", lower)}
+        if query_filter and warning_queries and not (warning_queries & query_filter):
+            continue
+
+        warning_subtasks = {
+            match.group(1).strip().lower()
+            for match in re.finditer(r"\bsubtask[_\s]+([^:\s,)]+)", lower)
+        }
+        if subtask_filter and warning_subtasks and not (warning_subtasks & subtask_filter):
+            continue
+        filtered.append(text)
+    return filtered
+
+
+def _matrix_for_report(matrix: pd.DataFrame, selected_modes: Sequence[str]) -> pd.DataFrame:
+    modes = [mode for mode in selected_modes if mode in matrix.index and mode in matrix.columns]
+    return matrix.loc[modes, modes].astype(float)
+
+
+def _csv_text(df: pd.DataFrame, *, index: bool) -> str:
+    return df.to_csv(index=index, lineterminator="\n")
+
+
+def build_ranking_eval_report_files(
+    *,
+    cases: Sequence[RankingCase],
+    matrices: Mapping[str, pd.DataFrame],
+    pairwise_counts: Mapping[str, pd.DataFrame],
+    raw_rows: pd.DataFrame,
+    invalid_cases: pd.DataFrame,
+    warnings: Sequence[str],
+    discovered_run_dirs: Sequence[str],
+    loaded_report_paths: Sequence[str],
+    inclusion_policy: str,
+    selected_modes: Sequence[str] | None,
+    selected_metrics: Sequence[str] | None = None,
+    selected_queries: Sequence[Any] | None = None,
+    selected_subtasks: Sequence[Any] | None = None,
+    parent_runs_dir: str | Path | None = None,
+    p: float = DEFAULT_RBO_P,
+) -> Dict[str, str]:
+    """Build deterministic CSV/JSON ranking-evaluation reports for a filtered UI scope."""
+    modes = _normalize_selected_modes(selected_modes)
+    metrics = _normalize_report_metrics(selected_metrics, matrices)
+    queries = _normalize_report_filter_values(selected_queries)
+    subtasks = _normalize_report_filter_values(selected_subtasks)
+    if not queries:
+        queries = sorted(_ordered_unique(case.query_id for case in cases))
+    if not subtasks:
+        subtasks = sorted(_ordered_unique(case.subtask_id for case in cases))
+
+    matrix_subset = {metric: matrices[metric] for metric in metrics}
+    count_subset = {metric: pairwise_counts[metric] for metric in metrics if metric in pairwise_counts}
+    pairwise_scores = matrices_to_pairwise_table(matrix_subset, count_subset)
+    if not pairwise_scores.empty:
+        pairwise_scores = pairwise_scores[
+            pairwise_scores["mode_a"].isin(modes)
+            & pairwise_scores["mode_b"].isin(modes)
+            & pairwise_scores["metric"].isin(metrics)
+        ].reset_index(drop=True)
+
+    included_cases = cases_to_frame(cases)
+    filtered_raw_rows = _filter_rows_for_report(raw_rows, queries, subtasks, modes)
+    filtered_invalid_cases = _filter_rows_for_report(invalid_cases, queries, subtasks, modes)
+    filtered_warnings = _filter_warnings_for_report(warnings, queries, subtasks)
+
+    report_paths = sorted(
+        _ordered_unique(
+            filtered_raw_rows["report_path"].dropna().astype(str).tolist()
+            if "report_path" in filtered_raw_rows.columns
+            else loaded_report_paths
+        )
+    )
+    filtered_run_dirs = sorted(_ordered_unique(case.run_dir for case in cases))
+
+    files: Dict[str, str] = {}
+    for metric in metrics:
+        files[f"{metric}_matrix.csv"] = _csv_text(_matrix_for_report(matrices[metric], modes), index=True)
+        if metric in pairwise_counts:
+            files[f"{metric}_included_counts.csv"] = _csv_text(
+                _matrix_for_report(pairwise_counts[metric], modes).astype(int),
+                index=True,
+            )
+
+    files["pairwise_scores.csv"] = _csv_text(pairwise_scores, index=False)
+    files["included_cases.csv"] = _csv_text(included_cases, index=False)
+    files["invalid_cases.csv"] = _csv_text(filtered_invalid_cases, index=False)
+    files["loaded_rows.csv"] = _csv_text(filtered_raw_rows, index=False)
+    files["warnings.json"] = json.dumps(filtered_warnings, indent=2, ensure_ascii=False, sort_keys=True)
+
+    included_pairwise = (
+        int(pairwise_scores["included_cases"].sum())
+        if "included_cases" in pairwise_scores.columns and not pairwise_scores.empty
+        else 0
+    )
+    summary = {
+        "report_format": "dashboard_filtered_ranking_eval",
+        "report_format_version": 1,
+        "parent_runs_dir": str(parent_runs_dir) if parent_runs_dir is not None else "",
+        "inclusion_policy": inclusion_policy,
+        "rbo_p": float(p),
+        "selected_modes": modes,
+        "selected_metrics": metrics,
+        "selected_queries": queries,
+        "selected_subtasks": subtasks,
+        "included_cases": len(cases),
+        "included_pairwise_comparisons": included_pairwise,
+        "invalid_mode_subtask_cases": len(filtered_invalid_cases),
+        "loaded_rows": len(filtered_raw_rows),
+        "filtered_run_dirs": filtered_run_dirs,
+        "discovered_run_dirs": len(filtered_run_dirs),
+        "scanned_run_dirs": len(discovered_run_dirs),
+        "loaded_reports": report_paths,
+        "warnings": len(filtered_warnings),
+        "generated_files": sorted([*files.keys(), "summary.json"]),
+    }
+    files["summary.json"] = json.dumps(summary, indent=2, ensure_ascii=False, sort_keys=True)
+    return files
 
 
 def evaluate_parent_runs(

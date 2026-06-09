@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import json
 import importlib
 import os
@@ -12,6 +13,7 @@ from html import escape
 from pathlib import Path
 from typing import Any, Callable
 import time
+import zipfile
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
@@ -27,20 +29,25 @@ import streamlit as st
 
 warnings.filterwarnings("ignore", message="coroutine 'expire_cache' was never awaited", category=RuntimeWarning)
 
-from src.eval.ranking_metrics import (  # noqa: E402
-    DEFAULT_RBO_P,
-    METRIC_NAMES,
-    MODE_ORDER,
-    aggregate_matrices_with_counts,
-    cases_to_frame,
-    compute_case_matrices,
-    evaluate_parent_runs,
-    matrices_to_pairwise_table,
-    overlap_by_depth,
-    top_lists_to_wide_frame,
-)
+from src.eval import ranking_metrics as _ranking_metrics  # noqa: E402
 from src.llm.backends import fireworks_model_options  # noqa: E402
 from src.ui import composition_visualization_helpers as viz  # noqa: E402
+from src.ui.thesis_results_page import render_thesis_results_figure_generator  # noqa: E402
+
+if not hasattr(_ranking_metrics, "build_ranking_eval_report_files"):
+    _ranking_metrics = importlib.reload(_ranking_metrics)
+
+DEFAULT_RBO_P = _ranking_metrics.DEFAULT_RBO_P
+METRIC_NAMES = _ranking_metrics.METRIC_NAMES
+MODE_ORDER = _ranking_metrics.MODE_ORDER
+aggregate_matrices_with_counts = _ranking_metrics.aggregate_matrices_with_counts
+build_ranking_eval_report_files = _ranking_metrics.build_ranking_eval_report_files
+cases_to_frame = _ranking_metrics.cases_to_frame
+compute_case_matrices = _ranking_metrics.compute_case_matrices
+evaluate_parent_runs = _ranking_metrics.evaluate_parent_runs
+matrices_to_pairwise_table = _ranking_metrics.matrices_to_pairwise_table
+overlap_by_depth = _ranking_metrics.overlap_by_depth
+top_lists_to_wide_frame = _ranking_metrics.top_lists_to_wide_frame
 
 if not hasattr(viz, "THROUGHPUT_LABEL") or not hasattr(viz, "format_throughput"):
     viz = importlib.reload(viz)
@@ -954,6 +961,17 @@ def render_completed_runs() -> None:
 @st.cache_data(show_spinner=False)
 def _load_bundle(parent_dir: str, rbo_p: float, selected_modes: tuple[str, ...]):
     return evaluate_parent_runs(parent_dir, p=rbo_p, selected_modes=list(selected_modes))
+
+
+def _build_deterministic_zip(files: dict[str, str]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, mode="w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for filename in sorted(files):
+            info = zipfile.ZipInfo(filename, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            archive.writestr(info, files[filename].encode("utf-8"))
+    return buffer.getvalue()
 
 
 def _heatmap(matrix: pd.DataFrame, title: str, value_range: tuple[float, float]):
@@ -3012,11 +3030,12 @@ def render_ranking_evaluation() -> None:
 
         filtered_matrices, filtered_counts = aggregate_matrices_with_counts(filtered_cases, p=rbo_p)
         filtered_pairwise = matrices_to_pairwise_table(filtered_matrices, filtered_counts)
+        pairwise_view = _filter_pairwise(filtered_pairwise, selected_metrics, selected_modes)
 
         fallback_count = sum(case.k_fallback_used for case in filtered_cases)
         included_pairwise = (
-            int(filtered_pairwise["included_cases"].sum())
-            if "included_cases" in filtered_pairwise.columns and not filtered_pairwise.empty
+            int(pairwise_view["included_cases"].sum())
+            if "included_cases" in pairwise_view.columns and not pairwise_view.empty
             else 0
         )
         stat_cols = st.columns(7)
@@ -3028,6 +3047,35 @@ def render_ranking_evaluation() -> None:
         stat_cols[5].metric("Invalid cases", len(bundle.invalid_cases))
         stat_cols[6].metric("Rows loaded", len(bundle.raw_rows))
         st.caption("Evaluation rule: strict selected-mode evaluation. Final reporting should use all four modes selected.")
+
+        report_files = build_ranking_eval_report_files(
+            cases=filtered_cases,
+            matrices=filtered_matrices,
+            pairwise_counts=filtered_counts,
+            raw_rows=bundle.raw_rows,
+            invalid_cases=bundle.invalid_cases,
+            warnings=bundle.warnings,
+            discovered_run_dirs=bundle.discovered_run_dirs,
+            loaded_report_paths=bundle.loaded_report_paths,
+            inclusion_policy=bundle.inclusion_policy,
+            selected_modes=selected_modes,
+            selected_metrics=selected_metrics,
+            selected_queries=selected_queries,
+            selected_subtasks=selected_subtasks,
+            parent_runs_dir=parent_dir,
+            p=rbo_p,
+        )
+        st.download_button(
+            "Download Filtered Ranking Reports",
+            data=_build_deterministic_zip(report_files),
+            file_name="ranking_eval_filtered_reports.zip",
+            mime="application/zip",
+            key="download_filtered_ranking_reports",
+            help=(
+                "Exports the current filtered ranking-similarity report set as CSV/JSON files: "
+                "metric matrices, included counts, pairwise scores, included cases, invalid cases, loaded rows, warnings, and summary."
+            ),
+        )
 
     if not bundle.invalid_cases.empty:
         st.subheader("Invalid Evaluation Cases")
@@ -3069,7 +3117,6 @@ def render_ranking_evaluation() -> None:
         )
 
     st.subheader("Pairwise Scores")
-    pairwise_view = _filter_pairwise(filtered_pairwise, selected_metrics, selected_modes)
     pairwise_table = pairwise_view.copy()
     if not pairwise_table.empty:
         pairwise_table["metric"] = pairwise_table["metric"].map(METRIC_LABELS)
@@ -3164,7 +3211,13 @@ def main() -> None:
     with st.sidebar:
         page = st.radio(
             "Page",
-            ["Ranking Evaluation", "Composition Visualizations", "Run Experiments", "Completed Runs"],
+            [
+                "Ranking Evaluation",
+                "Composition Visualizations",
+                "Thesis Results Figure Generator",
+                "Run Experiments",
+                "Completed Runs",
+            ],
             index=0,
         )
 
@@ -3172,6 +3225,11 @@ def main() -> None:
         render_ranking_evaluation()
     elif page == "Composition Visualizations":
         render_composition_visualizations()
+    elif page == "Thesis Results Figure Generator":
+        render_thesis_results_figure_generator(
+            directory_selector=_render_directory_selector,
+            default_run_dir=DEFAULT_RUN_EXPLORER_PARENT / "RUNS_MAY_31_NEW_5/fireworks_gpt-oss-120b",
+        )
     elif page == "Run Experiments":
         render_query_run_explorer()
     else:

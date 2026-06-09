@@ -21,6 +21,7 @@ from src.llm.backends import make_backend
 from src.tools.fetch_services import load_catalog_map
 
 MODE_DIRS = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
+FUNCTIONAL_LABEL_RANKING_MODES = {"qos_pure_llm", "qos_hybrid"}
 MODE_ORDER = {name: idx for idx, name in enumerate(MODE_DIRS)}
 EVAL_SYS = (
     "You are a strict but fair functional-match evaluator. Decide only whether an API is functionally "
@@ -1068,7 +1069,7 @@ def evaluate_query(*, query_dir: Path, query_id: Optional[str], provider: str, m
                 "Is Hallucinated? (0/1)": hallucination_flags.get((mode, sid, api_id), 0),
                 "Is Duplicated? (0/1)": duplicate_flags.get((mode, sid, api_id), 0),
                 "Functional Match (0/1)": functional_match,
-                "Used in Ranking": "Yes" if mode == "qos_hybrid" else "No",
+                "Used in Ranking": "Yes" if mode in FUNCTIONAL_LABEL_RANKING_MODES else "No",
                 "Selected for Planner": "Yes" if selected_for_planner else "No",
                 "Planner Selection K": planner_k,
                 "Failure Flag": 0,

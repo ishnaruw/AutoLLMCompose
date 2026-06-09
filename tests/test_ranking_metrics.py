@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -14,6 +16,7 @@ from src.eval.ranking_metrics import (
     aggregate_matrices_with_counts,
     average_overlap,
     build_ranking_cases,
+    build_ranking_eval_report_files,
     jaccard_similarity,
     load_report_rows,
     rbo_score,
@@ -110,6 +113,64 @@ class RankingMetricTests(unittest.TestCase):
         self.assertEqual(set(["query_id", "mode", "subtask_id", "api_id", "mode_rank"]).issubset(loaded.columns), True)
         self.assertEqual(len(loaded), len(rows))
         self.assertEqual(set(loaded["mode"]), set(MODE_ORDER))
+
+    def test_filtered_report_files_reflect_selected_dashboard_scope(self) -> None:
+        q01_rows = _case_rows(relevant_count=2, candidate_count=5)
+        q02_rows = _case_rows(relevant_count=2, candidate_count=5).copy()
+        q02_rows["run_dir"] = "run/q02_example"
+        q02_rows["report_path"] = "run/q02_example/evaluation/query_q02_candidate_api_rankings.xlsx"
+        q02_rows["query_id"] = "q02"
+        raw_rows = pd.concat([q01_rows, q02_rows], ignore_index=True)
+
+        cases, warnings = build_ranking_cases(raw_rows)
+        filtered_cases = [case for case in cases if case.query_id == "q01"]
+        matrices, counts = aggregate_matrices_with_counts(filtered_cases)
+
+        files = build_ranking_eval_report_files(
+            cases=filtered_cases,
+            matrices=matrices,
+            pairwise_counts=counts,
+            raw_rows=raw_rows,
+            invalid_cases=raw_rows.iloc[0:0].copy(),
+            warnings=[*warnings, "q01/subtask 1: kept", "q02/subtask 1: excluded"],
+            discovered_run_dirs=["run/q01_example", "run/q02_example"],
+            loaded_report_paths=[
+                "run/q01_example/evaluation/query_q01_candidate_api_rankings.xlsx",
+                "run/q02_example/evaluation/query_q02_candidate_api_rankings.xlsx",
+            ],
+            inclusion_policy="strict_selected_modes",
+            selected_modes=["no_qos", "qos_hybrid"],
+            selected_metrics=["jaccard", "rbo"],
+            selected_queries=["q01"],
+            selected_subtasks=["1"],
+            parent_runs_dir="run",
+            p=0.9,
+        )
+
+        self.assertIn("jaccard_matrix.csv", files)
+        self.assertIn("rbo_matrix.csv", files)
+        self.assertNotIn("spearman_matrix.csv", files)
+        self.assertNotIn("average_overlap_matrix.csv", files)
+
+        summary = json.loads(files["summary.json"])
+        self.assertEqual(summary["selected_queries"], ["q01"])
+        self.assertEqual(summary["selected_subtasks"], ["1"])
+        self.assertEqual(summary["selected_modes"], ["no_qos", "qos_hybrid"])
+        self.assertEqual(summary["selected_metrics"], ["rbo", "jaccard"])
+        self.assertEqual(summary["included_cases"], 1)
+
+        loaded_rows = pd.read_csv(io.StringIO(files["loaded_rows.csv"]))
+        self.assertEqual(set(loaded_rows["query_id"]), {"q01"})
+        self.assertEqual(set(loaded_rows["mode"]), {"no_qos", "qos_hybrid"})
+
+        pairwise = pd.read_csv(io.StringIO(files["pairwise_scores.csv"]))
+        self.assertEqual(set(pairwise["metric"]), {"rbo", "jaccard"})
+        self.assertEqual(set(pairwise["mode_a"]), {"no_qos"})
+        self.assertEqual(set(pairwise["mode_b"]), {"qos_hybrid"})
+
+        exported_warnings = json.loads(files["warnings.json"])
+        self.assertIn("q01/subtask 1: kept", exported_warnings)
+        self.assertNotIn("q02/subtask 1: excluded", exported_warnings)
 
 
 if __name__ == "__main__":

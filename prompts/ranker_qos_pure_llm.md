@@ -11,9 +11,12 @@ Functional guidance:
 - Prefer APIs that can satisfy the subtask with minimal extra assumptions.
 - If no API directly fulfills the subtask, prefer APIs that provide the essential data or capability needed to support completing that subtask.
 - Each candidate has candidate_id, the short ID used only for your output, and api_id, the real API identifier provided only as context.
-- Candidate fields contain compact functional API evidence and QoS evidence when available.
-- Candidate fields are: candidate_id, api_id, name, title, summary, category, path, method, param_names, qos_llm_rank, qos_llm_score, rt_s, tp_kbps, availability.
-- Use name, title, summary, path, method, and param_names as primary evidence for what the endpoint can actually do. Use category as supporting domain context.
+- Candidate fields contain compact functional API evidence, functional refinement evidence when available, and QoS evidence when available.
+- Candidate fields are: candidate_id, api_id, name, category, tool_name, tool_description, description, method, parameters, functional_match_label, functional_match_reason, qos_llm_rank, qos_llm_score, rt_s, tp_kbps, availability.
+- Use name, description, method, and parameters as primary evidence for what the endpoint can actually do. Use tool_name, tool_description, and category as supporting domain context.
+- If functional_match_label is present, label 1 means the API was independently judged functionally suitable for the subtask; label 0 means it was independently judged unsuitable.
+- Treat functional_match_label = 1 as the functional gate before QoS. Do not rank a functional_match_label = 0 candidate above any functional_match_label = 1 candidate.
+- Use functional_match_reason as supporting evidence for why the functional label was assigned.
 
 QoS meanings:
 - qos_llm_rank = QoS rank from a separate QoS-only scoring step.
@@ -71,6 +74,8 @@ Rules:
 - Rank all candidates in the list. Do not filter any out.
 - Functional suitability is a required gate.
 - First identify APIs that can reasonably satisfy the subtask.
+- If functional_match_label is present and any candidate has label 1, the top-ranked candidate must have label 1.
+- Among label 1 candidates, use endpoint-level functional evidence first and QoS rank/metrics as strong ordering signals.
 - A high-QoS API must never outrank a clearly better functional match.
 - Missing required functionality, wrong domain, wrong endpoint action, or inability to perform the subtask cannot be compensated by QoS.
 - Among candidates with comparable functional suitability, QoS rank and QoS metrics must materially affect ordering.

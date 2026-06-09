@@ -142,7 +142,7 @@ def test_qos_pure_llm_prompt_requires_functional_before_qos():
     assert "qos_llm_rank" in prompt
 
 
-def test_qos_pure_llm_input_includes_functional_refinement_labels_and_enforces_first():
+def test_qos_pure_llm_input_uses_functional_labels_as_gate():
     prompts: list[str] = []
     responses = [
         {"ranked": [{"candidate_id": "C01"}, {"candidate_id": "C02"}]},
@@ -185,8 +185,67 @@ def test_qos_pure_llm_input_includes_functional_refinement_labels_and_enforces_f
 
     assert [row["api_id"] for row in ranked] == ["weak_slow", "weak_fast"]
     assert len(prompts) == 2
-    assert '"functional_match_label": 1' in prompts[0]
+    assert "functional_match_label" in prompts[0]
+    assert "functional_first_ranking_retry" in prompts[1]
     assert '"qos_llm_rank": 1' in prompts[0]
+
+
+def test_qos_pure_llm_enrichment_merges_functional_refinement_labels():
+    enrichment = pipeline._functional_refinement_enrichment(
+        [{"api_id": "weather_change_live_get_weather_report"}],
+        subtask_id="1",
+        functional_match_map={
+            ("1", "weather_change_live_get_weather_report"): {
+                "Functional Match (0/1)": 0,
+                "Comments": "climate change data, not location-specific weather",
+            }
+        },
+    )
+
+    assert enrichment == {
+        "weather_change_live_get_weather_report": {
+            "functional_match_label": 0,
+            "functional_refiner_reason": "climate change data, not location-specific weather",
+        }
+    }
+
+
+def test_non_hybrid_selection_strips_functional_refiner_and_topsis_metadata(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "CONFIG", replace(pipeline.CONFIG, planner_candidate_mode="fixed_one"))
+
+    def fake_llm(_role, _system, _prompt):
+        return json.dumps(_planner_payload([("1", "api_a")]))
+
+    result = _deterministic_select_and_plan(
+        "qos_pure_llm",
+        [{"id": 1, "description": "first"}],
+        {
+            "1": [
+                {
+                    "api_id": "api_a",
+                    "mode_rank": 1,
+                    "functional_match_label": 1,
+                    "functional_refiner_reason": "external label",
+                    "topsis_rank": 1,
+                    "topsis_score": 0.9,
+                }
+            ]
+        },
+        {"1": 1},
+        fake_llm,
+        "Compose one API.",
+        tmp_path,
+        "prompts/planner_qos.md",
+        functional_match_map={("1", "api_a"): {"Functional Match (0/1)": 1, "Comments": "external label"}},
+    )
+
+    selected = result["selected"][0]
+    provenance = result["planner"]["planner_provenance"][0]
+    for payload in (selected, provenance):
+        assert "functional_match_label" not in payload
+        assert "functional_refiner_reason" not in payload
+        assert "topsis_rank" not in payload
+        assert "topsis_score" not in payload
 
 
 def test_zero_functional_retrieval_retry_query_expands_stock_signal_terms():

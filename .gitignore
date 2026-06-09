@@ -49,6 +49,9 @@ test_endpoint.ipynb
 # Zipped files
 *.zip
 
+# Local scripts and figures
+/scripts/
+/thesis_figures/
 
 # outputs
 results/*

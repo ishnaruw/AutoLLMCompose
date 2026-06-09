@@ -189,6 +189,9 @@ def normalize_api_for_ranking(
         label = _functional_match_label(api)
         if label is not None:
             compact["functional_match_label"] = label
+            reason = _functional_match_reason(api)
+            if reason:
+                compact["functional_match_reason"] = truncate_text(reason, 160)
 
     return compact
 
@@ -207,6 +210,17 @@ def _functional_match_label(api: Dict[str, Any]) -> int | None:
             if text in {"0", "false", "no", "irrelevant", "nonmatch", "non-match", "not_match"}:
                 return 0
     return None
+
+
+def _functional_match_reason(api: Dict[str, Any]) -> str:
+    return _clean_text(
+        _first_value(
+            api.get("functional_refiner_reason"),
+            api.get("Functional Match Reason"),
+            api.get("Comments"),
+            api.get("comment"),
+        )
+    )
 
 
 def _log_formatting_anomalies(

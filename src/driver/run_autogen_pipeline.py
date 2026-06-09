@@ -67,6 +67,8 @@ PLANNER_SYS = (
 )
 
 MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
+FUNCTIONAL_REFINER_MODES = {"qos_hybrid"}
+TOPSIS_METADATA_MODES = {"qos_topsis", "qos_hybrid"}
 ALL_QUERIES_PATH = Path("data/queries/all_user_query.jsonl")
 PLANNER_CANDIDATE_MODES = {"fixed_one", "top_n_ablation"}
 HYBRID_WORKFLOW_SELECTORS = {"workflow_topsis", "relative_to_best"}
@@ -563,6 +565,19 @@ def _build_shared_retrieval(user_goal: str, subtasks: List[Dict[str, Any]], out_
     return retrieved_by_subtask, _fetch_catalog_subset(pick_ids, with_qos=False), _fetch_catalog_subset(pick_ids, with_qos=True)
 
 
+def _copy_retrieved_by_subtask(retrieved_by_subtask: Dict[str, List[Dict[str, Any]]]) -> Dict[str, List[Dict[str, Any]]]:
+    return {
+        str(subtask_id): [dict(item) for item in items]
+        for subtask_id, items in retrieved_by_subtask.items()
+    }
+
+
+def _write_retrieval_view(view_dir: Path, subtasks: List[Dict[str, Any]], retrieved_by_subtask: Dict[str, List[Dict[str, Any]]]) -> None:
+    for sub in subtasks:
+        sub_id = str(sub.get("id", "unknown"))
+        _write_json(view_dir / f"1_retriever_s{sub_id}.json", retrieved_by_subtask.get(sub_id, []))
+
+
 def _zero_functional_retrieval_retry_query(user_goal: str, subtask: Dict[str, Any]) -> str:
     description = str(subtask.get("description") or "").strip()
     base = " ".join(part for part in [description, str(user_goal or "").strip()] if part)
@@ -714,6 +729,35 @@ def _candidate_rows(retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Di
     return rows
 
 
+def _functional_refinement_enrichment(
+    retrieved: List[Dict[str, Any]],
+    *,
+    subtask_id: str,
+    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
+) -> Dict[str, Dict[str, Any]]:
+    out: Dict[str, Dict[str, Any]] = {}
+    for row in retrieved:
+        api_id = str(row.get("api_id") or "").strip()
+        if not api_id:
+            continue
+        match_entry = functional_match_map.get((subtask_id, api_id))
+        if not isinstance(match_entry, dict) or not match_entry:
+            continue
+        reason = (
+            match_entry.get("functional_refiner_reason")
+            or match_entry.get("Comments")
+            or match_entry.get("comment")
+            or ""
+        )
+        enrichment = {
+            "functional_match_label": _functional_match_value(match_entry),
+        }
+        if reason:
+            enrichment["functional_refiner_reason"] = str(reason)
+        out[api_id] = enrichment
+    return out
+
+
 def _compute_topsis_metadata(retrieved: List[Dict[str, Any]], id_to_service: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     rows = []
     api_ids = []
@@ -761,20 +805,6 @@ def _functional_match_value(entry: Dict[str, Any]) -> int:
         )
         or 0
     )
-
-
-def _functional_match_ranking_enrichment(
-    retrieved: List[Dict[str, Any]],
-    sub_id: str,
-    functional_match_map: Dict[tuple[str, str], Dict[str, Any]],
-) -> Dict[str, Dict[str, Any]]:
-    enrich: Dict[str, Dict[str, Any]] = {}
-    for row in retrieved:
-        api_id = str(row.get("api_id") or "").strip()
-        if not api_id:
-            continue
-        enrich[api_id] = _functional_refiner_metadata(row, sub_id, api_id, functional_match_map)
-    return enrich
 
 
 def _deterministic_hybrid_ranking(retrieved: List[Dict[str, Any]], topsis_meta: Dict[str, Dict[str, Any]], sub_id: str, functional_match_map: Dict[tuple[str, str], Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1289,13 +1319,15 @@ def _selection_provenance(row: Dict[str, Any], *, mode_name: str, selected_by: s
         "subtask_id": str(row.get("subtask_id", "")),
         "api_id": str(row.get("api_id", "")),
         "selection_order": row.get("selection_order"),
-        "topsis_rank": row.get("topsis_rank"),
-        "topsis_score": row.get("topsis_score"),
         "selected_by": selected_by,
         "planner_override_attempted": planner_override_attempted,
     }
-    provenance["functional_match_label"] = row.get("functional_match_label")
-    provenance["functional_refiner_reason"] = row.get("functional_refiner_reason")
+    if mode_name in TOPSIS_METADATA_MODES:
+        provenance["topsis_rank"] = row.get("topsis_rank")
+        provenance["topsis_score"] = row.get("topsis_score")
+    if mode_name in FUNCTIONAL_REFINER_MODES:
+        provenance["functional_match_label"] = row.get("functional_match_label")
+        provenance["functional_refiner_reason"] = row.get("functional_refiner_reason")
     if row.get("planner_candidate_mode") == "top_n_ablation":
         for key in ["mode_rank", "rank_source", "qos_values", "short_rank_reason"]:
             if row.get(key) is not None:
@@ -1334,6 +1366,17 @@ def _selection_provenance(row: Dict[str, Any], *, mode_name: str, selected_by: s
     return provenance
 
 
+def _strip_reserved_mode_metadata(row: Dict[str, Any], mode_name: str) -> Dict[str, Any]:
+    cleaned = dict(row)
+    if mode_name not in FUNCTIONAL_REFINER_MODES:
+        cleaned.pop("functional_match_label", None)
+        cleaned.pop("functional_refiner_reason", None)
+    if mode_name not in TOPSIS_METADATA_MODES:
+        cleaned.pop("topsis_rank", None)
+        cleaned.pop("topsis_score", None)
+    return cleaned
+
+
 def _prepare_selected_row(
     row: Dict[str, Any],
     *,
@@ -1355,9 +1398,11 @@ def _prepare_selected_row(
     selected["selector_reason"] = selector_reason
     selected["selected_by"] = selected_by
     selected["planner_override_attempted"] = False
-    selected.update(_functional_refiner_metadata(selected, subtask_id, api_id, functional_match_map))
+    if mode_name in FUNCTIONAL_REFINER_MODES:
+        selected.update(_functional_refiner_metadata(selected, subtask_id, api_id, functional_match_map))
     if extra:
         selected.update(extra)
+    selected = _strip_reserved_mode_metadata(selected, mode_name)
     selected["selection_provenance"] = _selection_provenance(
         selected,
         mode_name=mode_name,
@@ -2824,10 +2869,12 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
 
     subtasks: List[Dict[str, Any]] = []
     retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
+    hybrid_retrieved_by_subtask: Dict[str, List[Dict[str, Any]]] = {}
     no_qos_services: Dict[str, Dict[str, Any]] = {}
     with_qos_services: Dict[str, Dict[str, Any]] = {}
     ranked_full_by_mode: Dict[str, Dict[str, List[Dict[str, Any]]]] = {m: {} for m in MODE_ORDER}
     functional_match_map: Dict[tuple[str, str], Dict[str, Any]] = {}
+    hybrid_functional_match_map: Dict[tuple[str, str], Dict[str, Any]] = {}
     planner_top_n: Dict[str, int] = {}
     retrieval_functional_match_rows_path: Path | None = None
     functional_refinement_summary_path: Path | None = None
@@ -2923,6 +2970,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
         log_line(f"[{run_label}] starting shared retrieval")
         try:
             retrieved_by_subtask, no_qos_services, with_qos_services = _build_shared_retrieval(user_goal, subtasks, out_dir)
+            hybrid_retrieved_by_subtask = _copy_retrieved_by_subtask(retrieved_by_subtask)
             total_retrieved = sum(len(items) for items in retrieved_by_subtask.values())
             meta_tracker.finish_stage(
                 "retrieval",
@@ -2955,39 +3003,59 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     model=model,
                 )
                 functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
+                hybrid_functional_match_map = dict(functional_match_map)
                 zero_functional_retry_traces = _retry_zero_functional_retrieval(
                     user_goal=user_goal,
                     subtasks=subtasks,
-                    out_dir=out_dir,
-                    retrieved_by_subtask=retrieved_by_subtask,
+                    out_dir=out_dir / "qos_hybrid",
+                    retrieved_by_subtask=hybrid_retrieved_by_subtask,
                     functional_match_map=functional_match_map,
                     no_qos_services=no_qos_services,
                     with_qos_services=with_qos_services,
                 )
+                hybrid_functional_match_rows_path: Path | None = None
                 if zero_functional_retry_traces:
-                    retrieval_functional_match_rows_path = functional_refiner_agent.refine_candidates(
-                        query_dir=out_dir,
+                    hybrid_view_dir = out_dir / "qos_hybrid"
+                    _write_json(
+                        hybrid_view_dir / "meta.json",
+                        {
+                            "query_id": query_id,
+                            "user_goal": user_goal,
+                        },
+                    )
+                    _write_json(hybrid_view_dir / "0_decomposer.json", subtasks)
+                    _write_retrieval_view(hybrid_view_dir, subtasks, hybrid_retrieved_by_subtask)
+                    hybrid_eval_dir = eval_dir / "qos_hybrid"
+                    hybrid_functional_match_rows_path = functional_refiner_agent.refine_candidates(
+                        query_dir=hybrid_view_dir,
                         query_id=query_id,
-                        output_dir=eval_dir,
+                        output_dir=hybrid_eval_dir,
                         cache_path=eval_cache,
                         provider=provider or "azure",
                         model=model,
                     )
-                    functional_match_map = _load_functional_match_map(retrieval_functional_match_rows_path)
+                    hybrid_functional_match_map = _load_functional_match_map(hybrid_functional_match_rows_path)
                 zero_functional_retry_status = "completed" if zero_functional_retry_traces else "not_needed"
                 meta_tracker.update(
                     functional_refinement_status="completed",
                     functional_refinement_rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
+                    hybrid_functional_refinement_rows_json=_to_run_relative(hybrid_functional_match_rows_path, out_dir)
+                    if hybrid_functional_match_rows_path
+                    else None,
                     functional_refinement_summary_json=_to_run_relative(functional_refinement_summary_path, out_dir)
                     if functional_refinement_summary_path.exists()
                     else None,
                     zero_functional_retrieval_retry_count=len(zero_functional_retry_traces),
                     zero_functional_retrieval_retry_status=zero_functional_retry_status,
+                    zero_functional_retrieval_retry_scope="qos_hybrid",
                     zero_functional_retrieval_retries=zero_functional_retry_traces,
                 )
                 meta_tracker.finish_stage(
                     "functional_refinement",
                     rows_json=_to_run_relative(retrieval_functional_match_rows_path, out_dir),
+                    hybrid_rows_json=_to_run_relative(hybrid_functional_match_rows_path, out_dir)
+                    if hybrid_functional_match_rows_path
+                    else None,
                     summary_json=_to_run_relative(functional_refinement_summary_path, out_dir)
                     if functional_refinement_summary_path.exists()
                     else None,
@@ -2996,6 +3064,7 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                     functional_refinement_status="completed",
                     zero_functional_retrieval_retry_count=len(zero_functional_retry_traces),
                     zero_functional_retrieval_retry_status=zero_functional_retry_status,
+                    zero_functional_retrieval_retry_scope="qos_hybrid",
                 )
                 log_line(f"[{run_label}] finished Functional Refiner Agent")
             except Exception as e:
@@ -3101,13 +3170,17 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                         subtask_id=sub_id,
                     )
                 else:
-                    pure_enrichment: Dict[str, Dict[str, Any]] = {}
-                    functional_enrichment = _functional_match_ranking_enrichment(retrieved, sub_id, functional_match_map)
-                    for api_id in set(pure_qos_meta) | set(functional_enrichment):
-                        pure_enrichment[api_id] = {
-                            **pure_qos_meta.get(api_id, {}),
-                            **functional_enrichment.get(api_id, {}),
-                        }
+                    pure_enrichment: Dict[str, Dict[str, Any]] = {
+                        api_id: dict(meta)
+                        for api_id, meta in pure_qos_meta.items()
+                        if isinstance(meta, dict)
+                    }
+                    for api_id, functional_meta in _functional_refinement_enrichment(
+                        retrieved,
+                        subtask_id=sub_id,
+                        functional_match_map=functional_match_map,
+                    ).items():
+                        pure_enrichment.setdefault(api_id, {}).update(functional_meta)
                     pure_candidates = _candidate_rows(retrieved, with_qos_services, enrich=pure_enrichment)
                     try:
                         pure_ranked, pure_rank_duration = _timed_invocation(
@@ -3152,12 +3225,30 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
                 ranked_full_by_mode["qos_topsis"][sub_id] = _write_ranked(out_dir / "qos_topsis", sub_id, topsis_ranked, retrieved, with_qos_services, topsis_meta)
                 log_line(f"[{run_label}] subtask={sub_id} finished qos_topsis scoring in {topsis_duration:.2f}s")
 
+                hybrid_retrieved = hybrid_retrieved_by_subtask.get(sub_id, retrieved)
+                hybrid_topsis_meta = (
+                    topsis_meta
+                    if hybrid_retrieved is retrieved
+                    else _compute_topsis_metadata(hybrid_retrieved, with_qos_services)
+                )
                 hybrid_ranked, hybrid_duration = _timed_invocation(
                     meta_tracker,
                     "qos_hybrid",
-                    lambda: _deterministic_hybrid_ranking(retrieved, topsis_meta, sub_id, functional_match_map),
+                    lambda: _deterministic_hybrid_ranking(
+                        hybrid_retrieved,
+                        hybrid_topsis_meta,
+                        sub_id,
+                        hybrid_functional_match_map,
+                    ),
                 )
-                ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(out_dir / "qos_hybrid", sub_id, hybrid_ranked, retrieved, with_qos_services, topsis_meta)
+                ranked_full_by_mode["qos_hybrid"][sub_id] = _write_ranked(
+                    out_dir / "qos_hybrid",
+                    sub_id,
+                    hybrid_ranked,
+                    hybrid_retrieved,
+                    with_qos_services,
+                    hybrid_topsis_meta,
+                )
                 log_line(f"[{run_label}] subtask={sub_id} finished qos_hybrid ranking in {hybrid_duration:.2f}s")
                 log_line(f"[{run_label}] subtask={sub_id} finished ranking bundle")
             retry_summary = _summarize_retry_outcomes(out_dir)
