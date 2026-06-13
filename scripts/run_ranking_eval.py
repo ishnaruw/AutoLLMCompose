@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -17,6 +18,22 @@ from ranking_metrics import (  # noqa: E402
     cases_to_frame,
     evaluate_parent_runs,
 )
+
+
+def _resolve_existing_path(path: Path, cwd: Path) -> Path:
+    candidates = [path] if path.is_absolute() else [cwd / path, PROJECT_ROOT / path]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate.resolve()
+
+    raise FileNotFoundError(f"Missing experiment run folder: {path}")
+
+
+def _evaluation_path(path: Path) -> Path:
+    try:
+        return path.relative_to(PROJECT_ROOT)
+    except ValueError:
+        return path
 
 
 def _write_outputs(bundle, output_dir: Path) -> None:
@@ -88,20 +105,22 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    parent_runs_dir = args.parent_runs_dir
-    if not parent_runs_dir.is_absolute():
-        parent_runs_dir = (PROJECT_ROOT / parent_runs_dir).resolve()
+    invocation_cwd = Path.cwd()
+    parent_runs_dir = _resolve_existing_path(args.parent_runs_dir, invocation_cwd)
     if not parent_runs_dir.is_dir():
-        raise FileNotFoundError(f"Missing experiment run folder: {parent_runs_dir}")
+        raise FileNotFoundError(f"Missing experiment run folder: {args.parent_runs_dir}")
 
     output_dir = args.output_dir
     if output_dir is None:
         output_dir = parent_runs_dir / "ranking_eval"
     elif not output_dir.is_absolute():
-        output_dir = (PROJECT_ROOT / output_dir).resolve()
+        output_dir = (invocation_cwd / output_dir).resolve()
+
+    eval_parent_runs_dir = _evaluation_path(parent_runs_dir)
+    os.chdir(PROJECT_ROOT)
 
     bundle = evaluate_parent_runs(
-        parent_runs_dir,
+        eval_parent_runs_dir,
         p=args.rbo_p,
         inclusion_policy=args.inclusion_policy,
         selected_modes=args.modes,
