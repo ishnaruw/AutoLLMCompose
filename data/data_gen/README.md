@@ -18,7 +18,7 @@ For the maintained catalog-refresh path, prefer:
 
 ```bash
 python -m src.tools.build_enriched_catalog --toolbench-root /path/to/ToolBench/data/toolenv/tools
-python -m src.rag.index_build --index_dir data/index/AutoLLMCompose_v3/shared_no_qos
+python -m src.rag.index_build --index_dir data/index/faiss_no_qos
 ```
 
 Only refresh and commit generated catalog/index files when intentionally changing

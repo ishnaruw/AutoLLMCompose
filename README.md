@@ -24,11 +24,10 @@ AutoLLMCompose/
 |   |   |-- api_repo.enriched.jsonl        # ToolBench-enriched runtime catalog
 |   |   |-- api_qos.jsonl                  # QoS overlay keyed by api_id
 |   |   |-- enrichment_manifest.json       # Catalog generation provenance
-|   |   |-- misc/                          # Legacy catalogs and one-off reports
 |   |   `-- README.md                      # Catalog layout notes
 |   |-- queries/
 |   |   |-- all_user_query.jsonl           # Main batch query set
-|   |-- index/AutoLLMCompose_v3/shared_no_qos/
+|   |-- index/faiss_no_qos/
 |   |                                      # Committed default FAISS index
 |   |-- data_gen/                          # ARCHIVAL notebooks, not runtime setup
 |   |-- raw/wsdream/                       # ARCHIVAL raw matrices
@@ -156,25 +155,22 @@ Runtime loading uses:
 - `api_qos.jsonl` for QoS values.
 - `api_repo.tooldesc.jsonl` as the base functional catalog.
 
-Legacy split catalogs and generation reports live under
-`data/processed/api_catalog_sample_balanced/misc/`. They are retained for
-fallbacks, reproducibility, and historical reference, but new runtime code should
-use the canonical files above.
+Runtime code should use the canonical catalog files above.
 
-The default FAISS index is committed at `data/index/AutoLLMCompose_v3/shared_no_qos/` so a fresh clone can run the main pipeline without rebuilding retrieval artifacts first.
+The default FAISS index is committed at `data/index/faiss_no_qos/` so a fresh clone can run the main pipeline without rebuilding retrieval artifacts first.
 
 If you change the catalog or want to regenerate the index, run:
 
 ```bash
 python -m src.rag.index_build \
-  --index_dir data/index/AutoLLMCompose_v3/shared_no_qos \
+  --index_dir data/index/faiss_no_qos \
   --embed_model sentence-transformers/all-MiniLM-L6-v2
 ```
 
 This creates or refreshes:
 
 ```text
-data/index/AutoLLMCompose_v3/shared_no_qos/
+data/index/faiss_no_qos/
 |-- faiss.index
 |-- meta.jsonl
 `-- config.json
@@ -433,12 +429,12 @@ Prefer changing these defaults in code only when you want a persistent project-w
 
 Install `faiss-cpu` with pip or conda, then rebuild the index if needed.
 
-`FileNotFoundError` for `data/index/AutoLLMCompose_v3/shared_no_qos/faiss.index`
+`FileNotFoundError` for `data/index/faiss_no_qos/faiss.index`
 
 The default index should be included in the repository. If it is missing or stale, rebuild it:
 
 ```bash
-python -m src.rag.index_build --index_dir data/index/AutoLLMCompose_v3/shared_no_qos
+python -m src.rag.index_build --index_dir data/index/faiss_no_qos
 ```
 
 Provider key errors such as `GROQ_API_KEY missing`

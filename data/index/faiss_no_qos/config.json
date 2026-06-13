@@ -1,5 +1,5 @@
 {
-  "index_dir": "data/index/AutoLLMCompose_v3/shared_no_qos",
+  "index_dir": "data/index/faiss_no_qos",
   "embed_model": "sentence-transformers/all-MiniLM-L6-v2",
   "normalize": true,
   "fetch_limit": 500,

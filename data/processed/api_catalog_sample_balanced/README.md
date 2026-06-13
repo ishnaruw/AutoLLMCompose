@@ -21,15 +21,4 @@ directly.
 - `with_qos=False`: loads functional rows from `api_repo.enriched.jsonl` and removes any QoS field.
 - `with_qos=True`: loads `api_repo.enriched.jsonl` and merges `api_qos.jsonl` by `api_id`.
 
-## Misc Files
-
-`misc/` stores legacy generation inputs, fallback catalogs, and one-off reports:
-
-- `api_repo.balanced_counts.csv`
-- `api_repo.no_qos.tooldesc.jsonl`
-- `api_repo.with_qos.tooldesc.jsonl`
-- `deprecated_api_repo.no_qos.jsonl`
-- `deprecated_api_repo.with_qos.jsonl`
-
-These files are retained for reproducibility and fallback behavior only. New
-runtime code should use the canonical files listed above.
+Runtime code should use the canonical files listed above.

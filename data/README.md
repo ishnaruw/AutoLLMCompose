@@ -8,7 +8,7 @@ for normal runs.
 - `queries/all_user_query.jsonl`: query set used by the pipeline driver.
 - `processed/api_catalog_sample_balanced/`: committed API catalog snapshot and
   QoS overlay.
-- `index/AutoLLMCompose_v3/shared_no_qos/`: committed FAISS retrieval index.
+- `index/faiss_no_qos/`: committed FAISS retrieval index.
 
 ## Archival Data
 

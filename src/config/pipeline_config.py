@@ -9,7 +9,7 @@ from typing import Any, Dict, Literal
 class PipelineConfig:
     run_tag: str | None = "RUNS_JUN_1"
 
-    shared_index_dir: Path = Path("data/index/AutoLLMCompose_v3/shared_no_qos")
+    shared_index_dir: Path = Path("data/index/faiss_no_qos")
     catalog_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.tooldesc.jsonl")
     catalog_enriched_path: Path = Path("data/processed/api_catalog_sample_balanced/api_repo.enriched.jsonl")
     api_qos_path: Path = Path("data/processed/api_catalog_sample_balanced/api_qos.jsonl")

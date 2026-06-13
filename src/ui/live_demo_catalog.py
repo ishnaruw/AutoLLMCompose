@@ -15,7 +15,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 CATALOG_DIR = PROJECT_ROOT / "data/processed/api_catalog_sample_balanced"
 DEFAULT_CATALOG_PATHS = [
     CATALOG_DIR / "api_repo.enriched.jsonl",
-    CATALOG_DIR / "misc/api_repo.with_qos.tooldesc.jsonl",
     CATALOG_DIR / "api_repo.tooldesc.jsonl",
 ]
 
