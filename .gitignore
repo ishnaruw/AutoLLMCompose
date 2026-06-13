@@ -50,7 +50,6 @@ test_endpoint.ipynb
 *.zip
 
 # Local scripts and figures
-/scripts/
 /thesis_figures/
 
 # outputs
