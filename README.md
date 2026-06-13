@@ -305,21 +305,10 @@ The dashboard includes pages for:
 - Live Demo Deep Dive for dynamic defense walkthroughs of any query in a selected run folder.
 - Ranking evaluation.
 - Composition visualizations.
-- Thesis Results Figure Generator for static Results-chapter CSV/PDF/PNG exports from official CSV/JSON artifacts.
 - Launching experiment runs.
 - Browsing completed runs.
 
 Experiment runs launched from the UI write logs under `results/logs/streamlit_launches/` and run outputs under the selected run tag.
-
-The Thesis Results Figure Generator reuses the dashboard run-directory picker. Select a logs directory such as
-`results/logs/RUNS_MAY_31_NEW_5/fireworks_gpt-oss-120b`; the page suggests the matching summary directory and
-`ranking_eval` directory when they exist. Saved exports default to `thesis_figures/results_chapter/`.
-
-To download the Section 5.11 query-level figures, open the Thesis Results Figure Generator, keep the official
-`q01_q15_official` summary scope, select PNG and/or PDF under Output formats, then choose either
-`Figure 5.x: Grouped Query-Level Final Score by Mode` or `Figure 5.x: Winner and Tied-Winner Heatmap` from
-Selected figure/table. Click Generate selected figure/table and use the Download buttons under the preview. Captions
-are displayed outside the exported image; the downloaded PNG/PDF contains no caption text.
 
 ## Defense Live Demo: Dynamic Query Deep Dive
 
