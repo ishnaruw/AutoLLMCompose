@@ -32,6 +32,7 @@ warnings.filterwarnings("ignore", message="coroutine 'expire_cache' was never aw
 from src.eval import ranking_metrics as _ranking_metrics  # noqa: E402
 from src.llm.backends import fireworks_model_options  # noqa: E402
 from src.ui import composition_visualization_helpers as viz  # noqa: E402
+from src.ui.live_demo_deep_dive import render_live_demo_deep_dive  # noqa: E402
 from src.ui.thesis_results_page import render_thesis_results_figure_generator  # noqa: E402
 
 if not hasattr(_ranking_metrics, "build_ranking_eval_report_files"):
@@ -3212,6 +3213,7 @@ def main() -> None:
         page = st.radio(
             "Page",
             [
+                "Live Demo Deep Dive",
                 "Ranking Evaluation",
                 "Composition Visualizations",
                 "Thesis Results Figure Generator",
@@ -3221,7 +3223,12 @@ def main() -> None:
             index=0,
         )
 
-    if page == "Ranking Evaluation":
+    if page == "Live Demo Deep Dive":
+        render_live_demo_deep_dive(
+            directory_selector=_render_directory_selector,
+            default_run_dir=DEFAULT_RUN_EXPLORER_PARENT / "RUNS_MAY_31_NEW_5/fireworks_gpt-oss-120b",
+        )
+    elif page == "Ranking Evaluation":
         render_ranking_evaluation()
     elif page == "Composition Visualizations":
         render_composition_visualizations()

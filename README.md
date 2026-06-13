@@ -297,11 +297,12 @@ The evaluation folder can contain:
 Launch the Streamlit dashboard:
 
 ```bash
-streamlit run src/ui/ranking_eval_app.py
+python -m streamlit run src/ui/ranking_eval_app.py
 ```
 
 The dashboard includes pages for:
 
+- Live Demo Deep Dive for dynamic defense walkthroughs of any query in a selected run folder.
 - Ranking evaluation.
 - Composition visualizations.
 - Thesis Results Figure Generator for static Results-chapter CSV/PDF/PNG exports from official CSV/JSON artifacts.
@@ -319,6 +320,57 @@ To download the Section 5.11 query-level figures, open the Thesis Results Figure
 `Figure 5.x: Grouped Query-Level Final Score by Mode` or `Figure 5.x: Winner and Tied-Winner Heatmap` from
 Selected figure/table. Click Generate selected figure/table and use the Download buttons under the preview. Captions
 are displayed outside the exported image; the downloaded PNG/PDF contains no caption text.
+
+## Defense Live Demo: Dynamic Query Deep Dive
+
+Use the `Live Demo Deep Dive` dashboard page for the thesis defense walkthrough. Select a run folder from the
+sidebar, then select any discovered query from that run folder. The page renders the same live visualization layout
+from that query's actual artifacts; it is not hardcoded to q07 or q14. If q07 exists in the selected run folder, the
+query selector defaults to q07; otherwise it defaults to the first discovered qXX timestamped query folder.
+Query category/domain labels are read from `data/queries/all_user_query.jsonl` when a run artifact does not record
+them.
+
+Main goal: Show that QoS-Pure-LLM beats No-QoS. Explain QoS-Hybrid as a bonus functional-first QoS refinement.
+QoS-TOPSIS is shown as a diagnostic mode for cases where QoS-only ranking can lower Functional Coverage.
+
+Run command:
+
+```bash
+python -m streamlit run src/ui/ranking_eval_app.py
+```
+
+The page order is mechanism-first:
+
+1. Query Context
+2. Decomposed Subtasks
+3. RAG Retrieval Snapshot with a catalog-backed candidate inspector
+4. Re-ranking Motivation
+5. Ranking by Mode
+6. Ranking Difference Visualization with pairwise mode similarity diagnostics
+7. Selected Composition Path with selected-API and QoS figures
+8. Score Comparison
+9. Formula Proof
+10. Hypothesis Proof
+11. Dynamic Query Takeaway
+12. Raw Artifacts, shown only when enabled from the sidebar
+
+Sidebar controls include run folder, dynamic query selector, focused subtask selector, Top-K, show-all-40 toggle
+enabled by default, exact-value toggle, raw-artifact toggle, and optional mode visibility. Main-view metrics are loaded from result
+artifacts without rewriting official experiment scores; derived rank-similarity and score-component views are labeled
+as diagnostics.
+
+Timing:
+
+- 0:00-0:30: Select run folder and q07 from the sidebar. Explain that the page is dynamic.
+- 0:30-3:00: q07 deep dive. Show QoS-Pure-LLM improving over No-QoS by improving Normalized QoS while preserving Functional Coverage.
+- 3:00-5:15: q14 deep dive. Show QoS-Pure-LLM beating No-QoS and tying QoS-Hybrid.
+- 5:15-6:00: Optional q03 or q13, or close with the scoring formula and limitations.
+
+Optional query purposes:
+
+- q03: technical/security query where QoS-Pure-LLM improves and QoS-Hybrid reaches 1.0.
+- q13: niche/non-popular query with strong QoS-Pure-LLM improvement and near-perfect Hybrid.
+- q04: popular travel query that shows why QoS-TOPSIS alone can fail despite high QoS.
 
 ## Evaluation Scripts
 
