@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import argparse
-import csv
 import json
 import re
 from collections import Counter, defaultdict
@@ -10,44 +8,6 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 MODE_ORDER = ["no_qos", "qos_pure_llm", "qos_topsis", "qos_hybrid"]
 MODE_INDEX = {name: idx for idx, name in enumerate(MODE_ORDER)}
-
-SUMMARY_COLUMNS = [
-    "Run_Dir",
-    "Query_ID",
-    "Sub_Task",
-    "Mode",
-    "Subtask_Purpose",
-    "Candidate_Count",
-    "Unique_API_Count",
-    "Duplicate_API_Count",
-    "Duplicate_Row_Count",
-    "Max_Repeat_Count",
-    "Has_Duplicates",
-    "Duplicated_APIs",
-]
-
-DUPLICATE_COLUMNS = [
-    "Run_Dir",
-    "Query_ID",
-    "Sub_Task",
-    "Mode",
-    "Subtask_Purpose",
-    "Selected_API",
-    "Repeat_Count",
-    "Mode_Ranks",
-    "Retrieved_Ranks",
-    "Functional_Match_Values",
-    "Comments",
-]
-
-OVERVIEW_COLUMNS = [
-    "Key",
-    "Groups_Checked",
-    "Groups_With_Duplicates",
-    "Duplicate_API_Count",
-    "Duplicate_Row_Count",
-]
-
 
 def _query_sort_key(value: str) -> Tuple[int, str]:
     match = re.search(r"q(\d+)", str(value), flags=re.IGNORECASE)
@@ -76,19 +36,6 @@ def _int_sort(values: Iterable[Any]) -> List[str]:
 
 def _safe_load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _is_query_run_dir(path: Path) -> bool:
-    return path.is_dir() and (path / "0_decomposer.json").exists()
-
-
-def _iter_run_dirs(root_dir: Path) -> Iterable[Path]:
-    if _is_query_run_dir(root_dir):
-        yield root_dir
-        return
-    for path in sorted(root_dir.iterdir(), key=lambda p: _query_sort_key(p.name)):
-        if path.is_dir():
-            yield path
 
 
 def _find_evaluation_dir(run_dir: Path) -> Path | None:
@@ -257,180 +204,5 @@ def _collect_duplicate_audit_for_runs(root_dir: Path, run_dirs: Iterable[Path]) 
     }
 
 
-def collect_duplicate_audit(root_dir: Path) -> Dict[str, Any]:
-    return _collect_duplicate_audit_for_runs(root_dir, _iter_run_dirs(root_dir))
-
-
 def collect_duplicate_audit_for_run(run_dir: Path) -> Dict[str, Any]:
     return _collect_duplicate_audit_for_runs(run_dir, [run_dir])
-
-
-def _default_output_targets(root_dir: Path) -> Tuple[Path, Path, Path]:
-    if _is_query_run_dir(root_dir):
-        query_id = root_dir.name.split("_", 1)[0]
-        eval_dir = _find_evaluation_dir(root_dir) or (root_dir / "evaluation")
-        stem = eval_dir / f"query_{query_id}_duplicate_audit"
-        return stem.with_suffix(".xlsx"), stem.with_suffix(".json"), eval_dir / f"query_{query_id}_duplicate_audit_csv"
-    return root_dir / "api_duplicate_audit.xlsx", root_dir / "api_duplicate_audit.json", root_dir / "api_duplicate_audit_csv"
-
-
-def _append_sheet(ws, columns: List[str], rows: List[Dict[str, Any]], highlight_duplicates: bool = False) -> None:
-    from openpyxl.styles import Alignment, Font, PatternFill
-
-    ws.append(columns)
-    for idx in range(1, len(columns) + 1):
-        ws.cell(row=1, column=idx).font = Font(bold=True)
-    ws.freeze_panes = "A2"
-
-    alert_fill = PatternFill(fill_type="solid", fgColor="FFF2CC")
-    for row in rows:
-        ws.append([row.get(column, "") for column in columns])
-        if highlight_duplicates and row.get("Has_Duplicates") == "Y":
-            for idx in range(1, len(columns) + 1):
-                ws.cell(row=ws.max_row, column=idx).fill = alert_fill
-
-    ws.auto_filter.ref = ws.dimensions
-
-    for column_cells in ws.columns:
-        max_len = 0
-        column_letter = column_cells[0].column_letter
-        for cell in column_cells:
-            value = "" if cell.value is None else str(cell.value)
-            max_len = max(max_len, len(value))
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-        ws.column_dimensions[column_letter].width = min(max(max_len + 2, 12), 60)
-
-
-def write_duplicate_audit_excel(audit: Dict[str, Any], out_path: Path) -> Path:
-    from openpyxl import Workbook
-
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    wb = Workbook()
-
-    overview_ws = wb.active
-    overview_ws.title = "Overview"
-    overview_rows = [
-        {"Metric": "Root Dir", "Value": audit["overall"]["root_dir"]},
-        {"Metric": "Runs Checked", "Value": audit["overall"]["run_count"]},
-        {"Metric": "Groups Checked", "Value": audit["overall"]["group_count"]},
-        {"Metric": "Groups With Duplicates", "Value": audit["overall"]["groups_with_duplicates"]},
-        {"Metric": "Duplicate API Count", "Value": audit["overall"]["duplicate_api_count"]},
-        {"Metric": "Duplicate Row Count", "Value": audit["overall"]["duplicate_row_count"]},
-        {"Metric": "Missing Runs", "Value": ", ".join(audit["overall"]["missing_runs"]) if audit["overall"]["missing_runs"] else ""},
-    ]
-    _append_sheet(overview_ws, ["Metric", "Value"], overview_rows)
-
-    summary_ws = wb.create_sheet("SubtaskModeAudit")
-    _append_sheet(summary_ws, SUMMARY_COLUMNS, audit["summary_rows"], highlight_duplicates=True)
-
-    duplicates_ws = wb.create_sheet("DuplicateDetails")
-    _append_sheet(duplicates_ws, DUPLICATE_COLUMNS, audit["duplicate_rows"])
-
-    query_ws = wb.create_sheet("QueryOverview")
-    _append_sheet(query_ws, OVERVIEW_COLUMNS, audit["query_overview"])
-
-    mode_ws = wb.create_sheet("ModeOverview")
-    _append_sheet(mode_ws, OVERVIEW_COLUMNS, audit["mode_overview"])
-
-    wb.save(out_path)
-    return out_path
-
-
-def _write_csv(path: Path, columns: List[str], rows: List[Dict[str, Any]]) -> Path:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=columns)
-        writer.writeheader()
-        for row in rows:
-            writer.writerow({column: row.get(column, "") for column in columns})
-    return path
-
-
-def write_duplicate_audit_csv_bundle(audit: Dict[str, Any], out_dir: Path) -> List[Path]:
-    out_dir.mkdir(parents=True, exist_ok=True)
-    written = [
-        _write_csv(out_dir / "subtask_mode_audit.csv", SUMMARY_COLUMNS, audit["summary_rows"]),
-        _write_csv(out_dir / "duplicate_details.csv", DUPLICATE_COLUMNS, audit["duplicate_rows"]),
-        _write_csv(out_dir / "query_overview.csv", OVERVIEW_COLUMNS, audit["query_overview"]),
-        _write_csv(out_dir / "mode_overview.csv", OVERVIEW_COLUMNS, audit["mode_overview"]),
-        _write_csv(
-            out_dir / "overall_summary.csv",
-            ["Metric", "Value"],
-            [
-                {"Metric": "Root Dir", "Value": audit["overall"]["root_dir"]},
-                {"Metric": "Runs Checked", "Value": audit["overall"]["run_count"]},
-                {"Metric": "Groups Checked", "Value": audit["overall"]["group_count"]},
-                {"Metric": "Groups With Duplicates", "Value": audit["overall"]["groups_with_duplicates"]},
-                {"Metric": "Duplicate API Count", "Value": audit["overall"]["duplicate_api_count"]},
-                {"Metric": "Duplicate Row Count", "Value": audit["overall"]["duplicate_row_count"]},
-                {"Metric": "Missing Runs", "Value": ", ".join(audit["overall"]["missing_runs"]) if audit["overall"]["missing_runs"] else ""},
-            ],
-        ),
-    ]
-    return written
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Audit duplicate Selected_API values within each query/subtask/mode group.")
-    parser.add_argument(
-        "--root-dir",
-        type=Path,
-        default=Path("results/logs/RUNS_APR_20/mistral_mistral-small-latest"),
-        help="Directory containing query run folders.",
-    )
-    parser.add_argument(
-        "--output-xlsx",
-        type=Path,
-        default=None,
-        help="Output workbook path. Defaults to <root-dir>/api_duplicate_audit.xlsx",
-    )
-    parser.add_argument(
-        "--output-json",
-        type=Path,
-        default=None,
-        help="Output JSON path. Defaults to <root-dir>/api_duplicate_audit.json",
-    )
-    parser.add_argument(
-        "--output-csv-dir",
-        type=Path,
-        default=None,
-        help="Optional CSV output directory. Defaults to <root-dir>/api_duplicate_audit_csv when XLSX is unavailable.",
-    )
-    args = parser.parse_args()
-
-    root_dir = args.root_dir.expanduser().resolve()
-    if not root_dir.exists():
-        raise FileNotFoundError(f"Root directory not found: {root_dir}")
-
-    default_xlsx, default_json, default_csv_dir = _default_output_targets(root_dir)
-    output_xlsx = args.output_xlsx.expanduser().resolve() if args.output_xlsx else default_xlsx
-    output_json = args.output_json.expanduser().resolve() if args.output_json else default_json
-    output_csv_dir = args.output_csv_dir.expanduser().resolve() if args.output_csv_dir else default_csv_dir
-
-    audit = collect_duplicate_audit(root_dir)
-    output_json.parent.mkdir(parents=True, exist_ok=True)
-    output_json.write_text(json.dumps(audit, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    wrote_excel = False
-    try:
-        write_duplicate_audit_excel(audit, output_xlsx)
-        wrote_excel = True
-    except ModuleNotFoundError:
-        write_duplicate_audit_csv_bundle(audit, output_csv_dir)
-
-    overall = audit["overall"]
-    print(f"Checked {overall['run_count']} runs under {root_dir}")
-    print(f"Checked {overall['group_count']} query/subtask/mode groups")
-    print(f"Groups with duplicates: {overall['groups_with_duplicates']}")
-    print(f"Duplicate API ids counted: {overall['duplicate_api_count']}")
-    print(f"Duplicate extra rows counted: {overall['duplicate_row_count']}")
-    if wrote_excel:
-        print(f"Wrote Excel audit to {output_xlsx}")
-    else:
-        print("openpyxl not installed; wrote CSV audit bundle instead")
-        print(f"Wrote CSV audit bundle to {output_csv_dir}")
-    print(f"Wrote JSON audit to {output_json}")
-
-
-if __name__ == "__main__":
-    main()

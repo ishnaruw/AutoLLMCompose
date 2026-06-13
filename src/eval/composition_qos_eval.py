@@ -944,15 +944,3 @@ def evaluate_composition_qos(*, query_dir: Path, query_id: str | None = None, ou
         "composition_validity_summary": validity_summary,
         "score_summary": score_summary,
     }
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Evaluate deterministic composition-level QoS for one AutoLLMCompose query run.")
-    parser.add_argument("query_dir", type=Path)
-    parser.add_argument("--query-id")
-    parser.add_argument("--output-dir", type=Path)
-    args = parser.parse_args()
-    result = evaluate_composition_qos(query_dir=args.query_dir, query_id=args.query_id, output_dir=args.output_dir)
-    print(json.dumps({k: str(v) for k, v in result.items() if k.endswith("_json") or k == "excel"}, indent=2))

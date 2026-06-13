@@ -1090,12 +1090,6 @@ def _load_planner_top_n_from_retrieval_match(rows_path: Path) -> Dict[str, int]:
     }
 
 
-def _load_planner_top_n(rows_path: Path) -> Dict[str, int]:
-    # Deprecated: planner K should come from retrieval_functional_match_rows_json,
-    # not mode-expanded candidate_api_rankings_rows_json.
-    return _load_planner_top_n_from_retrieval_match(rows_path)
-
-
 def _summarize_retry_outcomes(run_dir: Path) -> Dict[str, Any]:
     path = run_dir / "retry_outcomes.log"
     summary: Dict[str, Any] = {
@@ -2879,10 +2873,6 @@ def run_autogen_once(user_goal: str, provider: str | None = None, model: str | N
     retrieval_functional_match_rows_path: Path | None = None
     functional_refinement_summary_path: Path | None = None
     eval_out: Path | None = None
-    mode_anomaly_xlsx: Path | None = None
-    ranking_anomaly_audit_json: Path | None = None
-    duplicate_audit_json: Path | None = None
-    hallucination_audit_json: Path | None = None
     composition_qos_rows_json: Path | None = None
     composition_qos_summary_json: Path | None = None
     composition_qos_excel: Path | None = None

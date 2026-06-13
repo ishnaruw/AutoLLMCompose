@@ -63,21 +63,3 @@ class RagRetrieverAgent:
 
     def run(self, task: str, *, top_k: int = 60) -> List[Dict[str, Any]]:
         return self.retrieve(task, top_k=top_k)
-
-
-def collect_candidates(
-    subtask_goal: str,
-    *,
-    index_dir: str,
-    top_k: int = 60,
-) -> List[Dict[str, Any]]:
-    """
-    RAG-only retriever.
-
-    For a given subtask string, retrieve top_k candidates from FAISS.
-    Returns a list of dicts that includes:
-      - api_id
-      - rag_score  (FAISS similarity)
-      - compressed (compact catalog fields; used by ranker)
-    """
-    return RagRetrieverAgent(index_dir=index_dir).retrieve(subtask_goal, top_k=top_k)

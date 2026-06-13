@@ -106,10 +106,6 @@ def _extract_retry_after_seconds(exc: Exception) -> float | None:
     return total if total > 0 else None
 
 
-def extract_retry_after_seconds(exc: Exception) -> float | None:
-    return _extract_retry_after_seconds(exc)
-
-
 def call_with_backoff(fn, *, max_retries=8, base=2.0, cap=32.0, name="llm"):
     """
     Retry wrapper with exponential backoff + jitter.

@@ -26,29 +26,6 @@ class InvalidQosScoringOutput(RuntimeError):
         super().__init__(str(metadata.get("failure_reason") or "invalid_qos_scoring_output"))
 
 
-def _parse_llm_qos_scores_no_rank(raw: str, expected_ids: List[str] | None = None) -> Dict[str, float]:
-    """
-    Extract QoS scores from LLM output without ranking.
-    Used for batched processing where global ranking happens after all batches.
-    Returns api_id -> score.
-    """
-    scores, issue = _parse_qos_score_output(raw, expected_ids or [])
-    if expected_ids is None:
-        return scores
-    return scores if issue is None else {}
-
-
-def _parse_llm_qos_scores(raw: str, expected_ids: List[str] | None = None) -> Dict[str, Dict[str, Any]]:
-    """
-    Extract QoS scores from LLM output and assign ranks from LLM-provided scores.
-    Returns api_id -> {qos_llm_score, qos_llm_rank}.
-    """
-    scores, issue = _parse_qos_score_output(raw, expected_ids or [])
-    if expected_ids is not None and issue is not None:
-        return {}
-    return _rank_qos_scores(scores)
-
-
 def _parse_qos_score_output(
     raw: str,
     expected_ids: List[str],

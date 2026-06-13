@@ -519,17 +519,6 @@ def _match_endpoint(
     return candidates[0] if candidates else {}
 
 
-def _select_parameters(
-    api: Dict[str, Any],
-    compressed: Dict[str, Any],
-    service: Dict[str, Any],
-    endpoint_detail: Dict[str, Any],
-    subtask_text: str | None,
-) -> List[Dict[str, str]]:
-    candidates = _collect_parameter_candidates(api, compressed, service, endpoint_detail)
-    return _select_parameter_candidates(candidates, subtask_text)
-
-
 def _select_parameter_candidates(
     candidates: List[Dict[str, Any]],
     subtask_text: str | None,

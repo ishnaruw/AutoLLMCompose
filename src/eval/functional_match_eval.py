@@ -45,25 +45,6 @@ def _safe_read_json(path: Path) -> Any:
         return None
 
 
-def _load_jsonl_catalog(path: Path) -> Dict[str, Dict[str, Any]]:
-    catalog: Dict[str, Dict[str, Any]] = {}
-    if not path.exists():
-        return catalog
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except Exception:
-                continue
-            api_id = obj.get("api_id")
-            if api_id:
-                catalog[str(api_id)] = obj
-    return catalog
-
-
 def _load_ranked_files(query_dir: Path) -> Dict[str, List[Dict[str, Any]]]:
     out: Dict[str, List[Dict[str, Any]]] = {}
     for mode in MODE_DIRS:
@@ -288,11 +269,6 @@ def _chunk_list(items: List[Dict[str, Any]], size: int) -> Iterable[List[Dict[st
         yield items[i : i + size]
 
 
-def _normalize_functional_match(val: Any) -> Optional[int]:
-    label, _error = normalize_binary_label(val)
-    return label
-
-
 def _functional_match_value(info: Dict[str, Any]) -> int:
     return int(
         info.get(
@@ -371,15 +347,6 @@ def _planner_k_by_subtask(
                 matched_api_ids.add(api_id)
         planner_k[sid] = len(matched_api_ids)
     return planner_k
-
-
-def _parse_results(
-    text: str,
-    expected_ids: List[str],
-    candidate_id_to_api_id: Dict[str, str] | None = None,
-) -> Dict[str, Dict[str, Any]]:
-    parsed, _issue = _parse_results_with_issue(text, expected_ids, candidate_id_to_api_id)
-    return parsed
 
 
 def _parse_results_with_issue(

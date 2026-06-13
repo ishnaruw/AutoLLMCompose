@@ -81,16 +81,3 @@ def fetch_services(
         items = [r for r in items if r.get("category") == category]
 
     return items[offset : offset + limit]
-
-
-def compress_service(s: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "api_id": s["api_id"],
-        "name": s.get("name", ""),
-        "description": (s.get("toolbench_endpoint_description") or s.get("description", "") or "")[:200],
-        "category": s.get("category"),
-        "method": s.get("method", ""),
-        "url": s.get("url", ""),
-        "tool_name": (s.get("toolbench_tool_name") or s.get("tool_name", "") or "")[:120],
-        "tool_description": (s.get("toolbench_tool_description") or s.get("tool_description", "") or "")[:300],
-    }
